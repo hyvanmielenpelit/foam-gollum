@@ -12,7 +12,7 @@ Foam for Gollum is a fork of the [Foam Visual Studio Code extension](https://mar
 
 ## New Settings
 
-The new settings in this extension and their defaults are:
+New settings in this extension and their defaults are:
 
 ```
 "foam.wikilinks.syntax": "gollum",
@@ -23,7 +23,7 @@ The new settings in this extension and their defaults are:
 "foam.fileDropdown.imageTemplateFormat": "markdown"
 ```
 
-The possible values for the settings are:
+Possible values for the settings are:
 
 | Setting | Possible values |
 | :------ | :-------------- |
