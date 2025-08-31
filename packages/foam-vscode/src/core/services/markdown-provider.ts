@@ -16,10 +16,13 @@ import { uniqBy } from 'lodash';
 import { getFoamVsCodeConfig } from '../../services/config';
 import * as vscode from 'vscode';
 import * as path from 'path';
-
+import { getExtension } from '../utils/path';
 
 export class MarkdownResourceProvider implements ResourceProvider {
   private disposables: IDisposable[] = [];
+  private validExtensionRegExp = new RegExp(
+    /(\.[a-zA-Z0-9]+)$/
+  );
 
   constructor(
     private readonly dataStore: IDataStore,
@@ -61,10 +64,19 @@ export class MarkdownResourceProvider implements ResourceProvider {
     } else {
       filePath = path.join(workspaceFolderPath, resourceSubDir, target).replace(/\\/g, "/");
     }
-    if((path.extname(filePath) ?? '') === '') {
+    const validExtension = this.getValidExtension(filePath);
+    if(validExtension === '') {
       filePath += workspace.defaultExtension;
     }
     return filePath;
+  }
+
+  getValidExtension(path: string) {
+    const result = this.validExtensionRegExp.exec(path);
+    if (result !== null) {
+      return result[1];
+    }
+    return '';
   }
 
   resolveLink(

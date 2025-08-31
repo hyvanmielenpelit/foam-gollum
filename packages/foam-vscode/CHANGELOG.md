@@ -2,6 +2,11 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.2.9] - 2025-08-31
+
+- Fix README.
+- Fix handling for filenames with a dot.
+
 ## [1.2.8] - 2025-08-15
 
 - Fix section heading link conversion to render dots as dashes.
