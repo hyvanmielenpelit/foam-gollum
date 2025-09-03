@@ -2,6 +2,14 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.2.11] - 2025-09-03
+
+- Fix wrong build.
+
+## [1.2.10] - 2025-09-03
+
+- Fix file renaming to work with wikilinks with an alias.
+
 ## [1.2.9] - 2025-08-31
 
 - Fix README.
