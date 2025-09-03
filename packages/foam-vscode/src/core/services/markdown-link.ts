@@ -151,10 +151,18 @@ export abstract class MarkdownLink {
     const embed = delta.isEmbed ?? link.isEmbed ? '!' : '';
     const type = delta.type ?? link.type;
     if (type === 'wikilink') {
-      return {
-        newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${aliasDivider}${newAlias}]]`,
-        range: link.range,
-      };
+      const wikiLinkSyntax = getFoamVsCodeConfig('wikilinks.syntax');
+      if (wikiLinkSyntax === 'gollum') {
+        return {
+          newText: `${embed}[[${newAlias}${aliasDivider}${newTarget}${sectionDivider}${newSection}]]`,
+          range: link.range,
+        };      
+      } else {
+        return {
+          newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${aliasDivider}${newAlias}]]`,
+          range: link.range,
+        };
+      }
     }
     if (type === 'link') {
       const defaultAlias = () => {
