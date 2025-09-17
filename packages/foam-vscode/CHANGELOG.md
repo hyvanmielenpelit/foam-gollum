@@ -2,6 +2,10 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.3.0] - 2025-09-17
+
+- Merge Foam 0.27.7.
+
 ## [1.2.11] - 2025-09-03
 
 - Fix wrong build.
