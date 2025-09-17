@@ -10,8 +10,7 @@ import {
   isPlaceholderTrigger,
 } from './note-creation-types';
 import { extractFoamTemplateFrontmatterMetadata } from '../utils/template-frontmatter-parser';
-import { asAbsoluteUri, URI } from '../core/model/uri';
-import { isAbsolute } from 'path';
+import { URI } from '../core/model/uri';
 
 /**
  * Unified engine for creating notes from both Markdown and JavaScript templates
@@ -37,16 +36,22 @@ export class NoteCreationEngine {
     this.logTriggerInfo(trigger);
 
     let result: NoteCreationResult | null = null;
-    if (template.type === 'javascript') {
-      result = await this.executeJSTemplate(trigger, template, resolver);
-    } else {
-      result = await this.executeMarkdownTemplate(trigger, template, resolver);
+    switch (template.type) {
+      case 'javascript':
+        result = await this.executeJSTemplate(trigger, template, resolver);
+        break;
+      case 'markdown':
+        result = await this.executeMarkdownTemplate(
+          trigger,
+          template,
+          resolver
+        );
+        break;
+      default:
+        throw new Error(`Unsupported template type: ${(template as any).type}`);
     }
 
-    return {
-      ...result,
-      filepath: result.filepath,
-    };
+    return result;
   }
 
   /**
@@ -57,9 +62,6 @@ export class NoteCreationEngine {
     template: Template & { type: 'javascript' },
     resolver: Resolver
   ): Promise<NoteCreationResult> {
-    // Convert resolver's variables back to extraParams for backward compatibility
-    const extraParams = resolver.getVariables();
-
     const templateContext: TemplateContext = {
       trigger,
       resolver,
@@ -74,7 +76,7 @@ export class NoteCreationEngine {
       this.validateNoteCreationResult(result);
 
       if (!(result.filepath instanceof URI)) {
-        result.filepath = URI.parse(result.filepath);
+        result.filepath = this.roots[0].forPath(result.filepath);
       }
       return result;
     } catch (error) {
@@ -112,7 +114,7 @@ export class NoteCreationEngine {
       (await this.generateDefaultFilepath(resolver));
 
     return {
-      filepath: URI.parse(filepath),
+      filepath: this.roots[0].forPath(filepath),
       content: cleanContent,
     };
   }

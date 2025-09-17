@@ -1,5 +1,6 @@
-import { findSelectionContent } from './editor';
-import { window } from 'vscode';
+import { findSelectionContent, getCurrentEditorDirectory } from './editor';
+import { window, workspace } from 'vscode';
+import { fromVsCodeUri } from '../utils/vsc-utils';
 import { UserCancelledOperation } from './errors';
 import { toSlug } from '../utils/slug';
 import {
@@ -13,6 +14,7 @@ const knownFoamVariables = new Set([
   'FOAM_TITLE_SAFE',
   'FOAM_SLUG',
   'FOAM_SELECTED_TEXT',
+  'FOAM_CURRENT_DIR',
   'FOAM_DATE_YEAR',
   'FOAM_DATE_YEAR_SHORT',
   'FOAM_DATE_MONTH',
@@ -38,8 +40,13 @@ export class Resolver implements VariableResolver {
    */
   constructor(
     private givenValues: Map<string, string>,
-    public foamDate: Date
-  ) {}
+    public foamDate: Date,
+    foamTitle?: string
+  ) {
+    if (foamTitle) {
+      this.givenValues.set('FOAM_TITLE', foamTitle);
+    }
+  }
 
   /**
    * Adds a variable definition in the resolver
@@ -152,6 +159,9 @@ export class Resolver implements VariableResolver {
         case 'FOAM_SELECTED_TEXT':
           value = Promise.resolve(resolveFoamSelectedText());
           break;
+        case 'FOAM_CURRENT_DIR':
+          value = Promise.resolve(resolveFoamCurrentDir());
+          break;
         case 'FOAM_DATE_YEAR':
           value = Promise.resolve(String(this.foamDate.getFullYear()));
           break;
@@ -178,6 +188,12 @@ export class Resolver implements VariableResolver {
         case 'FOAM_DATE_DATE':
           value = Promise.resolve(
             String(this.foamDate.getDate().valueOf()).padStart(2, '0')
+          );
+          break;
+        case 'FOAM_DATE_DAY_ISO':
+          // ISO 8601 weekday: Monday=1, Sunday=7
+          value = Promise.resolve(
+            String(((this.foamDate.getDay() + 6) % 7) + 1)
           );
           break;
         case 'FOAM_DATE_WEEK': {
@@ -255,6 +271,21 @@ async function resolveFoamTitle() {
 
 function resolveFoamSelectedText() {
   return findSelectionContent()?.content ?? '';
+}
+
+function resolveFoamCurrentDir() {
+  try {
+    // Try to get the directory of the currently active editor
+    const currentDir = getCurrentEditorDirectory();
+    return currentDir.toFsPath();
+  } catch (error) {
+    // Fall back to workspace root if no active editor
+    if (workspace.workspaceFolders && workspace.workspaceFolders.length > 0) {
+      return fromVsCodeUri(workspace.workspaceFolders[0].uri).toFsPath();
+    }
+    // If no workspace is open, raise
+    throw new Error('No workspace is open');
+  }
 }
 
 /**

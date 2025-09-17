@@ -145,7 +145,7 @@ export const Uri = {
   },
 
   parse(value: string): Uri {
-    return createVSCodeUri(URI.parse(value));
+    return createVSCodeUri(URI.parse(value, 'file'));
   },
 
   from(components: {
@@ -161,11 +161,11 @@ export const Uri = {
     }${components.query ? '?' + components.query : ''}${
       components.fragment ? '#' + components.fragment : ''
     }`;
-    return createVSCodeUri(URI.parse(uriString));
+    return createVSCodeUri(URI.parse(uriString, 'file'));
   },
 
   joinPath(base: Uri, ...pathSegments: string[]): Uri {
-    const baseUri = URI.parse(base.toString());
+    const baseUri = URI.parse(base.toString(), 'file');
     return createVSCodeUri(baseUri.joinPath(...pathSegments));
   },
 };
@@ -670,7 +670,12 @@ class MockTextDocument implements TextDocument {
   }
 
   getText(range?: Range): string {
-    // simplify by always returning the full content for now
+    // use the range to get specific parts if needed
+    if (range) {
+      const startOffset = this.offsetAt(range.start);
+      const endOffset = this.offsetAt(range.end);
+      return this._content.slice(startOffset, endOffset);
+    }
     return this._content;
   }
 
@@ -1032,10 +1037,14 @@ function createMockExtensionContext(): ExtensionContext {
       update: () => Promise.resolve(),
     },
     extensionPath: '/mock/extension/path',
-    extensionUri: createVSCodeUri(URI.parse('file:///mock/extension/path')),
+    extensionUri: createVSCodeUri(
+      URI.parse('file:///mock/extension/path', null)
+    ),
     storageUri: undefined,
-    globalStorageUri: createVSCodeUri(URI.parse('file:///mock/global/storage')),
-    logUri: createVSCodeUri(URI.parse('file:///mock/logs')),
+    globalStorageUri: createVSCodeUri(
+      URI.parse('file:///mock/global/storage', null)
+    ),
+    logUri: createVSCodeUri(URI.parse('file:///mock/logs', null)),
     secrets: {
       get: () => Promise.resolve(undefined),
       store: () => Promise.resolve(),
@@ -1414,7 +1423,9 @@ export const workspace = {
       uri = uriOrFileNameOrOptions;
     } else {
       // Create untitled document
-      uri = createVSCodeUri(URI.parse(`untitled:Untitled-${Date.now()}`));
+      uri = createVSCodeUri(
+        URI.parse(`untitled:Untitled-${Date.now()}`, 'file')
+      );
       content = uriOrFileNameOrOptions.content || '';
     }
 
@@ -1426,7 +1437,7 @@ export const workspace = {
   async applyEdit(edit: WorkspaceEdit): Promise<boolean> {
     try {
       for (const [uriString, edits] of edit._getEdits()) {
-        const uri = createVSCodeUri(URI.parse(uriString));
+        const uri = createVSCodeUri(URI.parse(uriString, 'file'));
         const document = await workspace.openTextDocument(uri);
 
         if (document instanceof MockTextDocument) {

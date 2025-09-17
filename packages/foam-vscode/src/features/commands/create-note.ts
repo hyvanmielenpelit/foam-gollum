@@ -11,7 +11,6 @@ import { TemplateLoader } from '../../services/template-loader';
 import { Template } from '../../services/note-creation-types';
 import { Resolver } from '../../services/variable-resolver';
 import { asAbsoluteWorkspaceUri, fileExists } from '../../services/editor';
-import { isSome } from '../../core/utils';
 import { CommandDescriptor } from '../../utils/commands';
 import { Foam } from '../../core/model/foam';
 import { Location } from '../../core/model/location';
@@ -22,6 +21,7 @@ import {
   toVsCodeRange,
   toVsCodeUri,
 } from '../../utils/vsc-utils';
+import { Logger } from '../../core/utils/log';
 
 export default async function activate(
   context: ExtensionContext,
@@ -89,11 +89,25 @@ const DEFAULT_NEW_NOTE_TEXT = `# \${FOAM_TITLE}
 
 \${FOAM_SELECTED_TEXT}`;
 
+/**
+ * Related to #1505.
+ * This function forces the date to be local by removing any time information and
+ * adding a local time (noon) to it.
+ * @param dateString The date string, either in YYYY-MM-DD format or any format parsable by Date()
+ * @returns The parsed Date object
+ */
+function forceLocalDate(dateString: string): Date {
+  // Remove the time part if present
+  const dateOnly = dateString.split('T')[0];
+  // Otherwise, treat as local date by adding local noon time
+  return new Date(dateOnly + 'T12:00:00');
+}
+
 export async function createNote(args: CreateNoteArgs, foam: Foam) {
   args = args ?? {};
-  const date =
+  const foamDate =
     typeof args.date === 'string'
-      ? new Date(Date.parse(args.date))
+      ? forceLocalDate(args.date)
       : args.date instanceof Date
       ? args.date
       : new Date();
@@ -130,6 +144,7 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
     if (!templateUri) {
       template = {
         type: 'markdown',
+        metadata: new Map(),
         content: args.text || DEFAULT_NEW_NOTE_TEXT,
       };
     } else if (await fileExists(templateUri)) {
@@ -145,22 +160,28 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
 
   // If notePath is provided, add it to template metadata to avoid unnecessary title resolution
   if (args.notePath && template.type === 'markdown') {
-    template.metadata = template.metadata || new Map();
     template.metadata.set(
       'filepath',
-      args.notePath instanceof URI ? args.notePath.toFsPath() : args.notePath
+      typeof args.notePath === 'string'
+        ? args.notePath
+        : args.notePath.toFsPath()
     );
   }
 
   // Create resolver with all variables upfront
   const resolver = new Resolver(
     new Map(Object.entries(args.variables ?? {})),
-    date
+    foamDate,
+    args.title
   );
 
-  // Define all variables in the resolver with proper mapping
-  if (args.title) {
-    resolver.define('FOAM_TITLE', args.title);
+  if (Logger.getLevel() === 'debug') {
+    Logger.debug(`[createNote] args: ${JSON.stringify(args, null, 2)}`);
+    Logger.debug(`[createNote] template: ${JSON.stringify(template, null, 2)}`);
+    Logger.debug(`[createNote] resolver: ${JSON.stringify(resolver, null, 2)}`);
+    Logger.debug(
+      `[createNote] foamDate: ${foamDate.toISOString()} (timezone offset: ${foamDate.getTimezoneOffset()})`
+    );
   }
 
   // Process template using the new engine with unified resolver

@@ -2,7 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project overview
+
+Foam is a personal knowledge management and sharing system, built on Visual Studio Code and GitHub. It allows users to organize research, keep re-discoverable notes, write long-form content, and optionally publish it to the web. The main goals are to help users create relationships between thoughts and information, supporting practices like building a "Second Brain" or a "Zettelkasten". Foam is free, open-source, and extensible, giving users ownership and control over their information. The target audience includes individuals interested in personal knowledge management, note-taking, and content creation, particularly those familiar with VS Code and GitHub.
+
 ## Quick Commands
+
+All the following commands are to be executed from the `packages/foam-vscode` directory
 
 ### Development
 
@@ -23,6 +29,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Unit tests run in Node.js environment using Jest
 Integration tests require VS Code extension host
 
+Unit tests are named `*.test.ts` and integration tests are `*.spec.ts`. These test files live alongside the code in the `src` directory. An integration test is one that has a direct or indirect dependency on `vscode` module.
+There is a mock `vscode` module that can be used to run most integration tests without starting VS Code. Tests that can use this mock are start with the line `/* @unit-ready */`.
+
+- If you are interested in a test inside a `*.test.ts` file, run `yarn test:unit`
+- If you are interested in a test inside a `*.spec.ts` file that starts with `/* @unit-ready */` run `yarn test:unit-with-specs`
+- If you are interested in a test inside a `*.spec.ts` file that does not include `/* @unit-ready */` run `yarn test`
+
 While in development we mostly want to use `yarn test:unit-with-specs`.
 When multiple tests are failing, look at all of them, but only focus on fixing the first one. Once that is fixed, run the test suite again and repeat the process.
 
@@ -32,6 +45,8 @@ Never mock anything that is inside `packages/foam-vscode/src/core/`.
 Use the utility functions from `test-utils.ts` and `test-utils-vscode.ts` and `test-datastore.ts`.
 
 To improve readability of the tests, set up the test and tear it down within the test case (as opposed to use other functions like `beforeEach` unless it's much better to do it that way)
+
+Never fix a test by adjusting the expectation if the expectation is correct, test must be fixed by addressing the issue with the code.
 
 ## Repository Structure
 
@@ -44,6 +59,10 @@ This is a monorepo using Yarn workspaces with the main VS Code extension in `pac
 - `packages/foam-vscode/src/services/` - service implementations, might have VS Code dependency, but we try keep that to a minimum
 - `packages/foam-vscode/src/test/` - Test utilities and mocks
 - `docs/` - Documentation and user guides
+
+### File Naming Patterns
+
+Test files follow `*.test.ts` for unit tests and `*.spec.ts` for integration tests, living alongside the code in `src`. An integration test is one that has a direct or indirect dependency on `vscode` package.
 
 ### Important Constraint
 
@@ -99,9 +118,21 @@ This allows features to:
 
 ## Development Workflow
 
+We build production code together. I handle implementation details while you guide architecture and catch complexity early.
+When working on an issue, check if a `.agent/tasks/<issue-id>-<sanitized-title>.md` exists. If not, suggest whether we should start by doing a research on it (using the `/research-issue <issue-id>`) command.
+Whenever we work together on a task, feel free to challenge my assumptions and ideas and be critical if useful.
+
+## Core Workflow: Research → Plan → Implement → Validate
+
+**Start every feature with:** "Let me research the codebase and create a plan before implementing."
+
+1. **Research** - Understand existing patterns and architecture
+2. **Plan** - Propose approach and verify with you
+3. **Implement** - Build with tests and error handling
+4. **Validate** - ALWAYS run formatters, linters, and tests after implementation
+
 - Whenever working on a feature or issue, let's always come up with a plan first, then save it to a file called `/.agent/current-plan.md`, before getting started with code changes. Update this file as the work progresses.
 - Let's use pure functions where possible to improve readability and testing.
-- After saving a file, always run `prettier` on it to adjust its formatting.
 
 ### Adding New Features
 

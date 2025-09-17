@@ -1,3 +1,4 @@
+/* @unit-ready */
 import { Selection, window } from 'vscode';
 import { Resolver } from './variable-resolver';
 import { Variable } from '../core/common/snippetParser';
@@ -62,6 +63,25 @@ describe('variable-resolver, text substitution', () => {
 });
 
 describe('variable-resolver, variable resolution', () => {
+  it('should resolve FOAM_DATE_DAY_ISO correctly for all days', async () => {
+    // ISO weekday: Monday=1, Sunday=7
+    const isoResults = [
+      { js: 0, iso: '7' }, // Sunday
+      { js: 1, iso: '1' }, // Monday
+      { js: 2, iso: '2' }, // Tuesday
+      { js: 3, iso: '3' }, // Wednesday
+      { js: 4, iso: '4' }, // Thursday
+      { js: 5, iso: '5' }, // Friday
+      { js: 6, iso: '6' }, // Saturday
+    ];
+    for (const { js, iso } of isoResults) {
+      // 2025-09-14 is a Sunday, 2025-09-15 is a Monday, etc.
+      const date = new Date(2025, 8, 14 + js); // September is month 8 (0-based)
+      const resolver = new Resolver(new Map(), date);
+      const result = await resolver.resolve(new Variable('FOAM_DATE_DAY_ISO'));
+      expect(result).toBe(iso);
+    }
+  });
   it('should do nothing for unknown Foam-specific variables', async () => {
     const variables = [new Variable('FOAM_FOO')];
 
@@ -72,7 +92,24 @@ describe('variable-resolver, variable resolution', () => {
     expect(await resolver.resolveAll(variables)).toEqual(expected);
   });
 
-  it('should resolve FOAM_TITLE', async () => {
+  it('should resolve FOAM_TITLE if provided in constructor', async () => {
+    const foamTitle = 'My note title';
+
+    const expected = new Map<string, string>();
+    expected.set('FOAM_TITLE', foamTitle);
+    expected.set('FOAM_SLUG', 'my-note-title');
+
+    const variables = [new Variable('FOAM_TITLE'), new Variable('FOAM_SLUG')];
+
+    const resolver = new Resolver(
+      new Map<string, string>(),
+      new Date(),
+      foamTitle
+    );
+    expect(await resolver.resolveAll(variables)).toEqual(expected);
+  });
+
+  it('should resolve FOAM_TITLE if provided as variable', async () => {
     const foamTitle = 'My note title';
     const variables = [new Variable('FOAM_TITLE'), new Variable('FOAM_SLUG')];
 
@@ -133,21 +170,24 @@ describe('variable-resolver, variable resolution', () => {
       new Variable('FOAM_DATE_MINUTE'),
       new Variable('FOAM_DATE_SECOND'),
       new Variable('FOAM_DATE_SECONDS_UNIX'),
+      new Variable('FOAM_DATE_DAY_ISO'),
     ];
 
     const expected = new Map<string, string>();
+    const now = new Date();
     expected.set(
       'FOAM_DATE_YEAR',
-      new Date().toLocaleString('default', { year: 'numeric' })
+      now.toLocaleString('default', { year: 'numeric' })
     );
     expected.set(
       'FOAM_DATE_MONTH_NAME',
-      new Date().toLocaleString('default', { month: 'long' })
+      now.toLocaleString('default', { month: 'long' })
     );
     expected.set(
       'FOAM_DATE_DATE',
-      new Date().toLocaleString('default', { day: '2-digit' })
+      now.toLocaleString('default', { day: '2-digit' })
     );
+    expected.set('FOAM_DATE_DAY_ISO', String(((now.getDay() + 6) % 7) + 1));
     const givenValues = new Map<string, string>();
     const resolver = new Resolver(givenValues, new Date());
 
@@ -157,7 +197,7 @@ describe('variable-resolver, variable resolution', () => {
   });
 
   it('should resolve FOAM_DATE_* properties with given date', async () => {
-    const targetDate = new Date(2021, 9, 12, 1, 2, 3);
+    const targetDate = new Date(2021, 9, 15, 1, 2, 3); // Friday, October 15, 2021
     const variables = [
       new Variable('FOAM_DATE_YEAR'),
       new Variable('FOAM_DATE_YEAR_SHORT'),
@@ -172,6 +212,7 @@ describe('variable-resolver, variable resolution', () => {
       new Variable('FOAM_DATE_SECOND'),
       new Variable('FOAM_DATE_SECONDS_UNIX'),
       new Variable('FOAM_DATE_WEEK'),
+      new Variable('FOAM_DATE_DAY_ISO'),
     ];
 
     const expected = new Map<string, string>();
@@ -180,9 +221,9 @@ describe('variable-resolver, variable resolution', () => {
     expected.set('FOAM_DATE_MONTH', '10');
     expected.set('FOAM_DATE_MONTH_NAME', 'October');
     expected.set('FOAM_DATE_MONTH_NAME_SHORT', 'Oct');
-    expected.set('FOAM_DATE_DATE', '12');
-    expected.set('FOAM_DATE_DAY_NAME', 'Tuesday');
-    expected.set('FOAM_DATE_DAY_NAME_SHORT', 'Tue');
+    expected.set('FOAM_DATE_DATE', '15');
+    expected.set('FOAM_DATE_DAY_NAME', 'Friday');
+    expected.set('FOAM_DATE_DAY_NAME_SHORT', 'Fri');
     expected.set('FOAM_DATE_HOUR', '01');
     expected.set('FOAM_DATE_WEEK', '41');
     expected.set('FOAM_DATE_MINUTE', '02');
@@ -191,6 +232,7 @@ describe('variable-resolver, variable resolution', () => {
       'FOAM_DATE_SECONDS_UNIX',
       (targetDate.getTime() / 1000).toString()
     );
+    expected.set('FOAM_DATE_DAY_ISO', '5'); // Friday is 5 in ISO 8601
 
     const givenValues = new Map<string, string>();
     const resolver = new Resolver(givenValues, targetDate);
@@ -222,6 +264,51 @@ describe('variable-resolver, variable resolution', () => {
       );
     });
   });
+
+  describe('FOAM_CURRENT_DIR', () => {
+    it('should resolve to workspace root when no active editor', async () => {
+      const resolver = new Resolver(new Map<string, string>(), new Date());
+      const result = await resolver.resolve(new Variable('FOAM_CURRENT_DIR'));
+
+      // Should resolve to some directory path
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('should resolve to current directory when editor is active', async () => {
+      // Create a test file in a subdirectory
+      const testFile = await createFile('Test content', [
+        'test-dir',
+        'test-file.md',
+      ]);
+
+      try {
+        // Open the file to make it the active editor
+        await showInEditor(testFile.uri);
+
+        const resolver = new Resolver(new Map<string, string>(), new Date());
+        const result = await resolver.resolve(new Variable('FOAM_CURRENT_DIR'));
+
+        // Should resolve to the test-dir directory
+        expect(typeof result).toBe('string');
+        expect(result).toContain('test-dir');
+      } finally {
+        // Clean up
+        await deleteFile(testFile.uri);
+      }
+    });
+
+    it('should be included in known foam variables', async () => {
+      const input = '${FOAM_CURRENT_DIR}';
+      const resolver = new Resolver(new Map(), new Date());
+      const result = await resolver.resolveText(input);
+
+      // Should resolve to a directory path, not remain as ${FOAM_CURRENT_DIR}
+      expect(result).not.toEqual(input);
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+    });
+  });
 });
 
 describe('variable-resolver, resolveText', () => {
@@ -238,6 +325,18 @@ describe('variable-resolver, resolveText', () => {
 
     const resolver = new Resolver(new Map(), new Date());
     expect(await resolver.resolveText(input)).toEqual(expected);
+  });
+
+  it.each([
+    ['2021-10-12T00:00:00'],
+    ['2021-10-12T23:59:59'],
+    ['2021-10-12T12:34:56'],
+  ])('should resolve date variables in local time', async (d: string) => {
+    // Related to #1502
+    const resolver = new Resolver(new Map(), new Date(d));
+    expect(await resolver.resolve(new Variable('FOAM_DATE_DATE'))).toEqual(
+      '12'
+    );
   });
 
   it('should do nothing for unknown Foam-specific variables', async () => {
