@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Collaboration Principles
+
+**Be honest and objective**: Evaluate all suggestions, ideas, and feedback on their technical merits. Don't be overly complimentary or sycophantic. If something doesn't make sense, doesn't align with best practices, or could be improved, say so directly and constructively. Technical accuracy and project quality take precedence over being agreeable.
+
 ## Project overview
 
 Foam is a personal knowledge management and sharing system, built on Visual Studio Code and GitHub. It allows users to organize research, keep re-discoverable notes, write long-form content, and optionally publish it to the web. The main goals are to help users create relationships between thoughts and information, supporting practices like building a "Second Brain" or a "Zettelkasten". Foam is free, open-source, and extensible, giving users ownership and control over their information. The target audience includes individuals interested in personal knowledge management, note-taking, and content creation, particularly those familiar with VS Code and GitHub.
@@ -21,22 +25,22 @@ All the following commands are to be executed from the `packages/foam-vscode` di
 ### Testing
 
 - `yarn test` - Run all tests (unit + integration)
-- `yarn test:unit-with-specs` - Run only unit tests (\*.test.ts files and the .spec.ts files marked a vscode-mock friendly)
+- `yarn test:unit` - Run unit tests (\*.test.ts files and the .spec.ts files marked a vscode-mock friendly)
 - `yarn test:e2e` - Run only integration tests (\*.spec.ts files)
 - `yarn lint` - Run linting
 - `yarn test-reset-workspace` to clean test workspace
 
 Unit tests run in Node.js environment using Jest
 Integration tests require VS Code extension host
+When running tests, do not provide additional parameters, they are ignored by the custom runner script. You cannot run just a test, you have to run the whole suite.
 
 Unit tests are named `*.test.ts` and integration tests are `*.spec.ts`. These test files live alongside the code in the `src` directory. An integration test is one that has a direct or indirect dependency on `vscode` module.
 There is a mock `vscode` module that can be used to run most integration tests without starting VS Code. Tests that can use this mock are start with the line `/* @unit-ready */`.
 
-- If you are interested in a test inside a `*.test.ts` file, run `yarn test:unit`
-- If you are interested in a test inside a `*.spec.ts` file that starts with `/* @unit-ready */` run `yarn test:unit-with-specs`
+- If you are interested in a test inside a `*.test.ts` file, run `yarn test:unit` or inside a `*.spec.ts` file that starts with `/* @unit-ready */` run `yarn test:unit`
 - If you are interested in a test inside a `*.spec.ts` file that does not include `/* @unit-ready */` run `yarn test`
 
-While in development we mostly want to use `yarn test:unit-with-specs`.
+While in development we mostly want to use `yarn test:unit`.
 When multiple tests are failing, look at all of them, but only focus on fixing the first one. Once that is fixed, run the test suite again and repeat the process.
 
 When writing tests keep mocking to a bare minimum. Code should be written in a way that is easily testable and if I/O is necessary, it should be done in appropriate temporary directories.
@@ -177,6 +181,22 @@ When adding to `src/core/`:
 - **Key Libraries**: remark (markdown parsing), lru-cache, lodash
 
 The extension supports both Node.js and browser environments via separate build targets.
+
+## Documentation Guidelines
+
+### User Documentation (`docs/user/`)
+
+Documentation in `docs/user/` must be written for non-technical users. The goal is to help novice users quickly start using features, not to explain technical implementation details.
+
+**Writing Guidelines:**
+
+- **Target audience**: Assume users are new to Foam and may not be technical
+- **Be concise**: Keep it short and to the point - every sentence must convey useful information
+- **Avoid repetition**: Don't repeat the same concept in different words
+- **Focus on "how to use"**: Show users what they can do and how to do it, not how it works internally
+- **Balance brevity with clarity**: Users won't read verbose documentation, but they need enough information to succeed
+- **Use examples**: Show practical use cases rather than abstract descriptions
+- **Start with the most common use case**: Lead with what most users will want to do first
 
 # GitHub CLI Integration
 

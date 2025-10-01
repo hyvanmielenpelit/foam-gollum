@@ -13,7 +13,7 @@ export abstract class MarkdownLink {
     /\[\[\s*([^|#\]]+)\s*\|?\s*([^#\]]+)?#?([^\]]*)?\s*\]\]/
   );
   private static directLinkRegex = new RegExp(
-    /\[(.*)\]\(<?([^#>]*)?#?([^\]>]+)?>?\)/
+    /\[(.*)\]\(<?([^#>]*?)(?:#([^>\s"'()]*))?(?:\s+(?:"[^"]*"|'[^']*'))?>?\)/
   );
   private static wikilinkRegex3 = new RegExp(
     /\|\s*#/
