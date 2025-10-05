@@ -25,6 +25,9 @@ const config = {
     platform: 'browser',
     format: 'cjs',
     outfile: `out/bundles/extension-web.js`,
+    define: {
+      global: 'globalThis',
+    },
     plugins: [
       polyfillPlugin.polyfillNode({
         // Options (optional)
