@@ -25,7 +25,7 @@ const COMPLETION_CURSOR_MOVE = {
 
 export const WIKILINK_REGEX = /\[\[[^[\]]*(?!.*\]\])/;
 export const GOLLUM_REGEX = /\[\[([^\[|]*)|$/;
-export const SECTION_REGEX = /\[\[([^[\]]*#(?!.*\]\]))/;
+export const SECTION_REGEX = /\[\[([^\[\]]*#(?!.*\]\]))/;
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -132,7 +132,7 @@ export class SectionCompletionProvider
   ): vscode.ProviderResult<vscode.CompletionList<vscode.CompletionItem>> {
     const cursorPrefix = document
       .lineAt(position)
-      .text.substr(0, position.character);
+      .text.substring(0, position.character);
 
     // Requires autocomplete only if cursorPrefix matches `[[` that NOT ended by `]]`.
     // See https://github.com/foambubble/foam/pull/596#issuecomment-825748205 for details.
@@ -150,7 +150,9 @@ export class SectionCompletionProvider
       const slice =  match[1].slice(0, -1);
       if (isGollum) {
         const indexOfPipe = slice.lastIndexOf('|');
-        resourceId = slice.substring(indexOfPipe + 1);
+        const target2 = slice.substring(indexOfPipe + 1);
+        let {target, isRoot, parentCount} = MarkdownLink.convertGollumTarget(target2);
+        resourceId = target;
         if (resourceId === '') {
           resourceId = fromVsCodeUri(document.uri);
         }
@@ -314,10 +316,6 @@ export class WikilinkCompletionProvider
           ? `${identifier}|${resource.title}`
           : identifier;
       }
-      item.commitCharacters = useAlias ? [] : linkCommitCharacters;
-      item.insertText = useAlias
-        ? `${identifier}|${resource.title}`
-        : identifier;
       // When using aliases or markdown link format, don't allow commit characters
       // since we either have the full text or will convert it
       item.commitCharacters =

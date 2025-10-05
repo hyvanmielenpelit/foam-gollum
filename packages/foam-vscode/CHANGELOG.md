@@ -2,6 +2,11 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.5.0] - 2025-10-04
+
+- Merge Foam 0.28.3.
+- Fix section heading autocompletion for wikilinks starting with a slash (/).
+
 ## [1.4.0] - 2025-10-01
 
 - Merge Foam 0.28.1.
