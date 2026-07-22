@@ -47,6 +47,18 @@ describe('Link generation in preview', () => {
     );
   });
 
+  it('generates a link with spaces', () => {
+    expect(md.render(`[[/Spells/Minor healing]]`)).toEqual(
+      `<p><a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">/Spells/Minor healing</a></p>\n`
+    );
+  });
+
+  it('generates a link with alias and spaces', () => {
+    expect(md.render(`1 Random [[Abjuration spell|/Abjuration Spells]] (level -1-4)`)).toEqual(
+      `<p>1 Random <a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">Abjuration spell</a> (level -1-4)</p>\n`
+    );
+  });
+
   it('generates a wikilink even when there is a link reference', () => {
     const note = `[[note-a]]
     [note-a]: <note-a.md> "Note A"`;

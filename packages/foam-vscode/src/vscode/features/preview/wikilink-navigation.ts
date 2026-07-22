@@ -56,7 +56,7 @@ export const markdownItWikilinkNavigation = (
   const { linkResolver } = options;
   return md.use(markdownItRegex, {
     name: 'connect-wikilinks',
-    regex: /(?=[^!])\[\[([^[\]]+?)\]\]/,
+    regex: /(?<!!)\[\[([^[\]]+?)\]\]/,
     replace: (wikilink: string) => {
       try {
         const { target, section, blockId, alias } = MarkdownLink.analyzeLink({
