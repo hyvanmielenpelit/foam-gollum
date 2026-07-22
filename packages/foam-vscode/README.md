@@ -154,7 +154,7 @@ You can customize the image dropdown template with the `foam.fileDropdown.imageT
 
 <tr>
 <td><code>"gollum"</code></td>
-<td><code>&#91;&#91;Link|alt=Text, width=Width, height=Height&#93;&#93;</code></td>
+<td><code>&#91;&#91;Link|alt=Text, width=Widthpx, height=Heightpx&#93;&#93;</code></td>
 </tr>
 
 </tbody>
