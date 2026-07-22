@@ -116,8 +116,10 @@ export class MarkdownResourceProvider implements ResourceProvider {
         if (wikiLinkSyntax === 'gollum') {
           let subdir = '';
           const retValue = getResourceSubDir(resource.uri.path, parentCount ?? 0, workspace.roots);
+          let workspaceRootPath = '';
           if (retValue) {
             subdir = retValue.subdir;
+            workspaceRootPath = retValue.workspaceRootPath;
             if (retValue.parentOverCount) {
               return undefined;
             }
@@ -132,7 +134,7 @@ export class MarkdownResourceProvider implements ResourceProvider {
               targetUri = targetUri.with({ fragment: definedUri.fragment });
             }
           } else {
-            const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspace);
+            const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspaceRootPath, workspace);
             targetUri =
               target === ''
                 ? resource.uri
@@ -173,8 +175,10 @@ export class MarkdownResourceProvider implements ResourceProvider {
         if (wikiLinkSyntax === 'gollum') {
           let subdir = '';
           const retValue = getResourceSubDir(resource.uri.path, parentCount ?? 0, workspace.roots);
+          let workspaceRootPath = '';
           if (retValue) {
             subdir = retValue.subdir;
+            workspaceRootPath = retValue.workspaceRootPath;
             if (retValue.parentOverCount) {
               return undefined;
             }
@@ -185,7 +189,7 @@ export class MarkdownResourceProvider implements ResourceProvider {
             break;
           }
 
-          const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspace);
+          const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspaceRootPath, workspace);
           targetUri = workspace.find2(filePath)?.uri ?? URI.placeholder(filePath);
 
           if (section && !targetUri.isPlaceholder()) {
@@ -242,14 +246,13 @@ export class MarkdownResourceProvider implements ResourceProvider {
     return targetUri;
   }
 
-  getFilePathForTarget(target: string, subdir: string, isRoot: boolean, workspace: FoamWorkspace) {
-    const workspaceFolderPath = workspace.roots.length > 0 ? workspace.roots[0].path : '';
+  getFilePathForTarget(target: string, subdir: string, isRoot: boolean, workspaceRootPath: string, workspace: FoamWorkspace) {
     let filePath: string;
     if (isRoot) {
-      filePath = path.join(workspaceFolderPath, target).replace(/\\/g, "/");
+      filePath = path.join(workspaceRootPath, target).replace(/\\/g, "/");
     } else {
       const resourceSubDir = (subdir ?? '').length > 0 ? subdir : '';
-      filePath = path.join(workspaceFolderPath, resourceSubDir, target).replace(/\\/g, "/");
+      filePath = path.join(workspaceRootPath, resourceSubDir, target).replace(/\\/g, "/");
     }
     const validExtension = this.getValidExtension(filePath);
     if(validExtension === '') {
@@ -329,13 +332,14 @@ export function getResourceSubDir(filePath: string, parentCount: number, workspa
     dir = dir.substring(0, lastIndexOfSlash);
   }
 
-  if (dir ?? '' !== '') {
+  if (dir !== '') {
     dir += '/';
   }
 
   return { 
     subdir: dir, 
-    parentOverCount: parentOverCount
+    parentOverCount: parentOverCount,
+    workspaceRootPath: workspaceRootPath
   };
 }
 

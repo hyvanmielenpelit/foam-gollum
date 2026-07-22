@@ -161,6 +161,7 @@ export async function activate(context: ExtensionContext) {
             'foam.files.attachmentExtensions',
             'foam.files.noteExtensions',
             'foam.files.defaultNoteExtension',
+            'foam.useCustomFileDropdownProvider',
           ].some(setting => e.affectsConfiguration(setting))
         ) {
           window.showInformationMessage(
@@ -170,7 +171,7 @@ export async function activate(context: ExtensionContext) {
       })
     );
 
-    const useCustomFileDropdownProvider = getFoamVsCodeConfig('useCustomFileDropdownProvider');
+    const useCustomFileDropdownProvider = getFoamVsCodeConfig('useCustomFileDropdownProvider', true);
     if (useCustomFileDropdownProvider) {
       context.subscriptions.push(
         languages.registerDocumentDropEditProvider(

@@ -10,7 +10,7 @@ export abstract class MarkdownLink {
     /\[\[([^#|]+)?#?([^|]+)?\|?(.*)?]]/
   );
   private static wikilinkRegex2 = new RegExp(
-    /\[\[\s*([^|#\]]+)\s*\|?\s*([^#\]]+)?#?([^\]]*)?s*]]/
+    /\[\[\s*([^|#\]]+)?\s*\|?\s*([^#\]]+)?#?([^\]]*)?\s*]]/
   );
   private static directLinkRegex =
     /\[(.*)\]\((?:<([^#>]*)(?:#([^>]*))?>\s*|([^#>]*?)(?:#([^)>"']*))?(?:\s+(?:"[^"]*"|'[^']*'))?)?\)/;
@@ -24,11 +24,15 @@ export abstract class MarkdownLink {
       target = target.substring(1);
       isRoot = true;
     }
-    if (target.startsWith('./')) {
+    while (target.startsWith('./')) {
       target = target.substring(2);
     }
     while (target.startsWith('../')) {
       target = target.substring(3);
+      parentCount++;
+    }
+    if (target === '..') {
+      target = '';
       parentCount++;
     }
     return {
@@ -60,9 +64,11 @@ export abstract class MarkdownLink {
         }
         if (wikiLinkSyntax === 'gollum') {
           // use Gollum-style syntax
-          let [, alias, target, section] = this.wikilinkRegex2.exec(
-            link.rawText
-          );
+          const match = this.wikilinkRegex2.exec(link.rawText);
+          if (!match) {
+            throw new Error(`Failed to parse Gollum link: ${link.rawText}`);
+          }
+          let [, alias, target, section] = match;
           const isMatch3 = this.wikilinkRegex3.test(link.rawText);
 
           const extension = path.extname(alias) ?? '';
@@ -73,7 +79,11 @@ export abstract class MarkdownLink {
             if((target ?? '').length > 0) {
               imageProperties = target;
             }
-            target = decodeURI(alias);
+            try {
+              target = decodeURI(alias);
+            } catch (e) {
+              target = alias; // Fallback if malformed URI
+            }
             alias = '';
             linkType = "image";
           }
@@ -189,23 +199,33 @@ export abstract class MarkdownLink {
     if (link.type === 'external') {
       throw new Error('Cannot update an external link');
     }
-    const { target, section, blockId, alias } = MarkdownLink.analyzeLink(link);
+    // Support for Gollum image links with properties
+    const { target, section, blockId, alias, imageProperties, linkType: pType } = MarkdownLink.analyzeLink(link);
     const newTarget = delta.target ?? target;
     // Preserve the existing fragment (section or block anchor) when not overriding.
     const existingFragment = blockId ? `^${blockId}` : section;
     const newSection = delta.section ?? existingFragment ?? '';
     const newAlias = delta.alias ?? alias ?? '';
     const sectionDivider = newSection ? '#' : '';
-    const aliasDivider = newAlias ? '|' : '';
+    let aliasDivider = newAlias ? '|' : '';
     const embed = delta.isEmbed ?? link.isEmbed ? '!' : '';
     const type = delta.type ?? link.type;
     if (type === 'wikilink') {
       const wikiLinkSyntax = Config.getWikilinksSyntax();
       if (wikiLinkSyntax === 'gollum') {
-        return {
-          newText: `${embed}[[${newAlias}${aliasDivider}${newTarget}${sectionDivider}${newSection}]]`,
-          range: link.range,
-        };      
+        if (pType === 'image') {
+          // Gollum images put properties after the pipe
+          const props = imageProperties ? `|${imageProperties}` : '';
+          return {
+            newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${props}]]`,
+            range: link.range,
+          };
+        } else {
+          return {
+            newText: `${embed}[[${newAlias}${aliasDivider}${newTarget}${sectionDivider}${newSection}]]`,
+            range: link.range,
+          };      
+        }
       } else {
         return {
           newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${aliasDivider}${newAlias}]]`,

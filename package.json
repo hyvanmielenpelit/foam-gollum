@@ -1,8 +1,8 @@
 {
-  "name": "foam",
+  "name": "foam-gollum",
   "version": "0.2.0",
   "description": "Foam",
-  "repository": "git@github.com:foambubble/foam.git",
+  "repository": "git@github.com:hyvanmielenpelit/foam-gollum.git",
   "license": "MIT",
   "private": "true",
   "workspaces": [

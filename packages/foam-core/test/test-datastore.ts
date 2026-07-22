@@ -75,9 +75,7 @@ export class FileDataStore implements IDataStore {
   }
 }
 
-export const toMatcherPathFormat = isWindows
-  ? (uri: URI) => uri.toFsPath().replace(/\\/g, '/')
-  : (uri: URI) => uri.toFsPath();
+export const toMatcherPathFormat = (uri: URI) => uri.toFsPath().replace(/\\/g, '/');
 
 export const toFsPath = isWindows
   ? (path: string): string => path.replace(/\//g, '\\')

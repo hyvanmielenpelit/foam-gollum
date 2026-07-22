@@ -419,10 +419,25 @@ export class FoamWorkspace implements IDisposable {
    * Used for case-insensitive path-based lookups in Gollum mode.
    */
   public find2(reference: string): Resource | null {
-    const id = this.getTrieIdentifier(reference);
+    let id = this.getTrieIdentifier(reference);
+    if (!id.endsWith('/')) {
+      id = id + '/';
+    }
+    
+    let mdId = this.getTrieIdentifier(reference + this.defaultExtension);
+    if (!mdId.endsWith('/')) {
+      mdId = mdId + '/';
+    }
+    
     const resources: Resource[] = [];
     this._resources.find(id).forEach(elm => resources.push(elm[1]));
+    
+    if (resources.length === 0) {
+      this._resources.find(mdId).forEach(elm => resources.push(elm[1]));
+    }
+    
     if (resources.length > 0) {
+      resources.sort((a, b) => a.uri.path.localeCompare(b.uri.path));
       return resources[0];
     }
     return null;

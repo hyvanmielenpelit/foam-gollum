@@ -17,7 +17,6 @@ export class CustomMarkdownDropProvider implements vscode.DocumentDropEditProvid
     const uploadsFolderName: string = getFoamVsCodeConfig("fileDropdown.uploadsFolderName"); 
     
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
-    const workspaceFolderPath = workspaceFolder.uri.path + '/';
 
     const files = dataTransfer.get("text/uri-list").value.split(/\r?\n/);
     let text = '';
@@ -43,25 +42,29 @@ export class CustomMarkdownDropProvider implements vscode.DocumentDropEditProvid
       }
 
       let targetRelPath = '';
-      if(filePathUri.path.startsWith(workspaceFolderPath)) {
+      const filePathStr = filePathUri.fsPath.replace(/\\/g, '/');
+      const workspacePathStr = workspaceFolder.uri.fsPath.replace(/\\/g, '/') + '/';
+      
+      if(filePathStr.toLowerCase().startsWith(workspacePathStr.toLowerCase())) {
         const fileRelPath = path.relative(workspaceFolder.uri.fsPath, filePathUri.fsPath).replace(/\\/g, "/");
         targetRelPath = '/' + fileRelPath;
       } else {
-        targetRelPath = "/" + uploadsFolderName + "/";
+        const uploadDir = (uploadsFolderName && uploadsFolderName.trim().length > 0) ? uploadsFolderName : 'uploads';
+        targetRelPath = "/" + uploadDir + "/";
         if (documentAndFileRelativeDirectory !== '') {
           targetRelPath += documentAndFileRelativeDirectory + "/";
         }
         targetRelPath += fileName;
 
-        const targetFsPath = workspaceFolder.uri.path + targetRelPath;
-        const targetFsPathUri = vscode.Uri.file(targetFsPath);
+        // Ensure we strip the leading slash when using joinPath
+        const targetFsPathUri = vscode.Uri.joinPath(workspaceFolder.uri, targetRelPath.substring(1));
         await vscode.workspace.fs.copy(filePathUri, targetFsPathUri, {
           overwrite: true
         });
       }
 
       let dimensions = null;
-      if (isImage) {
+      if (isImage && filePathUri.scheme === 'file') {
         dimensions = await this.readImageDimensions(filePathUri);
       }
       

@@ -219,7 +219,7 @@ describe('variable-resolver, variable resolution', () => {
     expected.set('FOAM_DATE_WEEK_YEAR', '2021');
 
     const givenValues = new Map<string, string>();
-    const resolver = new Resolver(givenValues, targetDate);
+    const resolver = new Resolver(givenValues, targetDate, undefined, 'en-US');
 
     expect(await resolver.resolveAll(variables)).toEqual(expected);
   });

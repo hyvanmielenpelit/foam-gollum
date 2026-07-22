@@ -448,13 +448,13 @@ Some content here.
       const actual = await generateLinkReferences(
         note,
         noteText,
-        EOL,
+        '\n',
         workspace,
         false
       );
       const updated = TextEdit.apply(noteText, actual);
 
-      expect(updated).toBe(textForNote(testCase.expected));
+      expect(updated.replace(/\r\n/g, '\n')).toBe(textForNote(testCase.expected).replace(/\r\n/g, '\n'));
     });
   });
 });

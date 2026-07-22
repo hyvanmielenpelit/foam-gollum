@@ -3,6 +3,7 @@ import { ResourceLink } from '../model/note';
 import { Range } from '../model/range';
 import { createMarkdownParser } from '../services/markdown-parser';
 import { MarkdownLink } from './markdown-link';
+import { Config, DefaultFoamConfig } from '../config';
 
 describe('MarkdownLink', () => {
   const parser = createMarkdownParser([]);
@@ -757,6 +758,70 @@ describe('MarkdownLink', () => {
       expect(parsed.target).toEqual('note');
       expect(parsed.section).toEqual('');
       expect(parsed.alias).toEqual('Alias');
+    });
+  });
+
+  describe('Gollum syntax', () => {
+    beforeEach(() => {
+      Config.setDefaultConfig({
+        ...new DefaultFoamConfig(),
+        getWikilinksSyntax: () => 'gollum',
+      });
+    });
+    afterEach(() => {
+      Config.setDefaultConfig(new DefaultFoamConfig());
+    });
+
+    it('should parse target and alias', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[alias|target]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('target');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('alias');
+    });
+
+    it('should parse target, section and alias', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[alias|target#section]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('target');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('alias');
+    });
+
+    it('should parse image', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[image.png]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.png');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+      expect(parsed.linkType).toEqual('image');
+    });
+
+    it('should parse image and target url', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[image.png|target_url]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.png');
+      expect(parsed.imageProperties).toEqual('target_url');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+
+    it('should parse root paths', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[/root/path]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('root/path');
+      expect(parsed.isRoot).toEqual(true);
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+
+    it('should parse parent paths', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[../parent/path]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('parent/path');
+      expect(parsed.parentCount).toEqual(1);
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
     });
   });
 });

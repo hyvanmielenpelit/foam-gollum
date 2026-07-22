@@ -2,6 +2,7 @@ import { createMarkdownParser } from './markdown-parser';
 import {
   createMarkdownReferences,
   MarkdownResourceProvider,
+  getResourceSubDir,
 } from './markdown-provider';
 import { Logger } from '../utils/log';
 import { URI } from '../model/uri';
@@ -1100,5 +1101,55 @@ describe('readAsMarkdown with block fragments', () => {
       uri.with({ fragment: '^ghost' })
     );
     expect(result).toEqual(content);
+  });
+});
+
+describe('Gollum path resolution', () => {
+  describe('getResourceSubDir', () => {
+    it('should resolve subdir relative to workspace root', () => {
+      const roots = [URI.file('/workspace')];
+      const result = getResourceSubDir('/workspace/dir1/dir2/file.md', 0, roots);
+      expect(result).toEqual({ subdir: 'dir1/dir2/', parentOverCount: false, workspaceRootPath: '/workspace' });
+    });
+
+    it('should resolve subdir with parent count', () => {
+      const roots = [URI.file('/workspace')];
+      const result = getResourceSubDir('/workspace/dir1/dir2/file.md', 1, roots);
+      expect(result).toEqual({ subdir: 'dir1/', parentOverCount: false, workspaceRootPath: '/workspace' });
+    });
+
+    it('should handle excessive parent count', () => {
+      const roots = [URI.file('/workspace')];
+      const result = getResourceSubDir('/workspace/dir1/dir2/file.md', 3, roots);
+      expect(result).toEqual({ subdir: '', parentOverCount: true, workspaceRootPath: '/workspace' });
+    });
+  });
+
+  describe('getFilePathForTarget', () => {
+    let provider: MarkdownResourceProvider;
+
+    beforeEach(() => {
+      const dataStore = new InMemoryDataStore();
+      const mdParser = createMarkdownParser([]);
+      provider = new MarkdownResourceProvider(dataStore, mdParser);
+    });
+
+    it('should resolve relative path', () => {
+      const workspace = createTestWorkspace([URI.file('/workspace')]);
+      const result = provider.getFilePathForTarget('target', 'dir1/', false, '/workspace', workspace);
+      expect(result).toEqual('/workspace/dir1/target.md');
+    });
+
+    it('should resolve root path', () => {
+      const workspace = createTestWorkspace([URI.file('/workspace')]);
+      const result = provider.getFilePathForTarget('target', 'dir1/', true, '/workspace', workspace);
+      expect(result).toEqual('/workspace/target.md');
+    });
+    
+    it('should handle paths with extensions', () => {
+      const workspace = createTestWorkspace([URI.file('/workspace')]);
+      const result = provider.getFilePathForTarget('target.png', 'dir1/', false, '/workspace', workspace);
+      expect(result).toEqual('/workspace/dir1/target.png');
+    });
   });
 });
