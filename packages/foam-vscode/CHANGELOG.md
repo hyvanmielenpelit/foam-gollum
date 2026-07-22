@@ -2,6 +2,11 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.6.0] - 2026-07-22
+
+- Merge Foam 0.44.2.
+- Fix section anchor rendering.
+
 ## [1.5.0] - 2025-10-04
 
 - Merge Foam 0.28.3.

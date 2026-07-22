@@ -108,6 +108,30 @@ Content two.
       expect(section).toBeUndefined();
     });
   });
+
+  describe('convertAnchor', () => {
+    it('should lowercase and replace spaces with dashes', () => {
+      expect(Resource.convertAnchor('My Section Label')).toBe('my-section-label');
+    });
+
+    it('should remove leading and trailing dashes', () => {
+      expect(Resource.convertAnchor('-My Section-')).toBe('my-section');
+      expect(Resource.convertAnchor('  My Section  ')).toBe('my-section');
+    });
+
+    it('should collapse consecutive dashes', () => {
+      expect(Resource.convertAnchor('My   Section')).toBe('my-section');
+      expect(Resource.convertAnchor('My---Section')).toBe('my-section');
+    });
+
+    it('should remove special characters', () => {
+      expect(Resource.convertAnchor('My? Section!')).toBe('my-section');
+    });
+
+    it('should remove accents', () => {
+      expect(Resource.convertAnchor('Café Section')).toBe('cafe-section');
+    });
+  });
 });
 
 describe('Block', () => {

@@ -246,7 +246,8 @@ export abstract class Resource {
         .normalize("NFKD").replace(/[\u0300-\u036f]/g, "") // remove accents
         .replace(/[^\.\w\s-]/g, "") // remove non-word characters (except space, dot, and dash)
         .replace(/[\s\.]+/g, "-")    // replace spaces with dashes
-        .replace(/-+/g, "-");        // collapse consecutive dashes
+        .replace(/-+/g, "-")         // collapse consecutive dashes
+        .replace(/^-+|-+$/g, "");    // remove leading and trailing dashes
     }
     return null;    
   }
