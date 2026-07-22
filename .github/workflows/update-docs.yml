@@ -1,13 +1,13 @@
 name: Update Docs
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - docs/user/**/*
-      - docs/.vscode/**/*
-      - docs/assets/**/*
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      - docs/user/**/*
+#      - docs/.vscode/**/*
+#      - docs/assets/**/*
   workflow_dispatch:
 
 jobs:

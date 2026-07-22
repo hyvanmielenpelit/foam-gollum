@@ -1,19 +1,19 @@
 name: Deploy Docs
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - docs/user/**/*
-      - packages/foam-vscode/src/publish/**/*
-      - packages/foam-vscode/src/cli/**/*
-      - packages/foam-vscode/webview-ui/graph/src/**/*
-      - packages/foam-vscode/webview-ui/graph/build.cjs
-      - packages/foam-vscode/esbuild.js
-      - package.json
-      - yarn.lock
-      - .github/workflows/deploy-docs.yml
+#  push:
+#    branches:
+#      - main
+#    paths:
+#      - docs/user/**/*
+#      - packages/foam-vscode/src/publish/**/*
+#      - packages/foam-vscode/src/cli/**/*
+#      - packages/foam-vscode/webview-ui/graph/src/**/*
+#      - packages/foam-vscode/webview-ui/graph/build.cjs
+#      - packages/foam-vscode/esbuild.js
+#      - package.json
+#      - yarn.lock
+#      - .github/workflows/deploy-docs.yml
   workflow_dispatch:
 
 permissions:
