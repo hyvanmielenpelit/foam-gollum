@@ -2,6 +2,10 @@
 
 All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
 
+## [1.6.1] - 2026-07-22
+
+- Fix wikilink rendering in the preview pane.
+
 ## [1.6.0] - 2026-07-22
 
 - Merge Foam 0.44.2.
