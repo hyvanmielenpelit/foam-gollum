@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
-import { getFoamVsCodeConfig } from '../../services/config';
-import { imageExtensions } from '../../core/services/attachment-provider';
+import { getFoamVsCodeConfig } from '../../vscode/config';
+import { imageExtensions } from '@foam/core';
 import { imageSizeFromFile } from 'image-size/fromFile';
 
 export class CustomMarkdownDropProvider implements vscode.DocumentDropEditProvider {

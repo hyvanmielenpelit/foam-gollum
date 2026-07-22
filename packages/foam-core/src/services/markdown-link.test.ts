@@ -1,0 +1,762 @@
+import { getRandomURI } from '../../test/test-utils';
+import { ResourceLink } from '../model/note';
+import { Range } from '../model/range';
+import { createMarkdownParser } from '../services/markdown-parser';
+import { MarkdownLink } from './markdown-link';
+
+describe('MarkdownLink', () => {
+  const parser = createMarkdownParser([]);
+  describe('parse wikilink', () => {
+    it('should parse target', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[wikilink]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse target and section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink#section]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse target and alias', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[wikilink|alias]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('alias');
+    });
+    it('should parse links with square brackets #975', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink [with] brackets]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink [with] brackets');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse links with square brackets in alias #975', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink|alias [with] brackets]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('alias [with] brackets');
+    });
+    it('should parse target and alias with escaped separator', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink\\|alias]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('alias');
+    });
+    it('should parse target section and alias', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink with spaces#section with spaces|alias with spaces]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('wikilink with spaces');
+      expect(parsed.section).toEqual('section with spaces');
+      expect(parsed.alias).toEqual('alias with spaces');
+    });
+    it('should parse section', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[#section]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse block anchor', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[note#^myblock]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('note');
+      expect(parsed.section).toEqual('');
+      expect(parsed.blockId).toEqual('myblock');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse self-referencing block anchor', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[#^myblock]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('');
+      expect(parsed.blockId).toEqual('myblock');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse block anchor with alias', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[note#^myblock|My Alias]]`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('note');
+      expect(parsed.blockId).toEqual('myblock');
+      expect(parsed.alias).toEqual('My Alias');
+    });
+    it('should not treat ^ in the middle of section as a block anchor', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[note#foo^bar]]`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.section).toEqual('foo^bar');
+      expect(parsed.blockId).toEqual('');
+    });
+  });
+
+  describe('parse direct link', () => {
+    it('should parse target', () => {
+      const link = parser.parse(getRandomURI(), `this is a [link](to/path.md)`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse target and section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [link](to/path.md#section)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse section only', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](#section)',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse links with square brackets in label #975', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [inbox [xyz]](to/path.md)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('inbox [xyz]');
+    });
+    it('should parse links with empty label #975', () => {
+      const link = parser.parse(getRandomURI(), `this is a [](to/path.md)`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse links with angles #1039', () => {
+      const link = parser.parse(getRandomURI(), `this is a [](<to/path.md>)`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse links with angles and sections #1039', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [](<to/path.md#section>)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('');
+    });
+    it('should parse section with spaces in angle-bracket link', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](<to/path.md#My Section>)',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('My Section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse section with spaces in regular link', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](to/path.md#My Section)',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('My Section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse target with spaces in regular link', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](path with spaces.md)',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('path with spaces.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse section with spaces in angle-bracket link with spaced target', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](<path with spaces.md#My Section>)',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('path with spaces.md');
+      expect(parsed.section).toEqual('My Section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse section with spaces followed by a title attribute', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](to/path.md#My Section "title")',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('to/path.md');
+      expect(parsed.section).toEqual('My Section');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse block anchor from a direct markdown link', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [text](note.md#^myblock)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('note.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.blockId).toEqual('myblock');
+      expect(parsed.alias).toEqual('text');
+    });
+    it('should not treat a regular section fragment as a block anchor in a direct link', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [text](note.md#section)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.section).toEqual('section');
+      expect(parsed.blockId).toEqual('');
+    });
+  });
+
+  describe('parse direct link with title attributes', () => {
+    it('should parse image with double-quoted title', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt text](image.jpg "Title text")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.jpg');
+      expect(parsed.alias).toEqual('alt text');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should parse image with single-quoted title', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt text](image.jpg 'Title text')`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.jpg');
+      expect(parsed.alias).toEqual('alt text');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should handle sections with titles', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt text](image.jpg#section "Title text")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.jpg');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('alt text');
+    });
+
+    it('should handle URLs with spaces in titles', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt](path/to/file.jpg "Title with spaces")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('path/to/file.jpg');
+      expect(parsed.alias).toEqual('alt');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should maintain compatibility with titleless images', () => {
+      const link = parser.parse(getRandomURI(), `![alt text](image.jpg)`)
+        .links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.jpg');
+      expect(parsed.alias).toEqual('alt text');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should handle complex URLs with titles', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt](path/to/image.jpg "Complex title with spaces")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('path/to/image.jpg');
+      expect(parsed.alias).toEqual('alt');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should parse regular links with titles', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `[link text](document.md "Link title")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('document.md');
+      expect(parsed.alias).toEqual('link text');
+      expect(parsed.section).toEqual('');
+    });
+
+    it('should handle titles with special characters', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![alt](image.jpg "Title with special chars")`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('image.jpg');
+      expect(parsed.alias).toEqual('alt');
+      expect(parsed.section).toEqual('');
+    });
+  });
+
+  describe('rename wikilink', () => {
+    it('should rename the target only', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink#section]]`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'new-link',
+      });
+      expect(edit.newText).toEqual(`[[new-link#section]]`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should rename the section only', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink#section]]`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        section: 'new-section',
+      });
+      expect(edit.newText).toEqual(`[[wikilink#new-section]]`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should rename both target and section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink#section]]`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'new-link',
+        section: 'new-section',
+      });
+      expect(edit.newText).toEqual(`[[new-link#new-section]]`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should be able to remove the section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [[wikilink#section]]`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        section: '',
+      });
+      expect(edit.newText).toEqual(`[[wikilink]]`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should be able to rename the alias', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[wikilink|alias]]`)
+        .links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        alias: 'new-alias',
+      });
+      expect(edit.newText).toEqual(`[[wikilink|new-alias]]`);
+      expect(edit.range).toEqual(link.range);
+    });
+  });
+
+  describe('rename wikilink with block anchor', () => {
+    it('should preserve block anchor when renaming the target', () => {
+      const link = parser.parse(getRandomURI(), `[[note#^myblock]]`).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'new-note',
+      });
+      expect(edit.newText).toEqual(`[[new-note#^myblock]]`);
+    });
+  });
+
+  describe('rename direct link', () => {
+    it('should rename the target only', () => {
+      const link = parser.parse(getRandomURI(), `this is a [link](to/path.md)`)
+        .links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'to/another-path.md',
+      });
+      expect(edit.newText).toEqual(`[link](to/another-path.md)`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should rename the section only', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [link](to/path.md#section)`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        section: 'section2',
+      });
+      expect(edit.newText).toEqual(`[link](to/path.md#section2)`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should rename both target and section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [link](to/path.md#section)`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'to/another-path.md',
+        section: 'section2',
+      });
+      expect(edit.newText).toEqual(`[link](to/another-path.md#section2)`);
+      expect(edit.range).toEqual(link.range);
+    });
+    it('should be able to remove the section', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [link](to/path.md#section)`
+      ).links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        section: '',
+      });
+      expect(edit.newText).toEqual(`[link](to/path.md)`);
+      expect(edit.range).toEqual(link.range);
+    });
+  });
+
+  describe('rename direct link with block anchor', () => {
+    it('should preserve block anchor when renaming the target', () => {
+      const link = parser.parse(getRandomURI(), `[text](note.md#^myblock)`)
+        .links[0];
+      const edit = MarkdownLink.createUpdateLinkEdit(link, {
+        target: 'new-note.md',
+      });
+      expect(edit.newText).toEqual(`[text](new-note.md#^myblock)`);
+    });
+  });
+
+  describe('convert wikilink to link', () => {
+    it('should generate default alias if no one', () => {
+      const wikilink = parser.parse(getRandomURI(), `[[wikilink]]`).links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        type: 'link',
+      });
+      expect(wikilinkEdit.newText).toEqual(`[wikilink](wikilink)`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+
+      const wikilinkWithSection = parser.parse(
+        getRandomURI(),
+        `[[wikilink#section]]`
+      ).links[0];
+      const wikilinkWithSectionEdit = MarkdownLink.createUpdateLinkEdit(
+        wikilinkWithSection,
+        {
+          type: 'link',
+        }
+      );
+      expect(wikilinkWithSectionEdit.newText).toEqual(
+        `[wikilink#section](wikilink#section)`
+      );
+      expect(wikilinkWithSectionEdit.range).toEqual(wikilinkWithSection.range);
+    });
+
+    it('should use alias in the wikilik the if there has one', () => {
+      const wikilink = parser.parse(
+        getRandomURI(),
+        `[[wikilink#section|alias]]`
+      ).links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        type: 'link',
+      });
+      expect(wikilinkEdit.newText).toEqual(`[alias](wikilink#section)`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+    });
+  });
+
+  describe('convert link to wikilink', () => {
+    it('should reorganize target, section, and alias in wikilink manner', () => {
+      const link = parser.parse(getRandomURI(), `[link](to/path.md)`).links[0];
+      const linkEdit = MarkdownLink.createUpdateLinkEdit(link, {
+        type: 'wikilink',
+      });
+      expect(linkEdit.newText).toEqual(`[[to/path.md|link]]`);
+      expect(linkEdit.range).toEqual(link.range);
+
+      const linkWithSection = parser.parse(
+        getRandomURI(),
+        `[link](to/path.md#section)`
+      ).links[0];
+      const linkWithSectionEdit = MarkdownLink.createUpdateLinkEdit(
+        linkWithSection,
+        {
+          type: 'wikilink',
+        }
+      );
+      expect(linkWithSectionEdit.newText).toEqual(
+        `[[to/path.md#section|link]]`
+      );
+      expect(linkWithSectionEdit.range).toEqual(linkWithSection.range);
+    });
+
+    it('should use alias in the wikilik the if there has one', () => {
+      const wikilink = parser.parse(
+        getRandomURI(),
+        `[[wikilink#section|alias]]`
+      ).links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        type: 'link',
+      });
+      expect(wikilinkEdit.newText).toEqual(`[alias](wikilink#section)`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+    });
+  });
+
+  describe('convert to its original type', () => {
+    it('should remain unchanged', () => {
+      const link = parser.parse(getRandomURI(), `[link](to/path.md#section)`)
+        .links[0];
+      const linkEdit = MarkdownLink.createUpdateLinkEdit(link, {
+        type: 'link',
+      });
+      expect(linkEdit.newText).toEqual(`[link](to/path.md#section)`);
+      expect(linkEdit.range).toEqual(link.range);
+
+      const wikilink = parser.parse(
+        getRandomURI(),
+        `[[wikilink#section|alias]]`
+      ).links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        type: 'wikilink',
+      });
+      expect(wikilinkEdit.newText).toEqual(`[[wikilink#section|alias]]`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+    });
+  });
+
+  describe('change isEmbed property', () => {
+    it('should change isEmbed only', () => {
+      const wikilink = parser.parse(getRandomURI(), `[[wikilink]]`).links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        isEmbed: true,
+      });
+      expect(wikilinkEdit.newText).toEqual(`![[wikilink]]`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+
+      const link = parser.parse(getRandomURI(), `![link](to/path.md)`).links[0];
+      const linkEdit = MarkdownLink.createUpdateLinkEdit(link, {
+        isEmbed: false,
+      });
+      expect(linkEdit.newText).toEqual(`[link](to/path.md)`);
+      expect(linkEdit.range).toEqual(link.range);
+    });
+
+    it('should be unchanged if the update value is the same as the original one', () => {
+      const embeddedWikilink = parser.parse(getRandomURI(), `![[wikilink]]`)
+        .links[0];
+      const embeddedWikilinkEdit = MarkdownLink.createUpdateLinkEdit(
+        embeddedWikilink,
+        {
+          isEmbed: true,
+        }
+      );
+      expect(embeddedWikilinkEdit.newText).toEqual(`![[wikilink]]`);
+      expect(embeddedWikilinkEdit.range).toEqual(embeddedWikilink.range);
+
+      const link = parser.parse(getRandomURI(), `[link](to/path.md)`).links[0];
+      const linkEdit = MarkdownLink.createUpdateLinkEdit(link, {
+        isEmbed: false,
+      });
+      expect(linkEdit.newText).toEqual(`[link](to/path.md)`);
+      expect(linkEdit.range).toEqual(link.range);
+    });
+  });
+
+  describe('insert angles', () => {
+    it('should insert angles when meeting space in links', () => {
+      const link = parser.parse(getRandomURI(), `![link](to/path.md)`).links[0];
+      const linkAddSection = MarkdownLink.createUpdateLinkEdit(link, {
+        section: 'one section',
+      });
+      expect(linkAddSection.newText).toEqual(
+        `![link](<to/path.md#one section>)`
+      );
+      expect(linkAddSection.range).toEqual(link.range);
+
+      const linkChangingTarget = parser.parse(
+        getRandomURI(),
+        `[link](to/path.md#one-section)`
+      ).links[0];
+      const linkEdit = MarkdownLink.createUpdateLinkEdit(linkChangingTarget, {
+        target: 'to/another path.md',
+      });
+      expect(linkEdit.newText).toEqual(
+        `[link](<to/another path.md#one-section>)`
+      );
+      expect(linkEdit.range).toEqual(linkChangingTarget.range);
+
+      const wikilink = parser.parse(getRandomURI(), `[[wikilink#one section]]`)
+        .links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        type: 'link',
+      });
+      expect(wikilinkEdit.newText).toEqual(
+        `[wikilink#one section](<wikilink#one section>)`
+      );
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+    });
+
+    it('should not insert angles in wikilink', () => {
+      const wikilink = parser.parse(getRandomURI(), `[[wikilink#one section]]`)
+        .links[0];
+      const wikilinkEdit = MarkdownLink.createUpdateLinkEdit(wikilink, {
+        target: 'another wikilink',
+      });
+      expect(wikilinkEdit.newText).toEqual(`[[another wikilink#one section]]`);
+      expect(wikilinkEdit.range).toEqual(wikilink.range);
+    });
+  });
+
+  describe('parse links with resolved definitions', () => {
+    it('should parse wikilink with resolved definition - target and section always from rawText', () => {
+      const link: ResourceLink = {
+        type: 'wikilink',
+        rawText: '[[my-note|Custom Display Text]]',
+        range: Range.create(0, 0),
+        isEmbed: false,
+        definition: {
+          label: 'my-note',
+          url: './docs/document.md#introduction',
+          title: 'Document Title',
+        },
+      };
+
+      const parsed = MarkdownLink.analyzeLink(link);
+      // Wikilinks are always parsed from rawText; the resolved definition is ignored
+      expect(parsed.target).toEqual('my-note');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('Custom Display Text');
+    });
+
+    it('should parse reference-style link with resolved definition - target and section from definition, alias from rawText', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[Click here to read][myref]',
+        range: Range.create(0, 0),
+        isEmbed: false,
+        definition: {
+          label: 'myref',
+          url: './document.md#section',
+          title: 'My Document',
+        },
+      };
+
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('./document.md'); // From definition.url (base)
+      expect(parsed.section).toEqual('section'); // From definition.url (fragment)
+      expect(parsed.alias).toEqual('Click here to read'); // From rawText
+    });
+
+    it('should handle wikilink with resolved definition - section always from rawText', () => {
+      const link: ResourceLink = {
+        type: 'wikilink',
+        rawText: '[[my-note#ignored-section|Display Text]]',
+        range: Range.create(0, 0),
+        isEmbed: false,
+        definition: {
+          label: 'my-note',
+          url: './docs/document.md', // No fragment
+          title: 'Document Title',
+        },
+      };
+
+      const parsed = MarkdownLink.analyzeLink(link);
+      // Wikilinks are always parsed from rawText; the resolved definition is ignored
+      expect(parsed.target).toEqual('my-note');
+      expect(parsed.section).toEqual('ignored-section');
+      expect(parsed.alias).toEqual('Display Text');
+    });
+
+    it('should handle reference-style link with resolved definition but no alias in rawText', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[text][ref]',
+        range: Range.create(0, 0),
+        isEmbed: false,
+        definition: {
+          label: 'ref',
+          url: './target.md#section',
+          title: 'Target',
+        },
+      };
+
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('./target.md'); // From definition.url (base)
+      expect(parsed.section).toEqual('section'); // From definition.url (fragment)
+      expect(parsed.alias).toEqual('text'); // From rawText
+    });
+
+    it('should handle wikilink with complex URL in definition - always from rawText', () => {
+      const link: ResourceLink = {
+        type: 'wikilink',
+        rawText: '[[note|Alias]]',
+        range: Range.create(0, 0),
+        isEmbed: false,
+        definition: {
+          label: 'note',
+          url: '../path/to/some file.md#complex section name',
+          title: 'Title',
+        },
+      };
+
+      const parsed = MarkdownLink.analyzeLink(link);
+      // Wikilinks are always parsed from rawText; the resolved definition is ignored
+      expect(parsed.target).toEqual('note');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('Alias');
+    });
+  });
+});

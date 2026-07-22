@@ -1,0 +1,647 @@
+import * as vscode from 'vscode';
+import { createTestWorkspace } from '../../../test/test-utils';
+import {
+  cleanWorkspace,
+  closeEditors,
+  createFile,
+  showInEditor,
+} from '../../../test/test-utils-vscode';
+import { NavigationProvider } from './navigation-provider';
+import { toVsCodeUri } from '../../utils/vsc-utils';
+import { createMarkdownParser } from '@foam/core';
+import { FoamGraph } from '@foam/core';
+import { URI } from '@foam/core';
+import { commandAsURI } from '../../utils/commands';
+import { CREATE_NOTE_COMMAND } from '../notes/create-note';
+import { Location } from '@foam/core';
+import { FoamTags } from '@foam/core';
+
+describe('Document navigation', () => {
+  const parser = createMarkdownParser([]);
+
+  beforeAll(async () => {
+    await cleanWorkspace();
+  });
+
+  afterAll(async () => {
+    await cleanWorkspace();
+  });
+
+  beforeEach(async () => {
+    await closeEditors();
+  });
+  describe('Document links provider', () => {
+    it('should not return any link for empty documents', async () => {
+      const { uri, content } = await createFile('');
+      const ws = createTestWorkspace().set(parser.parse(uri, content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const doc = await vscode.workspace.openTextDocument(toVsCodeUri(uri));
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(0);
+    });
+
+    it('should not return any link for documents without links', async () => {
+      const { uri, content } = await createFile(
+        'This is some content without links'
+      );
+      const ws = createTestWorkspace().set(parser.parse(uri, content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const doc = await vscode.workspace.openTextDocument(toVsCodeUri(uri));
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(0);
+    });
+
+    it('should not create links for wikilinks without link reference definitions, as this is managed by the definition provider', async () => {
+      const fileA = await createFile('# File A', ['file-a.md']);
+      const fileB = await createFile(`this is a link to [[${fileA.name}]].`);
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileA.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(0);
+    });
+
+    it('should create a document link for a wikilink that has a Foam-generated link reference definition (fix #1294)', async () => {
+      const fileA = await createFile('# File A', ['file-a.md']);
+      const relativePath = `./${fileA.base}`;
+      const content = `this is a link to [[${fileA.name}]].\n\n[${fileA.name}]: ${relativePath} "File A"`;
+      const fileB = await createFile(content);
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(toVsCodeUri(fileA.uri));
+    });
+
+    it('should create links for placeholders', async () => {
+      const fileA = await createFile(`this is a link to [[a placeholder]].`);
+      const noteA = parser.parse(fileA.uri, fileA.content);
+      const ws = createTestWorkspace().set(noteA);
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(
+        commandAsURI(
+          CREATE_NOTE_COMMAND.forPlaceholder(
+            Location.forObjectWithRange(noteA.uri, noteA.links[0]),
+            '.md',
+            {
+              onFileExists: 'open',
+            }
+          )
+        )
+      );
+      expect(links[0].range).toEqual(new vscode.Range(0, 20, 0, 33));
+    });
+
+    it('should not create a "create note" link for a direct path link targeting an existing file not indexed in workspace', async () => {
+      await createFile('some content', ['.editorconfig']);
+      const noteA = await createFile(`link to [config](./.editorconfig).`);
+      // Note: .editorconfig is NOT added to workspace (no provider supports extensionless files)
+      const ws = createTestWorkspace().set(
+        parser.parse(noteA.uri, noteA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      // The link should not be treated as a "create note" placeholder
+      expect(links.length).toEqual(0);
+    });
+
+    it('should not create a "create note" link for an absolute path link targeting an existing file not indexed in workspace', async () => {
+      const existingFile = await createFile('some content', ['.editorconfig']);
+      const absolutePath = existingFile.uri.toFsPath();
+      const noteA = await createFile(`link to [config](${absolutePath}).`);
+      // Note: .editorconfig is NOT added to workspace (no provider supports extensionless files)
+      const ws = createTestWorkspace().set(
+        parser.parse(noteA.uri, noteA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      // The link should not be treated as a "create note" placeholder
+      expect(links.length).toEqual(0);
+    });
+
+    it('should not create a "create note" link for a direct path link targeting a file in .foam directory (excluded from workspace indexing)', async () => {
+      const template = await createFile('Template content', [
+        '.foam',
+        'templates',
+        'template.md',
+      ]);
+      const noteA = await createFile(
+        `link to [template](.foam/templates/template.md).`
+      );
+      // Note: template is NOT added to workspace because .foam/** is excluded from indexing
+      const ws = createTestWorkspace().set(
+        parser.parse(noteA.uri, noteA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      // The link should not be treated as a "create note" placeholder
+      expect(links.length).toEqual(0);
+    });
+
+  });
+
+  describe('definition provider', () => {
+    it('should not create a definition for a wikilink that has a Foam-generated link reference definition (fix #1294)', async () => {
+      const fileA = await createFile('# File A', ['file-a.md']);
+      const relativePath = `./${fileA.base}`;
+      const content = `this is a link to [[${fileA.name}]].\n\n[${fileA.name}]: ${relativePath} "File A"`;
+      const fileB = await createFile(content);
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      // Position is on the wikilink [[file-a]] at col 20 (inside the brackets)
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 22)
+      );
+
+      // Must return undefined so VS Code doesn't show a "2 definitions" picker.
+      // Navigation is handled by provideDocumentLinks instead.
+      expect(definitions).toBeUndefined();
+    });
+
+    it('should not create a definition for a placeholder', async () => {
+      const fileA = await createFile(`this is a link to [[placeholder]].`);
+      const ws = createTestWorkspace().set(
+        parser.parse(fileA.uri, fileA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 22)
+      );
+
+      expect(definitions).toBeUndefined();
+    });
+    it('should create a definition for a wikilink', async () => {
+      const fileA = await createFile('# File A');
+      const fileB = await createFile(`this is a link to [[${fileA.name}]].`);
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 22)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+      // target the beginning of the file
+      expect(definitions[0].targetRange).toEqual(new vscode.Range(0, 0, 0, 0));
+      // select nothing
+      expect(definitions[0].targetSelectionRange).toEqual(
+        new vscode.Range(0, 0, 0, 0)
+      );
+    });
+
+    it('should create a definition for a regular link', async () => {
+      const fileA = await createFile('# File A');
+      const fileB = await createFile(
+        `this is a link to [a file](./${fileA.base}).`
+      );
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 22)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+    });
+
+    it('should create a definition for a direct path link targeting an existing file not indexed in workspace', async () => {
+      const existingFile = await createFile('some content', ['.editorconfig']);
+      const noteA = await createFile(`link to [config](./.editorconfig).`);
+      // Note: existingFile is NOT added to workspace (no provider supports extensionless files)
+      const ws = createTestWorkspace().set(
+        parser.parse(noteA.uri, noteA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      // Position within the link text: "link to [config](./.editorconfig)."
+      //                                          ^col 9
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 10)
+      );
+
+      expect(definitions).toBeDefined();
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(existingFile.uri));
+    });
+
+    it('should create a definition for an absolute path link targeting an existing file not indexed in workspace', async () => {
+      const existingFile = await createFile('some content', ['.editorconfig']);
+      const absolutePath = existingFile.uri.toFsPath();
+      const noteA = await createFile(`link to [config](${absolutePath}).`);
+      // Note: existingFile is NOT added to workspace (no provider supports extensionless files)
+      const ws = createTestWorkspace().set(
+        parser.parse(noteA.uri, noteA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 10)
+      );
+
+      expect(definitions).toBeDefined();
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(existingFile.uri));
+    });
+
+    it('should support wikilinks that have an alias', async () => {
+      const fileA = await createFile("# File A that's aliased");
+      const fileB = await createFile(
+        `this is a link to [[${fileA.name}|alias]].`
+      );
+
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 22)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+    });
+
+    it('should support wikilink aliases in tables using escape character', async () => {
+      const fileA = await createFile('# File that has to be aliased');
+      const fileB = await createFile(`
+  | Col A | ColB |
+  | --- | --- |
+  | [[${fileA.name}\\|alias]] | test |
+    `);
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(3, 10)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+    });
+  });
+
+  // Attachments (PDFs, docs, etc.) and images must be surfaced as DocumentLinks
+  // and NOT as definitions, so clicks route through VS Code's URI-opening
+  // pipeline (which honors `workbench.editorAssociations`) rather than the
+  // text-editor pipeline. See: https://github.com/foambubble/foam/issues/1675
+  describe('attachment and image navigation', () => {
+    const makeAttachment = (uri: URI, type: 'attachment' | 'image') => ({
+      uri,
+      type,
+      title: uri.getBasename(),
+      properties: { type },
+      aliases: [],
+      sections: [],
+      blocks: [],
+      links: [],
+      tags: [],
+      footnotes: [],
+    });
+
+    it('surfaces a wikilink resolving to an attachment as a document link, not a definition', async () => {
+      const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
+      const noteA = await createFile(`see [[${pdf.base}]] for details.`);
+      const ws = createTestWorkspace()
+        .set(makeAttachment(pdf.uri, 'attachment'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(toVsCodeUri(pdf.uri));
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 8)
+      );
+      expect(definitions).toBeUndefined();
+    });
+
+    it('surfaces a markdown link resolving to an attachment as a document link, not a definition', async () => {
+      const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
+      const noteA = await createFile(`see [the report](./${pdf.base}).`);
+      const ws = createTestWorkspace()
+        .set(makeAttachment(pdf.uri, 'attachment'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(toVsCodeUri(pdf.uri));
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 8)
+      );
+      expect(definitions).toBeUndefined();
+    });
+
+    it('surfaces a wikilink resolving to an image as a document link, not a definition', async () => {
+      const img = await createFile('fake png', ['photo.png']);
+      const noteA = await createFile(`see [[${img.base}]] here.`);
+      const ws = createTestWorkspace()
+        .set(makeAttachment(img.uri, 'image'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(toVsCodeUri(img.uri));
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 8)
+      );
+      expect(definitions).toBeUndefined();
+    });
+  });
+
+  describe('directory link navigation', () => {
+    it('should navigate [[bar]] to bar/index.md', async () => {
+      const index = await createFile('# Bar Index', ['bar', 'index.md']);
+      const note = await createFile(`link to [[bar]]`);
+      const ws = createTestWorkspace()
+        .set(parser.parse(index.uri, index.content))
+        .set(parser.parse(note.uri, note.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(note.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 10)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(index.uri));
+    });
+
+    it('should navigate [label](bar) to bar/index.md', async () => {
+      const index = await createFile('# Bar Index', ['bar', 'index.md']);
+      const note = await createFile(`link to [bar](bar)`);
+      const ws = createTestWorkspace()
+        .set(parser.parse(index.uri, index.content))
+        .set(parser.parse(note.uri, note.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(note.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 10)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(index.uri));
+    });
+
+    it('should navigate [label](bar/) (trailing slash) to bar/index.md', async () => {
+      const index = await createFile('# Bar Index', ['bar', 'index.md']);
+      const note = await createFile(`link to [bar](bar/)`);
+      const ws = createTestWorkspace()
+        .set(parser.parse(index.uri, index.content))
+        .set(parser.parse(note.uri, note.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(note.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 10)
+      );
+
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetUri).toEqual(toVsCodeUri(index.uri));
+    });
+  });
+
+  describe('reference provider', () => {
+    it('should provide references for wikilinks', async () => {
+      const fileA = await createFile('The content of File A');
+      const fileB = await createFile(
+        `File B is connected to [[${fileA.name}]] and has a [[placeholder]].`
+      );
+      const fileC = await createFile(
+        `File C is also connected to [[${fileA.name}]].`
+      );
+      const fileD = await createFile(`File C has a [[placeholder]].`);
+
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content))
+        .set(parser.parse(fileC.uri, fileC.content))
+        .set(parser.parse(fileD.uri, fileD.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileB.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const refs = await provider.provideReferences(
+        doc,
+        new vscode.Position(0, 26)
+      );
+
+      // Make sure the references are sorted by position, so we match the right expectation
+      refs.sort((a, b) => a.range.start.character - b.range.start.character);
+
+      expect(refs.length).toEqual(2);
+      expect(refs[0]).toEqual({
+        uri: toVsCodeUri(fileB.uri),
+        range: new vscode.Range(0, 23, 0, 23 + 9),
+      });
+    });
+
+    it('should provide references for tags', async () => {
+      const fileA = await createFile('This file has #tag1 and #tag2.');
+      const fileB = await createFile(
+        'This file also has #tag1 and other content.'
+      );
+      const fileC = await createFile('This file has #tag2 and #tag3.');
+
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content))
+        .set(parser.parse(fileC.uri, fileC.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      // Test references for #tag1 (position 15 is within the #tag1 text)
+      const tag1Refs = await provider.provideReferences(
+        doc,
+        new vscode.Position(0, 15)
+      );
+
+      expect(tag1Refs.length).toEqual(2); // #tag1 appears in fileA and fileB
+
+      const refUris = tag1Refs.map(ref => ref.uri);
+      expect(refUris).toContainEqual(toVsCodeUri(fileA.uri));
+      expect(refUris).toContainEqual(toVsCodeUri(fileB.uri));
+    });
+
+    it('should provide references for tags with different positions', async () => {
+      const fileA = await createFile(
+        'Multiple #same-tag mentions #same-tag here.'
+      );
+
+      const ws = createTestWorkspace().set(
+        parser.parse(fileA.uri, fileA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      // Test references for #same-tag (clicking on first occurrence)
+      const refs = await provider.provideReferences(
+        doc,
+        new vscode.Position(0, 10) // Position within first #same-tag
+      );
+
+      expect(refs.length).toEqual(2); // Both occurrences of #same-tag
+
+      // Verify both ranges are correct
+      const sortedRefs = refs.sort(
+        (a, b) => a.range.start.character - b.range.start.character
+      );
+
+      // First occurrence: "Multiple #same-tag mentions"
+      expect(sortedRefs[0].range.start.character).toBeLessThan(
+        sortedRefs[1].range.start.character
+      );
+    });
+
+    it('should not provide references when position is not on a tag', async () => {
+      const fileA = await createFile('This file has #tag1 and normal text.');
+
+      const ws = createTestWorkspace().set(
+        parser.parse(fileA.uri, fileA.content)
+      );
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      // Position on "normal text" (not on a tag or link)
+      const refs = await provider.provideReferences(
+        doc,
+        new vscode.Position(0, 30)
+      );
+
+      expect(refs).toBeUndefined();
+    });
+
+    it.todo('should provide references for placeholders');
+  });
+});

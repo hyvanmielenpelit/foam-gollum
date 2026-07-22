@@ -1,0 +1,107 @@
+import { debounce } from 'lodash';
+import * as vscode from 'vscode';
+import { ResourceParser } from '@foam/core';
+import { FoamWorkspace } from '@foam/core';
+import { Foam } from '@foam/core';
+import { Range } from '@foam/core';
+import { fromVsCodeUri, toVsCodeRange } from '../../utils/vsc-utils';
+
+const placeholderDecoration = vscode.window.createTextEditorDecorationType({
+  rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  textDecoration: 'none',
+  color: { id: 'foam.placeholder' },
+  cursor: 'pointer',
+});
+
+const blockAnchorDecoration = vscode.window.createTextEditorDecorationType({
+  rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  opacity: '0.5',
+});
+
+const footnoteDecoration = vscode.window.createTextEditorDecorationType({
+  rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  textDecoration: 'none',
+  cursor: 'pointer',
+});
+
+const updateDecorations =
+  (parser: ResourceParser, workspace: FoamWorkspace) =>
+  (editor: vscode.TextEditor) => {
+    if (!editor || editor.document.languageId !== 'markdown') {
+      return;
+    }
+    const note = parser.parse(
+      fromVsCodeUri(editor.document.uri),
+      editor.document.getText()
+    );
+    const placeholderRanges = [];
+    note.links.forEach(link => {
+      const linkUri = workspace.resolveLink(note, link);
+      if (linkUri.isPlaceholder()) {
+        placeholderRanges.push(
+          Range.create(
+            link.range.start.line,
+            link.range.start.character + (link.type === 'wikilink' ? 2 : 0),
+            link.range.end.line,
+            link.range.end.character - (link.type === 'wikilink' ? 2 : 0)
+          )
+        );
+      }
+    });
+    editor.setDecorations(placeholderDecoration, placeholderRanges);
+
+    editor.setDecorations(
+      footnoteDecoration,
+      note.footnotes
+        .filter(f => f.definitionRange !== null)
+        .flatMap(f => f.references.map(r => toVsCodeRange(r)))
+    );
+
+    editor.setDecorations(
+      blockAnchorDecoration,
+      note.blocks.map(
+        b =>
+          new vscode.Range(
+            b.markerRange.start.line,
+            b.markerRange.start.character,
+            b.markerRange.end.line,
+            b.markerRange.end.character
+          )
+      )
+    );
+  };
+
+export default async function activate(
+  context: vscode.ExtensionContext,
+  foamPromise: Promise<Foam>
+) {
+  const foam = await foamPromise;
+  let activeEditor = vscode.window.activeTextEditor;
+
+  const immediatelyUpdateDecorations = updateDecorations(
+    foam.services.parser,
+    foam.workspace
+  );
+
+  const debouncedUpdateDecorations = debounce(
+    immediatelyUpdateDecorations,
+    500
+  );
+
+  immediatelyUpdateDecorations(activeEditor);
+
+  context.subscriptions.push(
+    placeholderDecoration,
+    blockAnchorDecoration,
+    footnoteDecoration,
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+      activeEditor = editor;
+      immediatelyUpdateDecorations(activeEditor);
+    }),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      if (activeEditor && event.document === activeEditor.document) {
+        debouncedUpdateDecorations(activeEditor);
+      }
+    })
+  );
+}

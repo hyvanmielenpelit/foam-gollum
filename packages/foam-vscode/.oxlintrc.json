@@ -1,0 +1,62 @@
+{
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "jest"],
+  "globals": {
+    "fetch": "readonly",
+    "AbortController": "readonly",
+    "AbortSignal": "readonly"
+  },
+  "ignorePatterns": [
+    "**/*.js",
+    "out/**",
+    ".vscode-test/**",
+    "webview-ui/**",
+    "src/core/common/**"
+  ],
+  "rules": {
+    "jest/require-to-throw-message": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "fs",
+                "message": "Extension code must not rely on Node.js filesystem, use vscode.workspace.fs instead."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/core/**/*.ts", "src/lint/**/*.ts", "src/ai/**/*.ts", "src/daily-note/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "fs",
+                "message": "Extension code must not rely on Node.js filesystem, use vscode.workspace.fs instead."
+              },
+              {
+                "name": "vscode",
+                "message": "Domain modules must not depend on VS Code."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/test/**/*.ts", "src/**/*.test.ts", "src/**/*.spec.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}

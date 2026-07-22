@@ -1,0 +1,338 @@
+import { parse as parseYaml } from 'yaml';
+import { FoamWorkspace } from '../model/workspace';
+import { FoamGraph } from '../model/graph';
+import {
+  QueryDescriptor,
+  QueryFilter,
+  executeQuery,
+  ALL_QUERY_FIELDS,
+  SourceReader,
+  requiresSource,
+  SelectEntry,
+  normalizeSelectEntry,
+} from '.';
+import { MarkdownRenderer, QueryRender, ToHref } from './html';
+import { RenderContext } from './render-context';
+import { escapeHtml, renderResults } from './html';
+import { URI } from '../model/uri';
+
+const DQL_PLACEHOLDER = `<div class="foam-query-placeholder">
+<p>Use <code>\`\`\`foam-query</code> blocks to write a query to list notes. For example:</p>
+<pre>\`\`\`foam-query
+filter: "#recipe"
+sort: title ASC
+\`\`\`</pre>
+<pre>\`\`\`foam-query
+filter: "#recipe"
+select: [title, tags, backlink-count]
+format: table
+\`\`\`</pre>
+<p><strong>Filter examples:</strong></p>
+<pre>filter: "#tag"            # notes tagged with #tag
+filter: "[[note-id]]"     # notes linked to or from note (same id as in wikilinks)
+filter: "*"               # all notes
+filter: "/path/regex/"    # notes whose path matches a regex
+filter:
+  tag: recipe             # object form — same as "#recipe"
+filter:
+  and:
+    - "#recipe"
+    - "#published"        # notes matching all conditions
+filter:
+  or:
+    - "#recipe"
+    - "#cooking"          # notes matching any condition
+filter:
+  not: "#draft"           # notes not matching a condition</pre>
+<pre>\`\`\`foam-query
+filter: "#recipe"
+select: [title, properties.status, properties.date]
+format: table
+\`\`\`</pre>
+<p>Read the full documentation <a href="https://github.com/foambubble/foam/blob/main/docs/user/features/foam-queries.md">here</a></p>
+</div>`;
+
+const KNOWN_FIELDS = new Set<string>([
+  'filter',
+  'select',
+  'sort',
+  'limit',
+  'offset',
+  'format',
+]);
+
+const VALID_FORMATS = new Set(['list', 'table', 'count']);
+
+/**
+ * Validates a known field value. Returns an HTML warning string if invalid,
+ * null if valid. Only called for non-null, non-empty-string values.
+ */
+function validateFieldValue(key: string, value: unknown): string | null {
+  switch (key) {
+    case 'filter':
+      if (
+        typeof value !== 'string' &&
+        (typeof value !== 'object' || Array.isArray(value))
+      ) {
+        return `Field <code>filter</code> must be a string like <code>"#tag"</code> or a mapping — use <code>*</code> to match all notes`;
+      }
+      break;
+    case 'select': {
+      const available = ALL_QUERY_FIELDS.map(f => `<code>${f}</code>`).join(
+        ', '
+      );
+      if (!Array.isArray(value)) {
+        return `Field <code>select</code> must be a list of fields. Available: ${available}`;
+      }
+      if (value.length === 0) {
+        return `Field <code>select</code> requires at least one field. Available: ${available}`;
+      }
+      break;
+    }
+    case 'sort':
+      if (typeof value !== 'string') {
+        return `Field <code>sort</code> must be a string like <code>title ASC</code>`;
+      }
+      break;
+    case 'limit':
+      if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        return `Field <code>limit</code> must be a positive integer`;
+      }
+      break;
+    case 'offset':
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+        return `Field <code>offset</code> must be a non-negative integer`;
+      }
+      break;
+    case 'format':
+      if (!VALID_FORMATS.has(value as string)) {
+        return `Field <code>format</code> must be one of: <code>list</code>, <code>table</code>, <code>count</code>`;
+      }
+      break;
+  }
+  return null;
+}
+
+function renderWarnings(warnings: string[]): string {
+  if (warnings.length === 0) return '';
+  const items = warnings.map(w => `<p>${w}</p>`).join('');
+  return `<div class="foam-query-warning">${items}</div>`;
+}
+
+const CURRENT_SENTINEL = '$current';
+
+/**
+ * Walks a QueryFilter recursively and replaces any `links_to` or `links_from`
+ * value of `"$current"` with the provided URI. Returns a warning string if
+ * `$current` is used but no current resource is available.
+ */
+function resolveCurrentSentinel(
+  filter: QueryFilter,
+  currentResource: URI | null | undefined,
+  warnings: string[]
+): QueryFilter {
+  if (typeof filter === 'string') {
+    return filter;
+  }
+  const resolved = { ...filter };
+  for (const key of ['links_to', 'links_from'] as const) {
+    if (resolved[key] === CURRENT_SENTINEL) {
+      if (currentResource) {
+        resolved[key] = currentResource;
+      } else {
+        warnings.push(
+          `Filter uses <code>${CURRENT_SENTINEL}</code> but no note is currently active — no results will be shown`
+        );
+        resolved[key] = undefined;
+      }
+    }
+  }
+  if (resolved.and) {
+    resolved.and = resolved.and.map(f =>
+      resolveCurrentSentinel(f, currentResource, warnings)
+    );
+  }
+  if (resolved.or) {
+    resolved.or = resolved.or.map(f =>
+      resolveCurrentSentinel(f, currentResource, warnings)
+    );
+  }
+  if (resolved.not) {
+    resolved.not = resolveCurrentSentinel(resolved.not, currentResource, warnings);
+  }
+  return resolved;
+}
+
+export interface RenderDqlQueryOptions {
+  workspace: FoamWorkspace;
+  graph: FoamGraph;
+  trusted: boolean;
+  toHref: ToHref;
+  currentResource?: URI | null;
+  readSource?: SourceReader;
+  renderMarkdown?: MarkdownRenderer;
+  context?: RenderContext;
+}
+
+export function renderDqlQuery(
+  content: string,
+  opts: RenderDqlQueryOptions
+): QueryRender {
+  const {
+    workspace,
+    graph,
+    trusted,
+    toHref,
+    currentResource,
+    readSource,
+    renderMarkdown,
+    context,
+  } = opts;
+  const bailout = (html: string): QueryRender => ({ html, shape: 'unknown' });
+  if (content.trim() === '') {
+    return bailout(DQL_PLACEHOLDER);
+  }
+
+  const warnings: string[] = [];
+  let parsed: Record<string, unknown> = {};
+
+  try {
+    parsed = (parseYaml(content) as Record<string, unknown>) ?? {};
+  } catch (e) {
+    // Try progressively shorter content (drop lines from the end) until we get
+    // a valid parse, then warn about the first dropped line.
+    const lines = content.split('\n');
+    let recovered = false;
+    for (let i = lines.length - 1; i >= 1; i--) {
+      const truncated = lines.slice(0, i).join('\n');
+      if (truncated.trim() === '') break;
+      try {
+        parsed = (parseYaml(truncated) as Record<string, unknown>) ?? {};
+        warnings.push(`Line ${i + 1} has a syntax error and was ignored`);
+        recovered = true;
+        break;
+      } catch {
+        // keep trying shorter
+      }
+    }
+    if (!recovered) {
+      return bailout(
+        DQL_PLACEHOLDER +
+          `<div class="foam-query-error">YAML parse error: ${escapeHtml(
+            (e as Error).message
+          )}</div>`
+      );
+    }
+  }
+
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return bailout(DQL_PLACEHOLDER);
+  }
+
+  let filterIsEmpty = false;
+  for (const key of Object.keys(parsed)) {
+    if (!KNOWN_FIELDS.has(key)) {
+      warnings.push(`Unknown field <code>${escapeHtml(key)}</code> — ignored`);
+      delete parsed[key];
+    } else if (parsed[key] === null || parsed[key] === '') {
+      if (key === 'filter') {
+        filterIsEmpty = true;
+        warnings.push(
+          `Field <code>filter</code> requires a value — use <code>*</code> to match all notes`
+        );
+      } else {
+        warnings.push(
+          `Missing value for field <code>${escapeHtml(key)}</code> — ignored`
+        );
+      }
+      delete parsed[key];
+    } else {
+      const warning = validateFieldValue(key, parsed[key]);
+      if (warning) {
+        if (key === 'filter') filterIsEmpty = true;
+        warnings.push(warning);
+        delete parsed[key];
+      }
+    }
+  }
+
+  if (Object.keys(parsed).length === 0 || filterIsEmpty) {
+    return bailout(DQL_PLACEHOLDER + renderWarnings(warnings));
+  }
+
+  // Strip and warn on unknown `select` entries.
+  if (Array.isArray(parsed.select)) {
+    const validFields = ALL_QUERY_FIELDS.join(', ');
+    const valid: SelectEntry[] = [];
+    for (const entry of parsed.select as unknown[]) {
+      let field: string | undefined;
+      let label: string | undefined;
+      let link: boolean | undefined;
+      if (typeof entry === 'string') {
+        field = entry;
+      } else if (
+        entry !== null &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        typeof (entry as { field?: unknown }).field === 'string'
+      ) {
+        field = (entry as { field: string }).field;
+        const rawLabel = (entry as { label?: unknown }).label;
+        if (typeof rawLabel === 'string') label = rawLabel;
+        const rawLink = (entry as { link?: unknown }).link;
+        if (typeof rawLink === 'boolean') link = rawLink;
+      }
+      if (
+        field !== undefined &&
+        (ALL_QUERY_FIELDS.includes(field) ||
+          /^properties\..+$/.test(field) ||
+          requiresSource(field))
+      ) {
+        const input =
+          label !== undefined || link !== undefined
+            ? { field, label, link }
+            : field;
+        valid.push(normalizeSelectEntry(input));
+      } else {
+        const shown = field ?? JSON.stringify(entry);
+        warnings.push(
+          `Unknown select field <code>${escapeHtml(
+            shown
+          )}</code> — available: ${validFields}, <code>body</code>, <code>content</code>, <code>section[Label]</code>, or <code>properties.fieldname</code>`
+        );
+      }
+    }
+    if (valid.length === 0) {
+      delete parsed.select; // fall back to default
+    } else {
+      (parsed as Record<string, unknown>).select = valid;
+    }
+  }
+
+  let descriptor = parsed as unknown as QueryDescriptor;
+
+  if (descriptor.filter) {
+    descriptor = {
+      ...descriptor,
+      filter: resolveCurrentSentinel(descriptor.filter, currentResource, warnings),
+    };
+  }
+
+  const { results, warnings: filterWarnings } = executeQuery(
+    descriptor,
+    workspace,
+    graph,
+    { trusted, readSource }
+  );
+  // Filter warnings are plain text (they contain raw user input like
+  // `filter.path`); escape before pushing into the HTML-fragment channel
+  // shared with DQL-level validators above.
+  warnings.push(...filterWarnings.map(escapeHtml));
+  const inner = renderResults(results, descriptor, toHref, renderMarkdown, context);
+  // Warnings stay merged into the HTML — see `FoamQueryRenderEvent` doc.
+  // The `shape` describes the underlying result, not the prepended warnings.
+  return {
+    html: renderWarnings(warnings) + inner.html,
+    shape: inner.shape,
+  };
+}

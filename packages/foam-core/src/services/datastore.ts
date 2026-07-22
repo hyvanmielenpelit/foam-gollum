@@ -1,0 +1,228 @@
+import { URI } from '../model/uri';
+import { Logger } from '../utils/log';
+import { Event } from '../common/event';
+
+/**
+ * Represents a source of files and content
+ */
+export interface IDataStore {
+  /**
+   * List the URIs known to this store.
+   *
+   * With no argument, returns the full set of URIs the store can see (the
+   * usual workspace enumeration).
+   *
+   * When a workspace-relative glob `pattern` is passed, the store **must**
+   * return only URIs matching that glob. 
+   */
+  list: (pattern?: string) => Promise<URI[]>;
+
+  /**
+   * Read the content of the file from the store
+   *
+   * Returns `null` in case of errors while reading
+   */
+  read: (uri: URI) => Promise<string | null>;
+
+  /**
+   * Write content to the file. Creates parent directories as needed.
+   * Overwrites existing files.
+   */
+  write: (uri: URI, content: string) => Promise<void>;
+
+  /**
+   * Delete the file at the given URI. No-op if it doesn't exist.
+   */
+  delete: (uri: URI) => Promise<void>;
+
+  /**
+   * Move (rename) a file from one URI to another. Creates destination
+   * parent directories as needed. Atomic where the underlying filesystem
+   * supports it.
+   */
+  move: (from: URI, to: URI) => Promise<void>;
+
+  /**
+   * Returns true if the file exists at the given URI.
+   */
+  exists: (uri: URI) => Promise<boolean>;
+}
+
+export interface IWatcher {
+  onDidChange: Event<URI>;
+  onDidCreate: Event<URI>;
+  onDidDelete: Event<URI>;
+}
+
+export interface IMatcher {
+  /**
+   * Filters the given list of URIs, keepin only the ones that
+   * are matched by this Matcher
+   *
+   * @param files the URIs to check
+   */
+  match(files: URI[]): URI[];
+
+  /**
+   * Returns whether this URI is matched by this Matcher
+   *
+   * @param uri the URI to check
+   */
+  isMatch(uri: URI): boolean;
+
+  /**
+   * Refreshes the list of files that this matcher matches
+   * To be used when new files are added to the workspace,
+   * it can be a more or less expensive operation depending on the
+   * implementation of the matcher
+   */
+  refresh(): Promise<void>;
+
+  /**
+   * The include globs
+   */
+  include: string[];
+
+  /**
+   * The exclude lobs
+   */
+  exclude: string[];
+}
+
+export class GenericDataStore implements IDataStore {
+  constructor(
+    private readonly listFiles: (pattern?: string) => Promise<URI[]>,
+    private readFile: (uri: URI) => Promise<string>,
+    private readonly writeFile?: (uri: URI, content: string) => Promise<void>,
+    private readonly deleteFile?: (uri: URI) => Promise<void>,
+    private readonly moveFile?: (from: URI, to: URI) => Promise<void>,
+    private readonly fileExists?: (uri: URI) => Promise<boolean>
+  ) {}
+
+  async list(pattern?: string): Promise<URI[]> {
+    return this.listFiles(pattern);
+  }
+
+  async read(uri: URI) {
+    try {
+      return await this.readFile(uri);
+    } catch (e) {
+      Logger.error(
+        `FileDataStore: error while reading uri: ${uri.path} - ${e}`
+      );
+      return null;
+    }
+  }
+
+  async write(uri: URI, content: string): Promise<void> {
+    if (!this.writeFile) {
+      throw new Error('GenericDataStore: write not supported');
+    }
+    return this.writeFile(uri, content);
+  }
+
+  async delete(uri: URI): Promise<void> {
+    if (!this.deleteFile) {
+      throw new Error('GenericDataStore: delete not supported');
+    }
+    return this.deleteFile(uri);
+  }
+
+  async move(from: URI, to: URI): Promise<void> {
+    if (!this.moveFile) {
+      throw new Error('GenericDataStore: move not supported');
+    }
+    return this.moveFile(from, to);
+  }
+
+  async exists(uri: URI): Promise<boolean> {
+    if (!this.fileExists) {
+      throw new Error('GenericDataStore: exists not supported');
+    }
+    return this.fileExists(uri);
+  }
+}
+
+/**
+ * A matcher that instead of using globs uses a list of files to
+ * check the matches.
+ * The {@link refresh} function has been added to the interface to accommodate
+ * this matcher, far from ideal but to be refactored later
+ */
+export class FileListBasedMatcher implements IMatcher {
+  private files: string[] = [];
+  include: string[];
+  exclude: string[];
+
+  constructor(
+    files: URI[],
+    private readonly listFiles: () => Promise<URI[]>,
+    include: string[] = ['**/*'],
+    exclude: string[] = []
+  ) {
+    this.files = files.map(f => f.path);
+    this.include = include;
+    this.exclude = exclude;
+  }
+
+  match(files: URI[]): URI[] {
+    return files.filter(f => this.files.includes(f.path));
+  }
+
+  isMatch(uri: URI): boolean {
+    return this.files.includes(uri.path);
+  }
+
+  async refresh() {
+    this.files = (await this.listFiles()).map(f => f.path);
+  }
+
+  static async createFromListFn(
+    listFiles: () => Promise<URI[]>,
+    include: string[] = ['**/*'],
+    exclude: string[] = []
+  ) {
+    const files = await listFiles();
+    return new FileListBasedMatcher(files, listFiles, include, exclude);
+  }
+}
+
+/**
+ * A matcher that includes all URIs passed to it
+ */
+export class AlwaysIncludeMatcher implements IMatcher {
+  include: string[] = ['**/*'];
+  exclude: string[] = [];
+  match(files: URI[]): URI[] {
+    return files;
+  }
+
+  isMatch(uri: URI): boolean {
+    return true;
+  }
+
+  refresh(): Promise<void> {
+    return;
+  }
+}
+
+
+export class SubstringExcludeMatcher implements IMatcher {
+  include: string[] = ['**/*'];
+  exclude: string[] = [];
+  constructor(exclude: string) {
+    this.exclude = [exclude];
+  }
+
+  match(files: URI[]): URI[] {
+    return files.filter(f => this.isMatch(f));
+  }
+
+  isMatch(uri: URI): boolean {
+    return !uri.path.includes(this.exclude[0]);
+  }
+
+  refresh(): Promise<void> {
+    return;
+  }
+}

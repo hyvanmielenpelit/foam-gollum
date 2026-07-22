@@ -1,0 +1,159 @@
+import {
+  Memento,
+  Position,
+  Range,
+  Uri,
+  TextEdit,
+  WorkspaceEdit,
+  commands,
+  Diagnostic,
+  DiagnosticSeverity,
+  DiagnosticRelatedInformation,
+  Location,
+} from 'vscode';
+import { Position as FoamPosition } from '@foam/core';
+import { Range as FoamRange } from '@foam/core';
+import { URI as FoamURI, fromFsPath } from '@foam/core';
+import {
+  TextEdit as FoamTextEdit,
+  WorkspaceTextEdit,
+} from '@foam/core';
+import { LintIssue } from '@foam/core';
+import { FoamWorkspace } from '@foam/core';
+import { Logger } from '@foam/core';
+
+export const toVsCodePosition = (p: FoamPosition): Position =>
+  new Position(p.line, p.character);
+
+export const toVsCodeRange = (r: FoamRange): Range =>
+  new Range(r.start.line, r.start.character, r.end.line, r.end.character);
+
+export const toVsCodeUri = (u: FoamURI): Uri => Uri.from(u);
+
+export const fromVsCodeUri = (u: Uri): FoamURI =>
+  new FoamURI({
+    scheme: u.scheme,
+    authority: u.authority,
+    path: fromFsPath(u.path)[0],
+    query: u.query,
+    fragment: u.fragment,
+  });
+
+export const toVsCodeTextEdit = (edit: FoamTextEdit): TextEdit =>
+  new TextEdit(toVsCodeRange(edit.range), edit.newText);
+
+/**
+ * Convert WorkspaceTextEdit array to VS Code WorkspaceEdit.
+ *
+ * @param workspaceTextEdits Array of workspace text edits to convert
+ * @param workspace Foam workspace for URI resolution
+ * @returns VS Code WorkspaceEdit ready for application
+ */
+export const toVsCodeWorkspaceEdit = (
+  workspaceTextEdits: WorkspaceTextEdit[],
+  workspace: FoamWorkspace
+): WorkspaceEdit => {
+  const workspaceEdit = new WorkspaceEdit();
+
+  // Group edits by URI
+  const editsByUri = new Map<string, { uri: Uri; edits: TextEdit[] }>();
+
+  for (const workspaceTextEdit of workspaceTextEdits) {
+    const resource = workspace.get(workspaceTextEdit.uri);
+    if (!resource) {
+      Logger.warn(
+        `Could not resolve resource: ${workspaceTextEdit.uri.toString()}`
+      );
+      continue;
+    }
+
+    const vscodeUri = toVsCodeUri(resource.uri);
+    const uriKey = resource.uri.toString();
+    const existingEntry = editsByUri.get(uriKey) || {
+      uri: vscodeUri,
+      edits: [],
+    };
+
+    const vscodeEdit = new TextEdit(
+      toVsCodeRange(workspaceTextEdit.edit.range),
+      workspaceTextEdit.edit.newText
+    );
+
+    existingEntry.edits.push(vscodeEdit);
+    editsByUri.set(uriKey, existingEntry);
+  }
+
+  // Apply grouped edits to workspace
+  for (const { uri, edits } of editsByUri.values()) {
+    workspaceEdit.set(uri, edits);
+  }
+
+  return workspaceEdit;
+};
+
+/**
+ * Converts a platform-agnostic LintIssue to a VS Code Diagnostic.
+ * Severity is always Warning; source is always 'Foam'.
+ * relatedInfo entries are mapped directly using their message field.
+ */
+export const lintIssueToDiagnostic = (issue: LintIssue): Diagnostic => {
+  const diagnostic = new Diagnostic(
+    toVsCodeRange(issue.range),
+    issue.message,
+    DiagnosticSeverity.Warning
+  );
+  diagnostic.code = issue.code;
+  diagnostic.source = 'Foam';
+  if (issue.relatedInfo) {
+    diagnostic.relatedInformation = issue.relatedInfo.map(
+      info =>
+        new DiagnosticRelatedInformation(
+          new Location(toVsCodeUri(info.uri), toVsCodeRange(info.range)),
+          info.message
+        )
+    );
+  }
+  return diagnostic;
+};
+
+/**
+ * A class that wraps context value, syncs it via setContext, and provides a typed interface to it.
+ */
+export class ContextMemento<T> {
+  private defaultValue: T;
+  constructor(
+    private data: Memento,
+    private key: string,
+    defaultValue: T,
+    resetToDefault: boolean = false
+  ) {
+    this.defaultValue = defaultValue;
+    resetToDefault && this.data.update(this.key, defaultValue);
+    const value = data.get(key) ?? defaultValue;
+    commands.executeCommand('setContext', this.key, value);
+  }
+  public get(): T {
+    return this.data.get<T>(this.key) ?? this.defaultValue;
+  }
+  public async update(value: T): Promise<void> {
+    this.data.update(this.key, value);
+    await commands.executeCommand('setContext', this.key, value);
+  }
+}
+
+/**
+ * Implementation of the Memento interface that uses a Map as backend
+ */
+export class MapBasedMemento implements Memento {
+  get<T>(key: unknown, defaultValue?: unknown | T): T | T {
+    return (this.map.get(key as string) as T) || (defaultValue as T);
+  }
+  private map: Map<string, string> = new Map();
+  keys(): readonly string[] {
+    return Array.from(this.map.keys());
+  }
+  update(key: string, value: any): Promise<void> {
+    this.map.set(key, value);
+    return Promise.resolve();
+  }
+}

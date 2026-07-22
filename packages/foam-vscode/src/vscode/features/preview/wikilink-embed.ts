@@ -1,0 +1,539 @@
+/*global markdownit:readonly*/
+
+// eslint-disable-next-line no-restricted-imports
+import { readFileSync } from 'fs';
+import markdownItRegex from 'markdown-it-regex';
+import { FoamWorkspace } from '@foam/core';
+import { Logger } from '@foam/core';
+import { Resource, ResourceParser, Block } from '@foam/core';
+import { MarkdownLink } from '@foam/core';
+import { URI } from '@foam/core';
+import { Position } from '@foam/core';
+import { TextEdit } from '@foam/core';
+import { isNone, isSome } from '@foam/core';
+import { RenderContext } from '@foam/core';
+
+export const WIKILINK_EMBED_REGEX =
+  /((?:(?:full|content)-(?:inline|card)|full|content|inline|card)?!\[\[[^[\]]+?\]\])/;
+// we need another regex because md.use(regex, replace) only permits capturing one group
+// so we capture the entire possible wikilink item (ex. content-card![[note]]) using WIKILINK_EMBED_REGEX and then
+// use WIKILINK_EMBED_REGEX_GROUPER to parse it into the modifier(content-card) and the wikilink(note)
+export const WIKILINK_EMBED_REGEX_GROUPS =
+  /((?:\w+)|(?:(?:\w+)-(?:\w+)))?!\[\[([^|[\]]+?)(\|[^[\]]+?)?\]\]/;
+export const CONFIG_EMBED_NOTE_TYPE = 'preview.embedNoteType';
+
+/**
+ * Options for the wikilink embed plugin. Pass the same `renderContext` into
+ * `markdownItFoamQuery` so embed↔query cycles get caught.
+ */
+export interface WikilinkEmbedOptions {
+  /** Fallback for resolving `![[#section]]` / `$current`, used when the
+   * render context stack is empty (i.e. top-level render). */
+  getCurrentResource?: (env?: any) => Resource | null;
+  /** Fresh markdown-it carrying the full Foam pipeline (issue #1642 — avoids
+   * re-entering the outer `md` while it's mid-render). */
+  createInnerMd?: () => markdownit;
+  renderContext: RenderContext;
+  /**
+   * Whether the host is a virtual workspace (no local filesystem). When true,
+   * embeds render a "not supported" warning instead of reading source files.
+   * Defaults to `() => false`.
+   */
+  isVirtualWorkspace?: () => boolean;
+  /**
+   * Returns the configured embed note type (e.g. `full-inline`, `content-card`).
+   * Defaults to `() => 'full-card'`.
+   */
+  getEmbedNoteType?: () => string;
+}
+
+export const markdownItWikilinkEmbed = (
+  md: markdownit,
+  workspace: FoamWorkspace,
+  parser: ResourceParser,
+  options: WikilinkEmbedOptions
+) => {
+  const {
+    getCurrentResource,
+    createInnerMd,
+    renderContext,
+    isVirtualWorkspace = () => false,
+    getEmbedNoteType = () => 'full-card',
+  } = options;
+  // Top of the render-context stack wins — keeps `![[#section]]` inside an
+  // embed resolving against the embedded note, not the outer page.
+  const resolveCurrentNote = (): Resource | null => {
+    const stack = renderContext.current();
+    if (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      return workspace.find(top) ?? null;
+    }
+    return getCurrentResource ? getCurrentResource(undefined) : null;
+  };
+
+  return md.use(markdownItRegex, {
+    name: 'embed-wikilinks',
+    regex: WIKILINK_EMBED_REGEX,
+    replace: (wikilinkItem: string) => {
+      try {
+        const [, noteEmbedModifier, wikilink, parametersString] =
+          wikilinkItem.match(WIKILINK_EMBED_REGEX_GROUPS);
+
+        if (isVirtualWorkspace()) {
+          return `
+<div class="foam-embed-not-supported-warning">
+  Embed not supported in virtual workspace: ![[${wikilink}]]
+</div>
+          `;
+        }
+
+        let includedNote = workspace.find(wikilink);
+
+        if (!includedNote && wikilink.startsWith('#')) {
+          const currentResource = resolveCurrentNote();
+          if (currentResource) {
+            const fragment = wikilink.slice(1);
+            includedNote = {
+              ...currentResource,
+              uri: currentResource.uri.with({ fragment }),
+            };
+          }
+        }
+
+        if (!includedNote) {
+          return `![[${wikilink}]]`;
+        }
+
+        const isSelfRefFragment = wikilink.startsWith('#');
+        const cycleWarning = (): string => {
+          const stackPaths = renderContext
+            .current()
+            .map(u => u.path.toLocaleLowerCase());
+          return `
+<div class="foam-cyclic-link-warning">
+  Cyclic link detected for wikilink: ${wikilink}
+  <div class="foam-cyclic-link-warning__stack">
+    Link sequence:
+    <ul>
+      ${stackPaths.map(ref => `<li>${ref}</li>`).join('')}
+    </ul>
+  </div>
+</div>
+          `;
+        };
+
+        // The URI on the stack may have been pushed by another embed or by
+        // a foam-query rendering this note's body — either way, recursing
+        // would loop.
+        if (!isSelfRefFragment && renderContext.has(includedNote.uri)) {
+          return cycleWarning();
+        }
+
+        let content: string;
+        try {
+          content = getNoteContent(
+            includedNote,
+            noteEmbedModifier,
+            parser,
+            workspace,
+            md,
+            getEmbedNoteType,
+            parametersString
+          );
+        } catch (e) {
+          Logger.error(
+            `Error while including ${wikilinkItem} into the current document of the Preview panel`,
+            e
+          );
+          return '';
+        }
+
+        // Self-references (`![[#section]]`) point at the current note by
+        // design; don't push or `enter` would refuse and the legitimate
+        // inner render would be skipped.
+        const entered = isSelfRefFragment
+          ? false
+          : renderContext.enter(includedNote.uri);
+        // Defensive: `has` was false above but `enter` says otherwise — bail
+        // rather than risk infinite recursion.
+        if (!isSelfRefFragment && !entered) {
+          return cycleWarning();
+        }
+        try {
+          const innerMd = createInnerMd ? createInnerMd() : md;
+          return innerMd.render(content);
+        } finally {
+          if (entered) {
+            renderContext.exit(includedNote.uri);
+          }
+        }
+      } catch (e) {
+        Logger.error(
+          `Error while including ${wikilinkItem} into the current document of the Preview panel`,
+          e
+        );
+        return '';
+      }
+    },
+  });
+};
+
+function getNoteContent(
+  includedNote: Resource,
+  noteEmbedModifier: string | undefined,
+  parser: ResourceParser,
+  workspace: FoamWorkspace,
+  md: markdownit,
+  getEmbedNoteType: () => string,
+  parametersString?: string
+): string {
+  let content = `Embed for [[${includedNote.uri.path}]]`;
+  let toRender: string;
+
+  switch (includedNote.type) {
+    case 'note': {
+      const { noteScope, noteStyle } = retrieveNoteConfig(
+        noteEmbedModifier,
+        getEmbedNoteType
+      );
+
+      const extractor: EmbedNoteExtractor =
+        noteScope === 'full'
+          ? fullExtractor
+          : noteScope === 'content'
+          ? contentExtractor
+          : fullExtractor;
+
+      const formatter: EmbedNoteFormatter =
+        noteStyle === 'card'
+          ? cardFormatter
+          : noteStyle === 'inline'
+          ? inlineFormatter
+          : cardFormatter;
+
+      content = extractor(includedNote, parser, workspace);
+      toRender = formatter(content, md);
+      break;
+    }
+    case 'attachment':
+      content = `
+<div class="embed-container-attachment">
+${md.renderInline('[[' + includedNote.uri.path + ']]')}<br/>
+Embed for attachments is not supported
+</div>`;
+      toRender = md.render(content);
+      break;
+    case 'image': {
+      const imageParams = parseImageParameters(
+        includedNote.uri.path,
+        parametersString
+      );
+      const imageHtml = generateImageStyles(imageParams, md);
+      content = `<div class="embed-container-image">${imageHtml}</div>`;
+      toRender = content;
+      break;
+    }
+    default:
+      toRender = content;
+  }
+
+  return toRender;
+}
+
+export function withLinksRelativeToWorkspaceRoot(
+  noteUri: URI,
+  noteText: string,
+  parser: ResourceParser,
+  workspace: FoamWorkspace
+): string {
+  // Re-parse only to pick up link positions inside `noteText` — the URI is
+  // just stamped onto `Resource.uri`, which we don't read.
+  const note = parser.parse(noteUri, noteText);
+  const edits = note.links
+    .map(link => {
+      const info = MarkdownLink.analyzeLink(link);
+      const resource = workspace.find(info.target, noteUri);
+      // embedded notes that aren't created are still collected
+      // return null so it can be filtered in the next step
+      if (isNone(resource)) {
+        return null;
+      }
+      // `createUpdateLinkEdit` preserves the link's existing fragment when
+      // only `target` is provided, so `[[beta#Section]]` rewrites to
+      // `[[/path/to/beta.md#Section]]`.
+      return MarkdownLink.createUpdateLinkEdit(link, {
+        target: resource.uri.path,
+      });
+    })
+    .filter(linkEdits => !isNone(linkEdits))
+    .sort((a, b) => Position.compareTo(b.range.start, a.range.start));
+  const text = edits.reduce(
+    (text, edit) => TextEdit.apply(text, edit),
+    noteText
+  );
+  return text;
+}
+
+export function retrieveNoteConfig(
+  explicitModifier: string | undefined,
+  getEmbedNoteType: () => string
+): {
+  noteScope: string;
+  noteStyle: string;
+} {
+  const config = getEmbedNoteType(); // ex. full-inline
+  let [noteScope, noteStyle] = config.split('-');
+
+  // an explicit modifier will always override corresponding user setting
+  if (explicitModifier !== undefined) {
+    if (['full', 'content'].includes(explicitModifier)) {
+      noteScope = explicitModifier;
+    } else if (['card', 'inline'].includes(explicitModifier)) {
+      noteStyle = explicitModifier;
+    } else {
+      [noteScope, noteStyle] = explicitModifier.split('-');
+    }
+  }
+  return { noteScope, noteStyle };
+}
+
+/**
+ * A type of function that gets the desired content of the note
+ */
+export type EmbedNoteExtractor = (
+  note: Resource,
+  parser: ResourceParser,
+  workspace: FoamWorkspace
+) => string;
+
+function fullExtractor(
+  note: Resource,
+  parser: ResourceParser,
+  workspace: FoamWorkspace
+): string {
+  let noteText = readFileSync(note.uri.toFsPath()).toString();
+  if (note.uri.fragment.startsWith('^')) {
+    const blockId = note.uri.fragment.slice(1);
+    const block = Resource.findBlock(note, blockId);
+    if (isSome(block)) {
+      noteText = extractBlockContent(noteText, note, block);
+    }
+  } else {
+    const section = Resource.findSection(note, note.uri.fragment);
+    if (isSome(section)) {
+      const rows = noteText.split('\n');
+      noteText = rows
+        .slice(section.range.start.line, section.range.end.line)
+        .join('\n');
+    }
+  }
+  noteText = withLinksRelativeToWorkspaceRoot(
+    note.uri,
+    noteText,
+    parser,
+    workspace
+  );
+  return noteText;
+}
+
+function contentExtractor(
+  note: Resource,
+  parser: ResourceParser,
+  workspace: FoamWorkspace
+): string {
+  let noteText = readFileSync(note.uri.toFsPath()).toString();
+  if (note.uri.fragment.startsWith('^')) {
+    const blockId = note.uri.fragment.slice(1);
+    const block = Resource.findBlock(note, blockId);
+    if (isSome(block)) {
+      noteText = extractBlockContent(noteText, note, block);
+    }
+  } else {
+    let section = Resource.findSection(note, note.uri.fragment);
+    if (!note.uri.fragment) {
+      // if there's no fragment(section), the wikilink is linking to the entire note,
+      // in which case we need to remove the title. We could just use rows.shift()
+      // but should the note start with blank lines, it will only remove the first blank line
+      // leaving the title
+      // A better way is to find where the actual title starts by assuming it's at section[0]
+      // then we treat it as the same case as link to a section
+      section = note.sections.length ? note.sections[0] : null;
+    }
+    let rows = noteText.split('\n');
+    if (isSome(section)) {
+      rows = rows.slice(section.range.start.line, section.range.end.line);
+    }
+    rows.shift();
+    noteText = rows.join('\n');
+  }
+  noteText = withLinksRelativeToWorkspaceRoot(
+    note.uri,
+    noteText,
+    parser,
+    workspace
+  );
+  return noteText;
+}
+
+/**
+ * Extracts the content of a block from note text.
+ * For heading blocks, returns the section content (heading + body).
+ * For other blocks, returns the block content with block anchor markers stripped.
+ */
+export function extractBlockContent(
+  noteText: string,
+  note: Resource,
+  block: Block
+): string {
+  const rows = noteText.split('\n');
+  if (block.type === 'heading') {
+    const headingText = rows[block.range.start.line];
+    // Find the section by start line rather than reconstructing the label from
+    // raw markdown, which would retain inline formatting (e.g. **bold**) and
+    // fail to match the AST-parsed plain-text label stored in Resource.sections.
+    const section = note.sections.find(
+      s => s.range.start.line === block.range.start.line
+    );
+    if (isSome(section)) {
+      return rows
+        .slice(section.range.start.line, section.range.end.line)
+        .join('\n')
+        .replace(/\s\^[a-zA-Z0-9-]+$/m, '');
+    }
+    return headingText.replace(/\s\^[a-zA-Z0-9-]+$/, '');
+  }
+  return rows
+    .slice(block.range.start.line, block.range.end.line + 1)
+    .join('\n')
+    .replace(/\s\^[a-zA-Z0-9-]+$/gm, '');
+}
+
+/**
+ * A type of function that renders note content with the desired style in html
+ */
+export type EmbedNoteFormatter = (content: string, md: markdownit) => string;
+
+function cardFormatter(content: string, md: markdownit): string {
+  return `<div class="embed-container-note">\n\n${content}\n\n</div>`;
+}
+
+function inlineFormatter(content: string, md: markdownit): string {
+  return content;
+}
+
+interface ImageParameters {
+  filename: string;
+  width?: string;
+  height?: string;
+  align?: 'center' | 'left' | 'right';
+  alt?: string;
+}
+
+function parseImageParameters(
+  wikilink: string,
+  parametersString?: string
+): ImageParameters {
+  const result: ImageParameters = {
+    filename: wikilink,
+  };
+
+  if (!parametersString) {
+    return result;
+  }
+
+  // Remove the leading pipe and split by remaining pipes
+  const params = parametersString.slice(1).split('|');
+
+  if (params.length === 0) {
+    return result;
+  }
+
+  // First parameter is always size
+  const sizeParam = params[0]?.trim();
+  if (sizeParam) {
+    // Parse size parameter: could be "300", "300x200", "50%", "300px", etc.
+    // Check for width x height format (but not if it's just a unit like "px")
+    const dimensionMatch = sizeParam.match(
+      /^(\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh)?)\s*x\s*(\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh)?)$/i
+    );
+    if (dimensionMatch) {
+      // Width x Height format
+      result.width = dimensionMatch[1]?.trim();
+      result.height = dimensionMatch[2]?.trim();
+    } else {
+      // Width only
+      result.width = sizeParam;
+    }
+  }
+
+  // Second parameter could be alignment
+  const alignParam = params[1]?.trim().toLowerCase();
+  if (alignParam && ['center', 'left', 'right'].includes(alignParam)) {
+    result.align = alignParam as 'center' | 'left' | 'right';
+  } else if (alignParam) {
+    // If not alignment, treat as alt text
+    result.alt = params.slice(1).join('|').trim();
+  }
+
+  // Third parameter onwards is alt text (if second wasn't alt text)
+  if (result.align && params.length > 2) {
+    result.alt = params.slice(2).join('|').trim();
+  }
+
+  return result;
+}
+
+function generateImageStyles(params: ImageParameters, md: markdownit): string {
+  const { filename, width, height, align, alt } = params;
+
+  // Build CSS styles for the image
+  const styles: string[] = [];
+
+  if (width) {
+    styles.push(`width: ${addDefaultUnit(width)}`);
+
+    // If only width is specified, set height to auto to maintain aspect ratio
+    if (!height) {
+      styles.push('height: auto');
+    }
+  }
+
+  if (height) {
+    styles.push(`height: ${addDefaultUnit(height)}`);
+  }
+
+  const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
+  const altAttr = alt ? ` alt="${escapeHtml(alt)}"` : ' alt=""';
+
+  // Generate the image HTML
+  const imageHtml = `<img src="${md.normalizeLink(
+    filename
+  )}"${styleAttr}${altAttr}>`;
+
+  // Wrap with alignment if specified
+  if (align) {
+    return `<div style="text-align: ${align};">${imageHtml}</div>`;
+  }
+
+  return imageHtml;
+}
+
+function addDefaultUnit(value: string): string {
+  // If no unit is specified and it's a pure number, add 'px'
+  if (/^\d+(\.\d+)?$/.test(value)) {
+    return value + 'px';
+  }
+  return value;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export { parseImageParameters, generateImageStyles };
+export default markdownItWikilinkEmbed;
