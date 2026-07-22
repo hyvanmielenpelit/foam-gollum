@@ -6,21 +6,22 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Position as FoamPosition } from '../core/model/position';
-import { Range as FoamRange } from '../core/model/range';
-import { URI } from '../core/model/uri';
-import { Logger } from '../core/utils/log';
-import { TextEdit } from '../core/services/text-edit';
-import * as foamCommands from '../features/commands';
-import { Foam, bootstrap } from '../core/model/foam';
-import { createMarkdownParser } from '../core/services/markdown-parser';
+import { Position as FoamPosition } from '@foam/core';
+import { Range as FoamRange } from '@foam/core';
+import { URI } from '@foam/core';
+import { Logger } from '@foam/core';
+import { TextEdit as FoamTextEdit } from '@foam/core';
+import { Foam, bootstrap } from '@foam/core';
+import { createMarkdownParser } from '@foam/core';
 import {
   GenericDataStore,
   AlwaysIncludeMatcher,
-} from '../core/services/datastore';
-import { MarkdownResourceProvider } from '../core/services/markdown-provider';
+  IWatcher,
+} from '@foam/core';
+import { MarkdownResourceProvider } from '@foam/core';
 import { randomString } from './test-utils';
 import micromatch from 'micromatch';
+import { Emitter } from '@foam/core';
 
 interface Thenable<T> {
   then<TResult>(
@@ -76,9 +77,9 @@ export class Position implements FoamPosition {
   }
 
   translate(lineDelta?: number, characterDelta?: number): Position;
-  // eslint-disable-next-line no-dupe-class-members
+   
   translate(change: { lineDelta?: number; characterDelta?: number }): Position;
-  // eslint-disable-next-line no-dupe-class-members
+   
   translate(
     lineDeltaOrChange?:
       | number
@@ -100,9 +101,9 @@ export class Position implements FoamPosition {
   }
 
   with(line?: number, character?: number): Position;
-  // eslint-disable-next-line no-dupe-class-members
+   
   with(change: { line?: number; character?: number }): Position;
-  // eslint-disable-next-line no-dupe-class-members
+   
   with(
     lineOrChange?: number | { line?: number; character?: number },
     character?: number
@@ -217,38 +218,55 @@ export interface Uri {
 
 // Adapter to convert Foam URI to VS Code Uri
 export function createVSCodeUri(foamUri: URI): Uri {
-  return {
-    scheme: foamUri.scheme,
-    authority: foamUri.authority,
-    path: foamUri.path,
-    query: foamUri.query,
-    fragment: foamUri.fragment,
-    fsPath: foamUri.toFsPath(),
-
-    with(change) {
-      const newFoamUri = foamUri.with(change);
-      return createVSCodeUri(newFoamUri);
+  const uri: Uri = Object.defineProperties(
+    {
+      scheme: foamUri.scheme,
+      authority: foamUri.authority,
+      path: foamUri.path,
+      query: foamUri.query,
+      fragment: foamUri.fragment,
+      fsPath: foamUri.toFsPath(),
     },
+    {
+      with: {
+        value(change: Parameters<Uri['with']>[0]) {
+          return createVSCodeUri(foamUri.with(change));
+        },
+        enumerable: false,
+      },
+      toString: {
+        value() {
+          return foamUri.toString();
+        },
+        enumerable: false,
+      },
+      toJSON: {
+        value() {
+          return {
+            scheme: foamUri.scheme,
+            authority: foamUri.authority,
+            path: foamUri.path,
+            query: foamUri.query,
+            fragment: foamUri.fragment,
+            fsPath: foamUri.toFsPath(),
+          };
+        },
+        enumerable: false,
+      },
+    }
+  ) as Uri;
+  return uri;
+}
 
-    toString() {
-      return foamUri.toString();
-    },
-
-    toJSON() {
-      return {
-        scheme: foamUri.scheme,
-        authority: foamUri.authority,
-        path: foamUri.path,
-        query: foamUri.query,
-        fragment: foamUri.fragment,
-        fsPath: foamUri.toFsPath(),
-      };
-    },
-  };
+/**
+ * Convert VS Code Uri to Foam URI
+ */
+export function fromVsCodeUri(vsCodeUri: Uri): URI {
+  return URI.file(vsCodeUri.fsPath);
 }
 
 // VS Code Uri static methods
-// eslint-disable-next-line @typescript-eslint/no-redeclare
+ 
 export const Uri = {
   file(path: string): Uri {
     return createVSCodeUri(URI.file(path));
@@ -423,6 +441,12 @@ export enum DiagnosticSeverity {
   Hint = 3,
 }
 
+export enum ProgressLocation {
+  SourceControl = 1,
+  Window = 10,
+  Notification = 15,
+}
+
 // ===== Code Actions =====
 
 export class CodeActionKind {
@@ -559,6 +583,13 @@ export enum TreeItemCollapsibleState {
   Expanded = 2,
 }
 
+export enum DecorationRangeBehavior {
+  OpenOpen = 0,
+  ClosedClosed = 1,
+  OpenClosed = 2,
+  ClosedOpen = 3,
+}
+
 // ===== Theme Classes =====
 
 export class ThemeColor {
@@ -586,6 +617,57 @@ export interface Event<T> {
 
 export interface Disposable {
   dispose(): void;
+}
+
+// ===== Cancellation =====
+
+export interface CancellationToken {
+  readonly isCancellationRequested: boolean;
+  readonly onCancellationRequested: Event<any>;
+}
+
+export class CancellationTokenSource {
+  private _token: CancellationToken | undefined;
+  private _emitter: EventEmitter<any> | undefined;
+  private _isCancelled = false;
+
+  get token(): CancellationToken {
+    if (!this._token) {
+      this._emitter = new EventEmitter<any>();
+      this._token = {
+        isCancellationRequested: this._isCancelled,
+        onCancellationRequested: this._emitter.event,
+      };
+    }
+    return this._token;
+  }
+
+  cancel(): void {
+    if (!this._isCancelled) {
+      this._isCancelled = true;
+      if (this._emitter) {
+        this._emitter.fire(undefined);
+      }
+      // Update token state
+      if (this._token) {
+        (this._token as any).isCancellationRequested = true;
+      }
+    }
+  }
+
+  dispose(): void {
+    if (this._emitter) {
+      this._emitter.dispose();
+      this._emitter = undefined;
+    }
+    this._token = undefined;
+  }
+}
+
+// ===== Progress =====
+
+export interface Progress<T> {
+  report(value: T): void;
 }
 
 export class EventEmitter<T> {
@@ -791,11 +873,21 @@ class MockTextDocument implements TextDocument {
       this._content = content;
       // Write the content to file if provided
       try {
+        const existed = fs.existsSync(uri.fsPath);
         const dir = path.dirname(uri.fsPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });
         }
         fs.writeFileSync(uri.fsPath, content);
+
+        // Manually fire watcher events (can't use async workspace.fs in constructor)
+        for (const watcher of mockState.fileWatchers) {
+          if (existed) {
+            watcher._fireChange(uri);
+          } else {
+            watcher._fireCreate(uri);
+          }
+        }
       } catch (error) {
         // Ignore write errors in mock
       }
@@ -1034,6 +1126,24 @@ class MockTextEditor implements TextEditor {
   }
 }
 
+// ===== TextEdit =====
+
+export class TextEdit {
+  constructor(public range: Range, public newText: string) {}
+
+  static replace(range: Range, newText: string): TextEdit {
+    return new TextEdit(range, newText);
+  }
+
+  static insert(position: Position, newText: string): TextEdit {
+    return new TextEdit(new Range(position, position), newText);
+  }
+
+  static delete(range: Range): TextEdit {
+    return new TextEdit(range, '');
+  }
+}
+
 // ===== WorkspaceEdit =====
 
 export class WorkspaceEdit {
@@ -1044,7 +1154,7 @@ export class WorkspaceEdit {
     if (!this._edits.has(key)) {
       this._edits.set(key, []);
     }
-    this._edits.get(key)!.push({ type: 'replace', range, newText });
+    this._edits.get(key)!.push(new TextEdit(range, newText));
   }
 
   insert(uri: Uri, position: Position, newText: string): void {
@@ -1052,7 +1162,9 @@ export class WorkspaceEdit {
     if (!this._edits.has(key)) {
       this._edits.set(key, []);
     }
-    this._edits.get(key)!.push({ type: 'insert', position, newText });
+    this._edits
+      .get(key)!
+      .push(new TextEdit(new Range(position, position), newText));
   }
 
   delete(uri: Uri, range: Range): void {
@@ -1060,7 +1172,7 @@ export class WorkspaceEdit {
     if (!this._edits.has(key)) {
       this._edits.set(key, []);
     }
-    this._edits.get(key)!.push({ type: 'delete', range });
+    this._edits.get(key)!.push(new TextEdit(range, ''));
   }
 
   renameFile(
@@ -1073,6 +1185,31 @@ export class WorkspaceEdit {
       this._edits.set(key, []);
     }
     this._edits.get(key)!.push({ type: 'rename', oldUri, newUri, options });
+  }
+
+  set(uri: Uri, edits: TextEdit[]): void {
+    const key = uri.toString();
+    if (!this._edits.has(key)) {
+      this._edits.set(key, []);
+    }
+    this._edits.get(key)!.push(...edits);
+  }
+
+  get(uri: Uri): TextEdit[] | undefined {
+    const key = uri.toString();
+    return this._edits.get(key) as TextEdit[] | undefined;
+  }
+
+  entries(): [Uri, TextEdit[]][] {
+    const result: [Uri, TextEdit[]][] = [];
+    for (const [key, edits] of this._edits) {
+      const uri = createVSCodeUri(URI.parse(key, 'file'));
+      result.push([
+        uri,
+        edits.filter(e => e instanceof TextEdit || e.range) as TextEdit[],
+      ]);
+    }
+    return result;
   }
 
   // Internal method to get edits for applying
@@ -1115,13 +1252,46 @@ class MockFileSystem implements FileSystem {
   }
 
   async writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+    // Check if file exists before writing
+    const existed = await this.exists(uri);
+
     // Ensure directory exists
     const dir = path.dirname(uri.fsPath);
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.writeFile(uri.fsPath, content);
+
+    // Fire watcher events
+    for (const watcher of mockState.fileWatchers) {
+      if (existed) {
+        watcher._fireChange(uri);
+      } else {
+        watcher._fireCreate(uri);
+      }
+    }
+  }
+
+  private async exists(uri: Uri): Promise<boolean> {
+    try {
+      await fs.promises.access(uri.fsPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async delete(uri: Uri, options?: { recursive?: boolean }): Promise<void> {
+    // Fire onWillDeleteFiles listeners before deleting, so handlers can
+    // clean up workspace state synchronously (mirrors VS Code's behaviour).
+    if (mockState.onWillDeleteFilesListeners.length > 0) {
+      const event = { files: [uri] };
+      for (const listener of mockState.onWillDeleteFilesListeners) {
+        const result = listener(event);
+        if (result && typeof result.then === 'function') {
+          await result;
+        }
+      }
+    }
+
     if (options?.recursive) {
       // Use rmdir with recursive option for older Node.js versions
       try {
@@ -1132,6 +1302,11 @@ class MockFileSystem implements FileSystem {
       }
     } else {
       await fs.promises.unlink(uri.fsPath);
+    }
+
+    // Fire watcher events
+    for (const watcher of mockState.fileWatchers) {
+      watcher._fireDelete(uri);
     }
   }
 
@@ -1175,6 +1350,87 @@ class MockFileSystem implements FileSystem {
     options?: { overwrite?: boolean }
   ): Promise<void> {
     await fs.promises.rename(source.fsPath, target.fsPath);
+
+    // Fire watcher events (rename = delete + create)
+    for (const watcher of mockState.fileWatchers) {
+      watcher._fireDelete(source);
+      watcher._fireCreate(target);
+    }
+  }
+}
+
+// ===== File System Watcher =====
+
+export interface FileSystemWatcher extends Disposable {
+  onDidCreate: Event<Uri>;
+  onDidChange: Event<Uri>;
+  onDidDelete: Event<Uri>;
+  ignoreCreateEvents: boolean;
+  ignoreChangeEvents: boolean;
+  ignoreDeleteEvents: boolean;
+}
+
+class MockFileSystemWatcher implements FileSystemWatcher {
+  private onDidCreateEmitter = new Emitter<Uri>();
+  private onDidChangeEmitter = new Emitter<Uri>();
+  private onDidDeleteEmitter = new Emitter<Uri>();
+
+  onDidCreate = this.onDidCreateEmitter.event;
+  onDidChange = this.onDidChangeEmitter.event;
+  onDidDelete = this.onDidDeleteEmitter.event;
+
+  ignoreCreateEvents = false;
+  ignoreChangeEvents = false;
+  ignoreDeleteEvents = false;
+
+  constructor(private pattern: string) {
+    // Register this watcher in mockState (will be added to mockState)
+    if (mockState.fileWatchers) {
+      mockState.fileWatchers.push(this);
+    }
+  }
+
+  // Internal methods called by MockFileSystem
+  _fireCreate(uri: Uri) {
+    if (!this.ignoreCreateEvents && this.matches(uri)) {
+      this.onDidCreateEmitter.fire(uri);
+    }
+  }
+
+  _fireChange(uri: Uri) {
+    if (!this.ignoreChangeEvents && this.matches(uri)) {
+      this.onDidChangeEmitter.fire(uri);
+    }
+  }
+
+  _fireDelete(uri: Uri) {
+    if (!this.ignoreDeleteEvents && this.matches(uri)) {
+      this.onDidDeleteEmitter.fire(uri);
+    }
+  }
+
+  private matches(uri: Uri): boolean {
+    const workspaceFolder = mockState.workspaceFolders[0];
+    if (!workspaceFolder) return false;
+
+    const relativePath = path
+      .relative(workspaceFolder.uri.fsPath, uri.fsPath)
+      .split(path.sep)
+      .join('/');
+    // Use micromatch (already imported) for glob matching
+    return micromatch.isMatch(relativePath, this.pattern);
+  }
+
+  dispose() {
+    if (mockState.fileWatchers) {
+      const index = mockState.fileWatchers.indexOf(this);
+      if (index >= 0) {
+        mockState.fileWatchers.splice(index, 1);
+      }
+    }
+    this.onDidCreateEmitter.dispose();
+    this.onDidChangeEmitter.dispose();
+    this.onDidDeleteEmitter.dispose();
   }
 }
 
@@ -1205,9 +1461,10 @@ export interface ExtensionContext {
   logPath: string;
   extensionMode: number;
   extension: any;
+  languageModelAccessInformation: any;
 }
 
-function createMockExtensionContext(): ExtensionContext {
+export function createMockExtensionContext(): ExtensionContext {
   return {
     subscriptions: [],
     workspaceState: {
@@ -1248,6 +1505,10 @@ function createMockExtensionContext(): ExtensionContext {
       id: 'foam.foam-vscode',
       packageJSON: {},
     },
+    languageModelAccessInformation: {
+      onDidChange: () => ({ dispose: () => {} }),
+      canSendRequest: () => undefined,
+    },
   };
 }
 
@@ -1276,6 +1537,27 @@ class MockExtension<T> implements Extension<T> {
     this.isActive = true;
     return Promise.resolve(this.exports);
   }
+}
+
+// ===== File System Helpers =====
+
+async function collectFilesRecursively(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  try {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const subFiles = await collectFilesRecursively(fullPath);
+        files.push(...subFiles);
+      } else if (entry.isFile()) {
+        files.push(fullPath);
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+  return files;
 }
 
 // ===== Foam Commands Lazy Initialization =====
@@ -1343,17 +1625,42 @@ class TestFoam {
     // Create resource providers
     const providers = [new MarkdownResourceProvider(dataStore, parser)];
 
-    // Use the bootstrap function without file watcher (simpler for tests)
+    // Create file watcher for automatic workspace updates
+    const vsCodeWatcher = workspace.createFileSystemWatcher('**/*');
+
+    // Convert VS Code Uri events to Foam URI events
+    const onDidCreateEmitter = new Emitter<URI>();
+    const onDidChangeEmitter = new Emitter<URI>();
+    const onDidDeleteEmitter = new Emitter<URI>();
+
+    vsCodeWatcher.onDidCreate(uri =>
+      onDidCreateEmitter.fire(fromVsCodeUri(uri))
+    );
+    vsCodeWatcher.onDidChange(uri =>
+      onDidChangeEmitter.fire(fromVsCodeUri(uri))
+    );
+    vsCodeWatcher.onDidDelete(uri =>
+      onDidDeleteEmitter.fire(fromVsCodeUri(uri))
+    );
+
+    const foamWatcher: IWatcher = {
+      onDidCreate: onDidCreateEmitter.event,
+      onDidChange: onDidChangeEmitter.event,
+      onDidDelete: onDidDeleteEmitter.event,
+    };
+
+    // Use the bootstrap function with file watcher
     const foam = await bootstrap(
+      [fromVsCodeUri(workspaceFolder.uri)],
       matcher,
-      undefined,
+      foamWatcher,
       dataStore,
       parser,
       providers,
       '.md'
     );
 
-    Logger.info('Mock Foam instance created (manual reload for tests)');
+    Logger.info('Mock Foam instance created with file watcher');
     return foam;
   }
 
@@ -1385,29 +1692,8 @@ class TestFoam {
   }
 }
 
-async function initializeFoamCommands(foam: Foam): Promise<void> {
-  const mockContext = createMockExtensionContext();
-
-  const foamPromise = Promise.resolve(foam);
-  // Initialize all command modules
-  // Commands that need Foam instance
-  await foamCommands.createNote(mockContext, foamPromise);
-  await foamCommands.janitorCommand(mockContext, foamPromise);
-  await foamCommands.openRandomNoteCommand(mockContext, foamPromise);
-  await foamCommands.openResource(mockContext, foamPromise);
-  await foamCommands.updateGraphCommand(mockContext, foamPromise);
-  await foamCommands.updateWikilinksCommand(mockContext, foamPromise);
-  await foamCommands.openDailyNoteForDateCommand(mockContext, foamPromise);
-  await foamCommands.convertLinksCommand(mockContext, foamPromise);
-
-  // Commands that only need context
-  await foamCommands.copyWithoutBracketsCommand(mockContext);
-  await foamCommands.createFromTemplateCommand(mockContext);
-  await foamCommands.createNewTemplate(mockContext);
-  await foamCommands.openDailyNoteCommand(mockContext, foamPromise);
-  await foamCommands.openDatedNote(mockContext, foamPromise);
-
-  Logger.info('Foam commands initialized successfully in mock environment');
+export async function getTestFoam(): Promise<Foam> {
+  return TestFoam.getInstance();
 }
 
 // ===== VS Code Namespaces =====
@@ -1420,6 +1706,11 @@ const mockState = {
   commands: new Map<string, (...args: any[]) => any>(),
   fileSystem: new MockFileSystem(),
   configuration: new MockWorkspaceConfiguration(),
+  fileWatchers: [] as MockFileSystemWatcher[],
+  onWillRenameFilesListeners: [] as ((e: any) => any)[],
+  onDidRenameFilesListeners: [] as ((e: any) => any)[],
+  onWillDeleteFilesListeners: [] as ((e: any) => any)[],
+  openDocuments: new Map<string, MockTextDocument>(),
 };
 
 // Window namespace
@@ -1434,6 +1725,38 @@ export const window = {
 
   get visibleTextEditors(): TextEditor[] {
     return mockState.visibleTextEditors;
+  },
+
+  createTextEditorDecorationType(_options: any): any {
+    return { dispose: () => {} };
+  },
+
+  createTreeView(viewId: string, options: any): any {
+    const noop = () => ({ dispose: () => {} });
+    return { dispose: () => {}, onDidChangeSelection: noop, onDidChangeVisibility: noop, onDidExpandElement: noop, onDidCollapseElement: noop };
+  },
+
+  registerTreeDataProvider(_viewId: string, _provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  onDidChangeActiveTextEditor(listener: (editor: any) => any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  onDidChangeVisibleTextEditors(listener: (editors: any[]) => any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  tabGroups: {
+    activeTabGroup: { activeTab: undefined as any, tabs: [] as any[] },
+    all: [] as any[],
+    onDidChangeTabs(_listener: (e: any) => any): Disposable {
+      return { dispose: () => {} };
+    },
+    onDidChangeTabGroups(_listener: (e: any) => any): Disposable {
+      return { dispose: () => {} };
+    },
   },
 
   async showInputBox(options?: {
@@ -1514,6 +1837,31 @@ export const window = {
         message
     );
   },
+
+  async withProgress<R>(
+    options: {
+      location: ProgressLocation;
+      title?: string;
+      cancellable?: boolean;
+    },
+    task: (
+      progress: Progress<{ message?: string; increment?: number }>,
+      token: CancellationToken
+    ) => Thenable<R>
+  ): Promise<R> {
+    const tokenSource = new CancellationTokenSource();
+    const progress: Progress<{ message?: string; increment?: number }> = {
+      report: () => {
+        // No-op in mock, but can be overridden in tests
+      },
+    };
+
+    try {
+      return await task(progress, tokenSource.token);
+    } finally {
+      tokenSource.dispose();
+    }
+  },
 };
 
 // Workspace namespace
@@ -1526,6 +1874,10 @@ export const workspace = {
 
   get fs(): FileSystem {
     return mockState.fileSystem;
+  },
+
+  createFileSystemWatcher(globPattern: string): FileSystemWatcher {
+    return new MockFileSystemWatcher(globPattern);
   },
 
   getConfiguration(section?: string): WorkspaceConfiguration {
@@ -1563,10 +1915,10 @@ export const workspace = {
 
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
-          const relativePath = path.relative(
-            workspaceFolder.uri.fsPath,
-            fullPath
-          );
+          const relativePath = path
+            .relative(workspaceFolder.uri.fsPath, fullPath)
+            .split(path.sep)
+            .join('/');
 
           if (entry.isDirectory()) {
             const subFiles = await findFilesRecursive(fullPath);
@@ -1619,6 +1971,50 @@ export const workspace = {
     };
   },
 
+  onWillRenameFiles(listener: (e: any) => any): Disposable {
+    mockState.onWillRenameFilesListeners.push(listener);
+    return {
+      dispose: () => {
+        const idx = mockState.onWillRenameFilesListeners.indexOf(listener);
+        if (idx >= 0) {
+          mockState.onWillRenameFilesListeners.splice(idx, 1);
+        }
+      },
+    };
+  },
+
+  onDidRenameFiles(listener: (e: any) => any): Disposable {
+    mockState.onDidRenameFilesListeners.push(listener);
+    return {
+      dispose: () => {
+        const idx = mockState.onDidRenameFilesListeners.indexOf(listener);
+        if (idx >= 0) {
+          mockState.onDidRenameFilesListeners.splice(idx, 1);
+        }
+      },
+    };
+  },
+
+  onWillDeleteFiles(listener: (e: any) => any): Disposable {
+    mockState.onWillDeleteFilesListeners.push(listener);
+    return {
+      dispose: () => {
+        const idx = mockState.onWillDeleteFilesListeners.indexOf(listener);
+        if (idx >= 0) {
+          mockState.onWillDeleteFilesListeners.splice(idx, 1);
+        }
+      },
+    };
+  },
+
+  onDidChangeConfiguration(listener: (e: any) => void): Disposable {
+    return { dispose: () => {} };
+  },
+
+  onDidChangeTextDocument(listener: (e: any) => void): Disposable {
+    return { dispose: () => {} };
+  },
+
   async openTextDocument(
     uriOrFileNameOrOptions:
       | Uri
@@ -1640,43 +2036,118 @@ export const workspace = {
       content = uriOrFileNameOrOptions.content || '';
     }
 
-    // Always create a fresh document to ensure we get the latest content
+    // Return cached instance so edits via applyEdit are reflected in test references
+    const key = uri.toString();
+    const existing = mockState.openDocuments.get(key);
+    if (existing && content === undefined) {
+      return existing;
+    }
+
     const document = new MockTextDocument(uri, content);
+    mockState.openDocuments.set(key, document);
     return document;
   },
 
   async applyEdit(edit: WorkspaceEdit): Promise<boolean> {
     try {
+      // Collect rename operations and fire onWillRenameFiles before processing
+      const renames: { oldUri: Uri; newUri: Uri }[] = [];
+      for (const [, edits] of edit._getEdits()) {
+        for (const e of edits) {
+          if (e.type === 'rename') {
+            renames.push(e);
+          }
+        }
+      }
+      if (
+        renames.length > 0 &&
+        mockState.onWillRenameFilesListeners.length > 0
+      ) {
+        const event = { files: renames };
+        for (const listener of mockState.onWillRenameFilesListeners) {
+          const result = listener(event);
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
+        }
+      }
+
       for (const [uriString, edits] of edit._getEdits()) {
         const uri = createVSCodeUri(URI.parse(uriString, 'file'));
-        const document = await workspace.openTextDocument(uri);
 
-        if (document instanceof MockTextDocument) {
-          let content = document.getText();
-
-          // Apply edits in reverse order to maintain positions
-          const sortedEdits = edits.sort((a, b) => {
-            if (a.type === 'replace' && b.type === 'replace') {
-              return Position.compareTo(b.range.start, a.range.start);
-            }
-            // Add more sophisticated sorting for other edit types
-            return 0;
-          });
-
-          for (const edit of sortedEdits) {
-            if (edit.type === 'replace') {
-              content = TextEdit.apply(content, {
-                newText: edit.newText,
-                range: edit.range,
+        // Apply text edits
+        const textEdits = edits.filter(e => e instanceof TextEdit || e.range);
+        if (textEdits.length > 0) {
+          const document = await workspace.openTextDocument(uri);
+          if (document instanceof MockTextDocument) {
+            let content = document.getText();
+            textEdits.sort((a, b) =>
+              Position.compareTo(b.range.start, a.range.start)
+            );
+            for (const e of textEdits) {
+              content = FoamTextEdit.apply(content, {
+                newText: e.newText,
+                range: e.range,
               });
-            } else if (edit.type === 'rename') {
-              // Handle file rename by physically moving the file
-              await fs.promises.rename(edit.oldUri.fsPath, edit.newUri.fsPath);
             }
-            // Handle other edit types as needed
+            document._updateContent(content);
           }
+        }
 
-          document._updateContent(content);
+        // Handle file renames
+        const otherEdits = edits.filter(
+          e => !(e instanceof TextEdit || e.range)
+        );
+        for (const e of otherEdits) {
+          if (e.type === 'rename') {
+            // Build the list of (oldUri, newUri) pairs to fire events for.
+            // For directory renames, expand to individual files; for files, it's a single pair.
+            let isDirectory = false;
+            try {
+              const stat = await fs.promises.stat(e.oldUri.fsPath);
+              isDirectory = stat.isDirectory();
+            } catch {
+              // Not a directory or doesn't exist
+            }
+
+            const filePairs: { oldFileUri: Uri; newFileUri: Uri }[] = [];
+            if (isDirectory) {
+              const oldFiles = await collectFilesRecursively(e.oldUri.fsPath);
+              for (const oldFilePath of oldFiles) {
+                const relPath = path.relative(e.oldUri.fsPath, oldFilePath);
+                const newFilePath = path.join(e.newUri.fsPath, relPath);
+                filePairs.push({
+                  oldFileUri: createVSCodeUri(URI.file(oldFilePath)),
+                  newFileUri: createVSCodeUri(URI.file(newFilePath)),
+                });
+              }
+            } else {
+              filePairs.push({ oldFileUri: e.oldUri, newFileUri: e.newUri });
+            }
+
+            await fs.promises.rename(e.oldUri.fsPath, e.newUri.fsPath);
+            mockState.openDocuments.delete(e.oldUri.toString());
+            for (const { oldFileUri, newFileUri } of filePairs) {
+              for (const watcher of mockState.fileWatchers) {
+                watcher._fireDelete(oldFileUri);
+                watcher._fireCreate(newFileUri);
+              }
+            }
+          }
+        }
+      }
+
+      // Fire onDidRenameFiles after all renames are complete
+      if (
+        renames.length > 0 &&
+        mockState.onDidRenameFilesListeners.length > 0
+      ) {
+        const event = { files: renames };
+        for (const listener of mockState.onDidRenameFilesListeners) {
+          const result = listener(event);
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
         }
       }
 
@@ -1730,11 +2201,6 @@ export const commands = {
     command: string,
     ...args: any[]
   ): Promise<T> {
-    // Auto-initialize Foam commands if this is a foam-vscode command
-    if (command.startsWith('foam-vscode.')) {
-      await initializeFoamCommands(await TestFoam.getInstance());
-    }
-
     const handler = mockState.commands.get(command);
     if (!handler) {
       throw new Error(`Command '${command}' not found`);
@@ -1761,6 +2227,44 @@ export const languages = {
       dispose: () => {
         // No-op
       },
+    };
+  },
+
+  registerCompletionItemProvider(selector: any, provider: any, ...triggerChars: string[]): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerDefinitionProvider(selector: any, provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerDocumentLinkProvider(selector: any, provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerHoverProvider(selector: any, provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerReferenceProvider(selector: any, provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerRenameProvider(selector: any, provider: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  registerCodeActionsProvider(selector: any, provider: any, metadata?: any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  createDiagnosticCollection(_name?: string): any {
+    const items = new Map<any, any[]>();
+    return {
+      set: (uri: any, diagnostics: any[]) => items.set(uri, diagnostics),
+      delete: (uri: any) => items.delete(uri),
+      clear: () => items.clear(),
+      dispose: () => items.clear(),
     };
   },
 };
@@ -1840,6 +2344,10 @@ export function resetMockState(): void {
   mockState.visibleTextEditors = [];
   mockState.workspaceFolders = [];
   mockState.commands.clear();
+  mockState.onWillRenameFilesListeners = [];
+  mockState.onDidRenameFilesListeners = [];
+  mockState.onWillDeleteFilesListeners = [];
+  mockState.openDocuments.clear();
   mockState.configuration = new MockWorkspaceConfiguration();
 
   // Create a default workspace folder for tests
@@ -1853,8 +2361,9 @@ export function resetMockState(): void {
 
   // Register built-in VS Code commands
   commands.registerCommand('workbench.action.closeAllEditors', () => {
-    // Reset active editor to simulate closing all editors
-    (window as any).activeTextEditor = undefined;
+    mockState.activeTextEditor = undefined;
+    mockState.visibleTextEditors = [];
+    mockState.openDocuments.clear();
     return Promise.resolve();
   });
 
@@ -1877,9 +2386,6 @@ resetMockState();
 export async function forceCleanup(): Promise<void> {
   // Clean up existing Foam instance
   TestFoam.dispose();
-
-  // Clear all registered commands
-  mockState.commands.clear();
 
   // Clear all event listeners by resetting emitters
   mockState.activeTextEditor = undefined;

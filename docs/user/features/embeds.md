@@ -2,6 +2,8 @@
 
 Embeds allow you to include content from other notes directly into your current note. This is powerful for creating dynamic content that updates automatically when the source note changes.
 
+If you want to embed a dynamic list or table of notes instead of the content of one note, see [[foam-queries]].
+
 ## Basic Syntax
 
 Use the embed syntax with an exclamation mark before the wikilink:
@@ -19,6 +21,16 @@ You can embed specific sections of a note by referencing the heading:
 ```markdown
 ![[note-name#Section Title]]
 ```
+
+## Embedding Blocks
+
+Embed a specific paragraph, list item, heading, or blockquote using a block anchor:
+
+```markdown
+![[note-name#^blockid]]
+```
+
+See [[block-anchors]] for how to add `^id` markers to your notes.
 
 ## Embed Types
 
@@ -47,6 +59,27 @@ Examples:
 card![[my-note]] # Bordered container
 inline![[my-note]] # Seamless integration
 ```
+
+#### Custom Card Styling
+
+Customize the appearance of the bordered container in markdown preview by adding CSS:
+
+1. Create `.foam/css/custom-styles.css`
+2. Add CSS targeting `.embed-container-note` class:
+   ```css
+   .embed-container-note {
+      border: 1px solid #d1d9e0;
+      box-sizing: border-box;
+      padding: 4px 16px;
+      border-radius: 6px;
+   }
+   ```
+3. Update `.vscode/settings.json`:
+   ```json
+   {
+     "markdown.styles": [".foam/css/custom-styles.css"]
+   }
+   ```
 
 ### Combined Modifiers
 
@@ -132,3 +165,6 @@ Add descriptions for accessibility:
 - No spaces around pipes: `|300|` not `| 300 |`
 - Images only resize in preview mode, not edit mode
 - Use lowercase alignment: `center` not `Center`
+
+[block-anchors]: block-anchors.md 'Block Anchors'
+[foam-queries]: foam-queries.md 'Foam Queries'

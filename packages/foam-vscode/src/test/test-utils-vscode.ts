@@ -4,18 +4,40 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import { TextDecoder, TextEncoder } from 'util';
-import { fromVsCodeUri, toVsCodeUri } from '../utils/vsc-utils';
-import { Logger } from '../core/utils/log';
-import { URI } from '../core/model/uri';
-import { Resource } from '../core/model/note';
+import { fromVsCodeUri, toVsCodeUri } from '../vscode/utils/vsc-utils';
+import { Logger } from '@foam/core';
+import { URI } from '@foam/core';
+import { Resource } from '@foam/core';
 import { randomString, wait } from './test-utils';
-import { Foam } from '../core/model/foam';
+import { Foam } from '@foam/core';
+import { FoamWorkspace } from '@foam/core';
 
 Logger.setLevel('error');
 
-export const cleanWorkspace = async () => {
+/**
+ * Creates a minimal Foam mock with a workspace rooted at all VS Code workspace folders.
+ * Shared by spec files that need a Foam instance without a full bootstrap.
+ */
+export function makeFoamMock() {
+  const roots = vscode.workspace.workspaceFolders.map(f =>
+    fromVsCodeUri(f.uri)
+  );
+  return { workspace: new FoamWorkspace(roots) } as any;
+}
+
+/**
+ * Deletes all files in the workspace, except for .vscode and .keep files.
+ * Optionally waits for the Foam workspace to be empty after the cleanup.
+ *
+ * @param timeout if > 0, wait for the Foam workspace to be empty after cleanup, with this timeout
+ * @returns a promise that resolves when the cleanup (and optional wait) is complete
+ */
+export const cleanWorkspace = async (timeout = 0) => {
   const files = await vscode.workspace.findFiles('**', '{.vscode,.keep}');
   await Promise.all(files.map(f => deleteFile(fromVsCodeUri(f))));
+  if (timeout > 0) {
+    await waitForEmptyFoamWorkspace(timeout);
+  }
 };
 
 export const showInEditor = async (uri: URI) => {
@@ -73,14 +95,52 @@ export const waitForNoteInFoamWorkspace = async (uri: URI, timeout = 5000) => {
   const foam = await getFoamFromVSCode();
   const workspace = foam.workspace;
 
-  // Wait for the workspace to discover the note
   while (Date.now() - start < timeout) {
     if (workspace.find(uri.path)) {
       return true;
     }
     await wait(100);
   }
-  return false;
+  throw new Error(
+    `Timeout waiting for note ${uri.toString()} in Foam workspace`
+  );
+};
+
+export const waitForNoteRemovedFromFoamWorkspace = async (
+  uri: URI,
+  timeout = 5000
+) => {
+  const start = Date.now();
+  const foam = await getFoamFromVSCode();
+  const workspace = foam.workspace;
+
+  while (Date.now() - start < timeout) {
+    if (!workspace.find(uri.path)) {
+      return true;
+    }
+    await wait(100);
+  }
+  throw new Error(
+    `Timeout waiting for note ${uri.toString()} to be removed from Foam workspace`
+  );
+};
+
+export const waitForEmptyFoamWorkspace = async (timeout = 5000) => {
+  const start = Date.now();
+  const foam = await getFoamFromVSCode();
+  const workspace = foam.workspace;
+
+  while (Date.now() - start < timeout) {
+    if (workspace.list().length === 0) {
+      return true;
+    }
+    await wait(100);
+  }
+  throw new Error(
+    `Timeout waiting for Foam workspace to be empty (${
+      workspace.list().length
+    } resources remaining)`
+  );
 };
 
 /**
@@ -137,11 +197,18 @@ export const runCommand = async <T>(command: string, args: T = undefined) =>
  * @param value the value to set the configuration to
  * @param fn the function to execute
  */
-export const withModifiedConfiguration = async (key, value, fn: () => void) => {
+export const withModifiedConfiguration = async (
+  key,
+  value,
+  fn: () => void | Promise<void>
+) => {
   const old = vscode.workspace.getConfiguration().inspect(key);
   await vscode.workspace.getConfiguration().update(key, value);
-  await fn();
-  await vscode.workspace.getConfiguration().update(key, old.workspaceValue);
+  try {
+    await fn();
+  } finally {
+    await vscode.workspace.getConfiguration().update(key, old.workspaceValue);
+  }
 };
 
 /**
@@ -152,8 +219,11 @@ export const withModifiedConfiguration = async (key, value, fn: () => void) => {
  * @param value the value to set the configuration to
  * @param fn the function to execute
  */
-export const withModifiedFoamConfiguration = (key, value, fn: () => void) =>
-  withModifiedConfiguration(`foam.${key}`, value, fn);
+export const withModifiedFoamConfiguration = (
+  key,
+  value,
+  fn: () => void | Promise<void>
+) => withModifiedConfiguration(`foam.${key}`, value, fn);
 
 /**
  * Utility function to check if two URIs are the same.

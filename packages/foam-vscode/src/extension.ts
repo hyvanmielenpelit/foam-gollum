@@ -1,37 +1,50 @@
 /*global markdownit:readonly*/
 
-import { workspace, ExtensionContext, window, commands } from 'vscode';
-import { MarkdownResourceProvider } from './core/services/markdown-provider';
-import { bootstrap } from './core/model/foam';
-import { Logger } from './core/utils/log';
-import { fromVsCodeUri } from './utils/vsc-utils';
-
-import { features } from './features';
-import { VsCodeOutputLogger, exposeLogger } from './services/logging';
 import {
-  getAttachmentsExtensions,
-  getIgnoredFilesSetting,
-  getNotesExtensions,
-} from './settings';
-import { AttachmentResourceProvider } from './core/services/attachment-provider';
-import { VsCodeWatcher } from './services/watcher';
-import { createMarkdownParser } from './core/services/markdown-parser';
-import VsCodeBasedParserCache from './services/cache';
-import { createMatcherAndDataStore } from './services/editor';
-import * as vscode from 'vscode';
-import * as path from 'path';
-import { config } from 'process';
-import { getFoamVsCodeConfig } from './services/config';
-import { add } from 'lodash';
-import { start } from 'repl';
+  workspace,
+  ExtensionContext,
+  window,
+  commands,
+  TextEditor,
+  languages,
+} from 'vscode';
+import { MarkdownResourceProvider, Logger, Config } from '@foam/core';
+import { bootstrap } from './core/model/foam';
+import { fromVsCodeUri } from './vscode/utils/vsc-utils';
+
+import { features } from './vscode/features';
+import { FoamFeatureResult } from './types';
+import { VsCodeOutputLogger, exposeLogger } from './vscode/services/logging';
+import { VsCodeFoamConfig } from './vscode/config';
+import { AttachmentResourceProvider } from '@foam/core';
+import { VsCodeWatcher } from './vscode/services/watcher';
+import { createMarkdownParser } from '@foam/core';
+import VsCodeBasedParserCache from './vscode/services/cache';
+import { createMatcherAndDataStore } from './vscode/services/editor';
+import { OllamaEmbeddingProvider } from './ai/providers/ollama/ollama-provider';
+import { initTelemetry } from './vscode/services/telemetry';
+import { getFoamVsCodeConfig } from './vscode/config';
 import { CustomMarkdownDropProvider } from './core/services/markdown-drop-provider';
+
+// Injected by esbuild's `define` (and the vitest config), so telemetry can
+// attach version dimensions without a runtime package.json read
+declare const __FOAM_VSCODE_VERSION__: string;
+declare const __CORE_VERSION__: string;
 
 export async function activate(context: ExtensionContext) {
   const logger = new VsCodeOutputLogger();
   Logger.setDefaultLogger(logger);
   exposeLogger(context, logger);
 
+  Config.setDefaultConfig(new VsCodeFoamConfig());
   try {
+    const telemetry = initTelemetry({
+      foamVersion: __FOAM_VSCODE_VERSION__,
+      coreVersion: __CORE_VERSION__,
+    });
+    context.subscriptions.push(telemetry);
+    telemetry.trackSession();
+
     Logger.info('Starting Foam');
 
     if (workspace.workspaceFolders === undefined) {
@@ -39,50 +52,71 @@ export async function activate(context: ExtensionContext) {
       return;
     }
 
+    context.subscriptions.push(
+      window.onDidChangeActiveTextEditor((editor: TextEditor | undefined) => {
+        if (editor?.document.languageId === 'markdown') {
+          telemetry.trackNoteOpened();
+        }
+      })
+    );
+
     // Prepare Foam
-    const excludes = getIgnoredFilesSetting().map(g => g.toString());
-    const { matcher, dataStore, excludePatterns } =
-      await createMatcherAndDataStore(excludes);
+    const includes = Config.getFilesInclude();
+    const excludes = Config.getFilesExclude();
+    const { matcher, dataStore, includePatterns, excludePatterns } =
+      await createMatcherAndDataStore(includes, excludes);
 
     Logger.info('Loading from directories:');
     for (const folder of workspace.workspaceFolders) {
       Logger.info('- ' + folder.uri.fsPath);
-      Logger.info('  Include: **/*');
+      Logger.info('  Include: ' + includePatterns.get(folder.name).join(','));
       Logger.info('  Exclude: ' + excludePatterns.get(folder.name).join(','));
     }
 
     const watcher = new VsCodeWatcher(
-      workspace.createFileSystemWatcher('**/*')
+      workspace.createFileSystemWatcher('**/*'),
+      workspace.onDidSaveTextDocument
     );
-    const parserCache = new VsCodeBasedParserCache(context);
+    const parserCache = await VsCodeBasedParserCache.create(context);
     const parser = createMarkdownParser([], parserCache);
 
-    const { notesExtensions, defaultExtension } = getNotesExtensions();
+    const notesExtensions = Config.getNotesExtensions();
+    const defaultExtension = Config.getDefaultNoteExtension();
 
-    // Get workspace roots for workspace-relative path resolution
     const workspaceRoots =
       workspace.workspaceFolders?.map(folder => fromVsCodeUri(folder.uri)) ??
       [];
 
+    const directoryMode = Config.getLinksDirectoryMode();
     const markdownProvider = new MarkdownResourceProvider(
       dataStore,
       parser,
       notesExtensions,
-      workspaceRoots
+      directoryMode
     );
 
-    const attachmentExtConfig = getAttachmentsExtensions();
+    const attachmentExtConfig = Config.getAttachmentExtensions();
     const attachmentProvider = new AttachmentResourceProvider(
       attachmentExtConfig
     );
 
+    // Initialize embedding provider
+    const experimentalEnabled = workspace
+      .getConfiguration('foam')
+      .get('experimental');
+    const embeddingProvider = experimentalEnabled
+      ? new OllamaEmbeddingProvider()
+      : undefined;
+
     const foamPromise = bootstrap(
+      workspaceRoots,
       matcher,
       watcher,
       dataStore,
       parser,
       [markdownProvider, attachmentProvider],
-      defaultExtension
+      defaultExtension,
+      embeddingProvider
     );
 
     // Load the features
@@ -91,11 +125,28 @@ export async function activate(context: ExtensionContext) {
     );
 
     const foam = await foamPromise;
-    Logger.info(`Loaded ${foam.workspace.list().length} resources`);
+    const resources = foam.workspace.list();
+    const noteCount = resources.filter(r => r.type === 'note').length;
+    const attachmentCount = resources.filter(
+      r => r.type === 'image' || r.type === 'attachment'
+    ).length;
+    Logger.info(`Loaded ${resources.length} resources`);
+
+    const feats = (await Promise.all(featuresPromises)).filter(
+      (r): r is FoamFeatureResult => r != null
+    );
+
+    const featureTelemetry = feats.reduce(
+      (acc, r) => ({ ...acc, ...r.telemetry }),
+      {} as Record<string, string>
+    );
+    telemetry.trackConfigSnapshot();
+    telemetry.trackWorkspaceStats(noteCount, attachmentCount, featureTelemetry);
 
     context.subscriptions.push(
       foam,
       watcher,
+      parserCache,
       markdownProvider,
       attachmentProvider,
       commands.registerCommand('foam-vscode.clear-cache', () =>
@@ -105,6 +156,8 @@ export async function activate(context: ExtensionContext) {
         if (
           [
             'foam.files.ignore',
+            'foam.files.exclude',
+            'foam.files.include',
             'foam.files.attachmentExtensions',
             'foam.files.noteExtensions',
             'foam.files.defaultNoteExtension',
@@ -120,18 +173,16 @@ export async function activate(context: ExtensionContext) {
     const useCustomFileDropdownProvider = getFoamVsCodeConfig('useCustomFileDropdownProvider');
     if (useCustomFileDropdownProvider) {
       context.subscriptions.push(
-        vscode.languages.registerDocumentDropEditProvider(
+        languages.registerDocumentDropEditProvider(
           { language: 'markdown' },
           new CustomMarkdownDropProvider()
         )
       );
     }
 
-    const feats = (await Promise.all(featuresPromises)).filter(r => r != null);
-
     return {
       extendMarkdownIt: (md: markdownit) => {
-        return feats.reduce((acc: markdownit, r: any) => {
+        return feats.reduce((acc: markdownit, r) => {
           return r.extendMarkdownIt ? r.extendMarkdownIt(acc) : acc;
         }, md);
       },

@@ -1,122 +1,31 @@
 /*
- * This file should not depend on VS Code as it's used for unit tests
+ * This file should not depend on VS Code as it's used for unit tests.
+ *
+ * The test utilities themselves live in `@foam/core/test`. We re-export
+ * them here so existing imports keep working, and override the few values
+ * that need to be foam-vscode-specific (e.g. TEST_DATA_DIR).
  */
-import fs from 'fs';
-import { Logger } from '../core/utils/log';
-import { Range } from '../core/model/range';
-import { URI } from '../core/model/uri';
-import { FoamWorkspace } from '../core/model/workspace';
-import { MarkdownResourceProvider } from '../core/services/markdown-provider';
-import { NoteLinkDefinition, Resource } from '../core/model/note';
-import { createMarkdownParser } from '../core/services/markdown-parser';
+import { URI } from '@foam/core';
 
-export { default as waitForExpect } from 'wait-for-expect';
+export {
+  InMemoryDataStore,
+  strToUri,
+  createTestWorkspace,
+  createTestNote,
+  createNoteFromMarkdown,
+  wait,
+  randomString,
+  getRandomURI,
+  readFileFromFs,
+  waitForExpect,
+} from '@foam/core/test';
 
-Logger.setLevel('error');
-
+/**
+ * foam-vscode's test-data directory. This file is at `src/test/test-utils.ts`,
+ * so test-data lives two levels up.
+ */
 export const TEST_DATA_DIR = URI.file(__dirname).joinPath(
   '..',
   '..',
   'test-data'
 );
-
-const position = Range.create(0, 0, 0, 100);
-
-/**
- * Turns a string into a URI
- * The goal of this function is to make sure we are consistent in the
- * way we generate URIs (and therefore IDs) across the tests
- */
-export const strToUri = URI.file;
-
-export const createTestWorkspace = (workspaceRoots: URI[] = []) => {
-  const workspace = new FoamWorkspace();
-  const parser = createMarkdownParser();
-  const provider = new MarkdownResourceProvider(
-    {
-      read: _ => Promise.resolve(''),
-      list: () => Promise.resolve([]),
-    },
-    parser,
-    ['.md'],
-    workspaceRoots
-  );
-  workspace.registerProvider(provider);
-  return workspace;
-};
-
-export const createTestNote = (params: {
-  uri: string;
-  title?: string;
-  definitions?: NoteLinkDefinition[];
-  links?: Array<{ slug: string } | { to: string }>;
-  tags?: string[];
-  aliases?: string[];
-  text?: string;
-  sections?: string[];
-  root?: URI;
-  type?: string;
-}): Resource => {
-  const root = params.root ?? URI.file('/');
-  return {
-    uri: root.resolve(params.uri),
-    type: params.type ?? 'note',
-    properties: {},
-    title: params.title ?? strToUri(params.uri).getBasename(),
-    definitions: params.definitions ?? [],
-    sections: params.sections?.map(label => ({
-      label,
-      range: Range.create(0, 0, 1, 0),
-    })),
-    tags:
-      params.tags?.map(t => ({
-        label: t,
-        range: Range.create(0, 0, 0, 0),
-      })) ?? [],
-    aliases:
-      params.aliases?.map(a => ({
-        title: a,
-        range: Range.create(0, 0, 0, 0),
-      })) ?? [],
-    links: params.links
-      ? params.links.map((link, index) => {
-          const range = Range.create(
-            position.start.line + index,
-            position.start.character,
-            position.start.line + index,
-            position.end.character
-          );
-          return 'slug' in link
-            ? {
-                type: 'wikilink',
-                range: range,
-                rawText: `[[${link.slug}]]`,
-                isEmbed: false,
-              }
-            : {
-                type: 'link',
-                range: range,
-                rawText: `[link text](${link.to})`,
-                isEmbed: false,
-              };
-        })
-      : [],
-  };
-};
-
-export const wait = (ms: number) =>
-  new Promise(resolve => setTimeout(resolve, ms));
-
-const chars = 'abcdefghijklmnopqrstuvwyxzABCDEFGHIJKLMNOPQRSTUVWYXZ1234567890';
-export const randomString = (len = 5) =>
-  new Array(len)
-    .fill('')
-    .map(() => chars.charAt(Math.floor(Math.random() * chars.length)))
-    .join('');
-
-export const getRandomURI = () =>
-  URI.file('/random-uri-root/' + randomString() + '.md');
-
-/** Use fs for reading files in units where vscode.workspace is unavailable */
-export const readFileFromFs = async (uri: URI) =>
-  (await fs.promises.readFile(uri.toFsPath())).toString();

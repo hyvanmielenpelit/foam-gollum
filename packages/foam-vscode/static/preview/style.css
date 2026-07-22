@@ -31,16 +31,71 @@
 }
 
 .embed-container-note {
-  padding: 0.5em;
+  padding: 0.75em 1em;
   margin: 1.5em 0;
-  border: 1px solid var(--vscode-editorLineNumber-foreground);
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.embed-container-note h1 {
+  font-size: calc(var(--markdown-font-size, 14px) * 1.4);
+}
+.embed-container-note h2 {
+  font-size: calc(var(--markdown-font-size, 14px) * 1.2);
+}
+.embed-container-note h3 {
+  font-size: calc(var(--markdown-font-size, 14px) * 1.1);
+}
+.embed-container-note h4,
+.embed-container-note h5,
+.embed-container-note h6 {
+  font-size: var(--markdown-font-size, 14px);
 }
 
 .embed-container-attachment {
   padding: 0.25em;
   margin: 1.5em 0;
   text-align: center;
-  border: 1px solid var(--vscode-editorLineNumber-foreground);
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.foam-query-warning {
+  border-left: 3px solid var(--vscode-editorWarning-foreground);
+  color: var(--vscode-editorWarning-foreground);
+  padding: 0.25em 0.75em;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+
+.foam-query-warning p {
+  margin: 0.2em 0;
+}
+
+.foam-query-error {
+  border-left: 3px solid var(--vscode-editorError-foreground);
+  color: var(--vscode-editorError-foreground);
+  padding: 0.25em 0.75em;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+
+.foam-query-empty {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.foam-query-placeholder {
+  border: 1px dashed var(--vscode-editorLineNumber-foreground);
+  background-color: var(--vscode-textBlockQuote-background);
+  color: var(--vscode-foreground);
+  padding: 0.75em 1em;
+  margin: 1em 0;
+  opacity: 0.8;
+}
+
+.foam-query-placeholder pre {
+  background-color: var(--vscode-textPreformat-background);
+  padding: 0.4em 0.6em;
+  margin: 0.5em 0;
 }
 
 .embed-container-image {

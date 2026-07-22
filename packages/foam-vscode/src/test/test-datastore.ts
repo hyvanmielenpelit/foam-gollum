@@ -1,9 +1,9 @@
 import micromatch from 'micromatch';
-import { Logger } from '../core/utils/log';
-import { IDataStore, IMatcher } from '../core/services/datastore';
-import { URI } from '../core/model/uri';
-import { isWindows } from '../core/common/platform';
-import { asAbsolutePaths } from '../core/utils/path';
+import { Logger } from '@foam/core';
+import { IDataStore, IMatcher } from '@foam/core';
+import { URI } from '@foam/core';
+import { isWindows } from '@foam/core';
+import { asAbsolutePaths } from '@foam/core';
 import fs from 'fs';
 import path from 'path';
 
@@ -31,9 +31,14 @@ export class FileDataStore implements IDataStore {
     private readonly basedir: string
   ) {}
 
-  async list(): Promise<URI[]> {
+  async list(pattern?: string): Promise<URI[]> {
     const res = getFiles(this.basedir);
-    return res.map(URI.file);
+    if (!pattern) {
+      return res.map(URI.file);
+    }
+    const absoluteGlob = path.posix.join(this.basedir, pattern);
+    const matches = micromatch(res, [absoluteGlob]);
+    return matches.map(URI.file);
   }
 
   async read(uri: URI) {
@@ -45,6 +50,30 @@ export class FileDataStore implements IDataStore {
       );
       return null;
     }
+  }
+
+  async write(uri: URI, content: string): Promise<void> {
+    const fsPath = uri.toFsPath();
+    fs.mkdirSync(path.dirname(fsPath), { recursive: true });
+    fs.writeFileSync(fsPath, content, 'utf8');
+  }
+
+  async delete(uri: URI): Promise<void> {
+    try {
+      fs.unlinkSync(uri.toFsPath());
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
+
+  async move(from: URI, to: URI): Promise<void> {
+    const toFs = to.toFsPath();
+    fs.mkdirSync(path.dirname(toFs), { recursive: true });
+    fs.renameSync(from.toFsPath(), toFs);
+  }
+
+  async exists(uri: URI): Promise<boolean> {
+    return fs.existsSync(uri.toFsPath());
   }
 }
 

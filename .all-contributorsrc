@@ -1184,6 +1184,42 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "meestahp",
+      "name": "meestahp",
+      "avatar_url": "https://avatars.githubusercontent.com/u/177708514?v=4",
+      "profile": "https://github.com/meestahp",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "qwloh",
+      "name": "qwloh",
+      "avatar_url": "https://avatars.githubusercontent.com/u/14256866?v=4",
+      "profile": "https://github.com/qwloh",
+      "contributions": [
+        "doc"
+      ]
+    },
+    {
+      "login": "ryanncode",
+      "name": "Ryan N",
+      "avatar_url": "https://avatars.githubusercontent.com/u/118120847?v=4",
+      "profile": "https://firstsynth.dev",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Strepto",
+      "name": "Nils Henrik Hals",
+      "avatar_url": "https://avatars.githubusercontent.com/u/3185998?v=4",
+      "profile": "http://hals.app",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,

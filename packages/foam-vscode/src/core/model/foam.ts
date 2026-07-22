@@ -1,82 +1,65 @@
-import { IDisposable } from '../common/lifecycle';
-import { IDataStore, IMatcher, IWatcher } from '../services/datastore';
-import { FoamWorkspace } from './workspace';
-import { FoamGraph } from './graph';
-import { ResourceParser } from './note';
-import { ResourceProvider } from './provider';
-import { FoamTags } from './tags';
-import { Logger, withTiming, withTimingAsync } from '../utils/log';
+import {
+  Foam as CoreFoam,
+  bootstrap as coreBootstrap,
+  IMatcher,
+  IWatcher,
+  IDataStore,
+  ResourceParser,
+  ResourceProvider,
+  URI,
+  Logger,
+} from '@foam/core';
+import { FoamEmbeddings } from '../../ai/model/embeddings';
+import { InMemoryEmbeddingCache } from '../../ai/model/in-memory-embedding-cache';
+import { EmbeddingProvider } from '../../ai/services/embedding-provider';
+import { NoOpEmbeddingProvider } from '../../ai/services/noop-embedding-provider';
 
-export interface Services {
-  dataStore: IDataStore;
-  parser: ResourceParser;
-  matcher: IMatcher;
-}
+export type { Services } from '@foam/core';
 
-export interface Foam extends IDisposable {
-  services: Services;
-  workspace: FoamWorkspace;
-  graph: FoamGraph;
-  tags: FoamTags;
+export interface Foam extends CoreFoam {
+  embeddings: FoamEmbeddings;
 }
 
 export const bootstrap = async (
+  roots: URI[],
   matcher: IMatcher,
   watcher: IWatcher | undefined,
   dataStore: IDataStore,
   parser: ResourceParser,
   initialProviders: ResourceProvider[],
-  defaultExtension: string = '.md'
-) => {
-  const workspace = await withTimingAsync(
-    () =>
-      FoamWorkspace.fromProviders(
-        initialProviders,
-        dataStore,
-        defaultExtension
-      ),
-    ms => Logger.info(`Workspace loaded in ${ms}ms`)
+  defaultExtension: string = '.md',
+  embeddingProvider?: EmbeddingProvider
+): Promise<Foam> => {
+  const core = await coreBootstrap(
+    roots,
+    matcher,
+    watcher,
+    dataStore,
+    parser,
+    initialProviders,
+    defaultExtension
   );
 
-  const graph = withTiming(
-    () => FoamGraph.fromWorkspace(workspace, true),
-    ms => Logger.info(`Graph loaded in ${ms}ms`)
+  embeddingProvider = embeddingProvider ?? new NoOpEmbeddingProvider();
+  const embeddings = FoamEmbeddings.fromWorkspace(
+    core.workspace,
+    embeddingProvider,
+    true,
+    new InMemoryEmbeddingCache()
   );
 
-  const tags = withTiming(
-    () => FoamTags.fromWorkspace(workspace, true),
-    ms => Logger.info(`Tags loaded in ${ms}ms`)
-  );
+  if (await embeddingProvider.isAvailable()) {
+    Logger.info('Embeddings service initialized');
+  } else {
+    Logger.debug('Embedding provider not available. Semantic features will be disabled.');
+  }
 
-  watcher?.onDidChange(async uri => {
-    if (matcher.isMatch(uri)) {
-      await workspace.fetchAndSet(uri);
-    }
-  });
-  watcher?.onDidCreate(async uri => {
-    await matcher.refresh();
-    if (matcher.isMatch(uri)) {
-      await workspace.fetchAndSet(uri);
-    }
-  });
-  watcher?.onDidDelete(uri => {
-    workspace.delete(uri);
-  });
-
-  const foam: Foam = {
-    workspace,
-    graph,
-    tags,
-    services: {
-      parser,
-      dataStore,
-      matcher,
-    },
+  return {
+    ...core,
+    embeddings,
     dispose: () => {
-      workspace.dispose();
-      graph.dispose();
+      core.dispose();
+      embeddings.dispose();
     },
   };
-
-  return foam;
 };

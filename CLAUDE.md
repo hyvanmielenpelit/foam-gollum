@@ -25,17 +25,18 @@ All the following commands are to be executed from the `packages/foam-vscode` di
 ### Testing
 
 - `yarn test` - Run all tests (unit + integration)
-- `yarn test:unit` - Run unit tests (\*.test.ts files and the .spec.ts files marked a vscode-mock friendly)
-- `yarn test:e2e` - Run only integration tests (\*.spec.ts files)
+- `yarn test:unit` - Run unit tests (\*.test.ts files and the .spec.ts files marked as vscode-mock friendly)
+- `yarn test:unit-without-specs` - Run only \*.test.ts files, skipping all \*.spec.ts files
+- `yarn test:e2e` - Run only integration tests (all \*.spec.ts files, including `@unit-ready` ones)
 - `yarn lint` - Run linting
 - `yarn test-reset-workspace` to clean test workspace
 
-Unit tests run in Node.js environment using Jest
+Unit tests run in Node.js environment using Vitest
 Integration tests require VS Code extension host
 When running tests, do not provide additional parameters, they are ignored by the custom runner script. You cannot run just a test, you have to run the whole suite.
 
 Unit tests are named `*.test.ts` and integration tests are `*.spec.ts`. These test files live alongside the code in the `src` directory. An integration test is one that has a direct or indirect dependency on `vscode` module.
-There is a mock `vscode` module that can be used to run most integration tests without starting VS Code. Tests that can use this mock are start with the line `/* @unit-ready */`.
+There is a mock `vscode` module that can be used to run most integration tests without starting VS Code. Tests that can use this mock start with the line `/* @unit-ready */`. Note that `@unit-ready` specs run in both `yarn test:unit` (with the mock) and `yarn test:e2e` (in real VS Code) — this is intentional.
 
 - If you are interested in a test inside a `*.test.ts` file, run `yarn test:unit` or inside a `*.spec.ts` file that starts with `/* @unit-ready */` run `yarn test:unit`
 - If you are interested in a test inside a `*.spec.ts` file that does not include `/* @unit-ready */` run `yarn test`
@@ -45,6 +46,8 @@ When multiple tests are failing, look at all of them, but only focus on fixing t
 
 When writing tests keep mocking to a bare minimum. Code should be written in a way that is easily testable and if I/O is necessary, it should be done in appropriate temporary directories.
 Never mock anything that is inside `packages/foam-vscode/src/core/`.
+
+Do not use dynamic imports (`await import(...)` or `import(...)`) anywhere — neither in source code nor in tests. Use static top-level imports instead. If a module needs lazy initialization, refactor to make it explicit rather than reaching for a dynamic import.
 
 Use the utility functions from `test-utils.ts` and `test-utils-vscode.ts` and `test-datastore.ts`.
 
@@ -62,7 +65,23 @@ This is a monorepo using Yarn workspaces with the main VS Code extension in `pac
 - `packages/foam-vscode/src/features/` - VS Code-specific features and UI
 - `packages/foam-vscode/src/services/` - service implementations, might have VS Code dependency, but we try keep that to a minimum
 - `packages/foam-vscode/src/test/` - Test utilities and mocks
+- `packages/foam-graph/` - Graph visualization web component (`@foam/graph-view`)
 - `docs/` - Documentation and user guides
+
+### Graph Webview (`@foam/graph-view`)
+
+The graph webview is a standalone Yarn workspace built with Lit, bundled for use inside the VS Code extension.
+
+- Source lives in `packages/foam-graph/src/`; `packages/foam-vscode/static/dataviz/` is **build output** (gitignored), not source
+- `src/protocol.ts` owns the message contract between extension host and webview — the extension imports from `@foam/graph-view/protocol`
+- The extension's `tsconfig.json` uses `paths` to resolve `@foam/graph-view/*` to TypeScript source for type checking; esbuild resolves via package exports at bundle time
+
+Commands (run from repo root or `packages/foam-vscode`):
+
+- `yarn workspace @foam/graph-view build` - Build VS Code bundle
+- `yarn workspace @foam/graph-view build:vscode` - Build VS Code bundle only
+- `yarn workspace @foam/graph-view watch` - Watch mode for webview development
+- `yarn workspace @foam/graph-view test` - Run webview tests (Vitest)
 
 ### File Naming Patterns
 
@@ -71,6 +90,26 @@ Test files follow `*.test.ts` for unit tests and `*.spec.ts` for integration tes
 ### Important Constraint
 
 Code in `packages/foam-vscode/src/core/` MUST NOT depend on the `vscode` library or any files outside the core directory. This maintains platform independence.
+
+### URIs throughout, paths only at the edges
+
+Domain code (everything in `@foam/core` and the platform-agnostic layers of `foam-cli`, `foam-mcp`, `foam-vscode`) takes and returns `URI` objects, not path strings. This is consistent with the existing core API: `FoamWorkspace.find(uri: URI)`, `FoamGraph.getLinks(uri: URI)`, `Resource.uri: URI`.
+
+```typescript
+// ✅ Good
+function listOrphans(workspace, graph, rootUri: URI): NoteItem[]
+
+// ❌ Avoid
+function listOrphans(workspace, graph, rootDir: string): NoteItem[]
+```
+
+Path strings only appear at:
+
+1. **I/O boundaries** — `IDataStore` implementations convert URI ↔ filesystem path (`URI.file(...)`, `uri.toFsPath()`).
+2. **External wire formats** — CLI argument parsing, MCP tool inputs/outputs, JSON serialization.
+3. **Display fields in return values** — e.g. `NoteItem.path` for human-readable workspace-relative paths, alongside the `URI`.
+
+For path manipulation inside `@foam/core`, use the POSIX-safe utilities in `packages/foam-core/src/utils/path.ts` (`relativeTo`, `joinPath`, `getBasename`, `getExtension`, `getDirectory`) — never import Node's `path` module, since `@foam/core` runs in both Node and browser contexts.
 
 ## Architecture Overview
 
@@ -115,7 +154,7 @@ This allows features to:
 
 ### Testing Conventions
 
-- `*.test.ts` - Unit tests using Jest
+- `*.test.ts` - Unit tests using Vitest
 - `*.spec.ts` - Integration tests requiring VS Code extension host
 - Tests live alongside source code in `src/`
 - Test cases should be phrased in terms of aspects of the feature being tested (expected behaviors), as they serve both as validation of the code as well as documentation of what the expected behavior for the code is in different situations. They should include the happy paths and edge cases.
@@ -150,7 +189,9 @@ Whenever we work together on a task, feel free to challenge my assumptions and i
 1. Get the issue information from github
 2. Define a step by step plan for addressing the issue
 3. Create tests for the feature
-4. Starting from the first test case, implement the feature so the test passes
+4. **IMPORTANT**: Run the tests to ensure they FAIL before implementing the fix (this validates the test is actually testing what we think it is)
+5. Implement the fix to make the test pass
+6. Run the tests again to verify the fix works
 
 ### Core Logic Changes
 
@@ -177,8 +218,9 @@ When adding to `src/core/`:
 ## Dependencies
 
 - **Runtime**: VS Code API, markdown parsing, file watching
-- **Development**: TypeScript, Jest, ESLint, esbuild
+- **Development**: TypeScript, Vitest, ESLint, esbuild
 - **Key Libraries**: remark (markdown parsing), lru-cache, lodash
+- **Graph webview**: Lit (web components), force-graph, d3-force/scale/color, Vitest, happy-dom
 
 The extension supports both Node.js and browser environments via separate build targets.
 

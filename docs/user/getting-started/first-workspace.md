@@ -65,6 +65,8 @@ For a minimal setup:
 
 That's all, you can start working with your markdown files and Foam will take care of the rest.
 
+> Already have an Obsidian vault? You can open it directly in VS Code — see [[migrating-from-obsidian]].
+
 ## Ideas for your knowledge base
 
 ### 1. Customize Your Settings
@@ -195,15 +197,18 @@ You can also use other VS Code extensions to manage the git synching if that's h
 
 With your workspace set up, you're ready to:
 
-1. **[Learn note-taking fundamentals](note-taking)** - Master Markdown and writing effective notes
+1. **[Learn note-taking fundamentals](note-taking-in-foam.md)** - Master Markdown and writing effective notes
 2. **[Explore navigation](navigation.md)** - Connect your thoughts with wikilinks
-3. **[Discover the graph view](graph-view.md)** - Visualize your knowledge network
-4. **[Set up templates](templates)** - Standardize your note creation process
+3. **[Discover the graph view](../features/graph-view.md)** - Visualize your knowledge network
+4. **[Set up templates](../features/templates.md)** - Standardize your note creation process
 
 ## Getting Help
 
 If you encounter setup issues:
 
 - Check the [Installation Guide](installation.md) for prerequisites
-- Visit the [FAQ](../faq.md) for common workspace problems
-- Join the [Foam Community Discord](https://foambubble.github.io/join-discord/w)
+- Visit the [[frequently-asked-questions]] for common workspace problems
+- Join the [Foam Community Discord](https://discord.com/invite/HV2tn2FpEk)
+
+[frequently-asked-questions]: ../frequently-asked-questions.md 'Frequently Asked Questions'
+[migrating-from-obsidian]: ../recipes/migrating-from-obsidian.md "Coming from Obsidian"
