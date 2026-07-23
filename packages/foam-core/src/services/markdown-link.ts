@@ -168,6 +168,12 @@ export abstract class MarkdownLink {
           parentCount = retValue.parentCount;
         }
 
+        try {
+          target = decodeURIComponent(target);
+        } catch (e) {
+          // ignore malformed URI
+        }
+
         const blockMatch = section?.match(/^\^([a-zA-Z0-9-]+)$/);
         return {
           target,
