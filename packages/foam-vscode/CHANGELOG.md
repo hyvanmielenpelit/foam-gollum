@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.4
+
+### Patch Changes
+
+- Fix some minor errors related to traversing undefined lists.
+
 ## 1.6.3
 
 - Change the style and structure of the Foam for Gollum change log (this page) to match what has been used in the original Foam repository recently.

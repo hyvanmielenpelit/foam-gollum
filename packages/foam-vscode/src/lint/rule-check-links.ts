@@ -25,7 +25,7 @@ export function checkLinks(
 ): LintIssue[] {
   const issues: LintIssue[] = [];
 
-  for (const link of resource.links) {
+  for (const link of resource.links || []) {
     if (link.type !== 'wikilink') {
       continue;
     }
@@ -53,7 +53,7 @@ export function checkLinks(
           code: UNKNOWN_SECTION_CODE,
           message: `Cannot find section "${section}" in document, available sections are:`,
           range: getFragmentRange(link, section),
-          relatedInfo: target.sections.map(s => ({
+          relatedInfo: (target.sections || []).map(s => ({
             uri: target.uri,
             range: s.range,
             message: s.label,
@@ -69,7 +69,7 @@ export function checkLinks(
           code: UNKNOWN_BLOCK_CODE,
           message: `Cannot find block "^${blockId}" in document, available blocks are:`,
           range: getFragmentRange(link, `^${blockId}`),
-          relatedInfo: target.blocks.map(b => ({
+          relatedInfo: (target.blocks || []).map(b => ({
             uri: target.uri,
             range: b.markerRange,
             message: `^${b.id}`,
@@ -90,7 +90,7 @@ export function checkDuplicateBlocks(resource: Resource): LintIssue[] {
   const issues: LintIssue[] = [];
   const blocksByID = new Map<string, Block[]>();
 
-  for (const block of resource.blocks) {
+  for (const block of resource.blocks || []) {
     if (!blocksByID.has(block.id)) {
       blocksByID.set(block.id, []);
     }
