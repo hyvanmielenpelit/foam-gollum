@@ -39,7 +39,8 @@
         "path": "./syntaxes/injection.json",
         "scopeName": "foam.wikilink.injection",
         "injectTo": [
-          "text.html.markdown"
+          "text.html.markdown",
+          "text.html.basic"
         ]
       }
     ],
