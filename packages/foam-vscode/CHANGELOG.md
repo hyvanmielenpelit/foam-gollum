@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.9
+
+### Patch Changes
+
+- Fix a coloring problem with image tags inside HTML elements.
+
 ## 1.6.8
 
 ### Patch Changes
