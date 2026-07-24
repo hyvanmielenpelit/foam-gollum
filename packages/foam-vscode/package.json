@@ -8,7 +8,7 @@
     "type": "git"
   },
   "homepage": "https://github.com/hyvanmielenpelit/foam-gollum",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "license": "MIT",
   "publisher": "Hyvnmielenpelitry",
   "engines": {
