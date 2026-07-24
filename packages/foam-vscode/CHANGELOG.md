@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.6
+
+### Patch Changes
+
+- Fix HTML img tags not rendering in the Markdown preview pane.
+- Fix failing tests.
+
 ## 1.6.5
 
 ### Patch Changes
