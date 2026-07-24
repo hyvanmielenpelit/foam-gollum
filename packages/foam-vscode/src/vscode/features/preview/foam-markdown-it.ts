@@ -20,6 +20,7 @@ import { default as markdownItWikilinkEmbed } from './wikilink-embed';
 import { default as escapeWikilinkPipes } from './escape-wikilink-pipes';
 import { default as markdownItBlockAnchorIds } from './block-anchor-ids';
 import { default as markdownItFoamQuery } from './foam-query-renderer';
+import { default as markdownItHtmlImageLinks } from './html-image-links';
 import { LinkResolver } from './wikilink-navigation';
 
 /**
@@ -122,6 +123,7 @@ export function createFoamMarkdownIt(
   r = markdownItWikilinkNavigation(r, workspace, { linkResolver });
   r = markdownItRemoveLinkReferences(r, workspace);
   r = markdownItBlockAnchorIds(r);
+  r = markdownItHtmlImageLinks(r, workspace);
   r = markdownItFoamQuery(r, workspace, graph, {
     isTrusted,
     toHref,
