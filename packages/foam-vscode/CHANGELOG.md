@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.7
+
+### Patch Changes
+
+- Fix a wikilink coloring problem in Markdown tables.
+
 ## 1.6.6
 
 ### Patch Changes
