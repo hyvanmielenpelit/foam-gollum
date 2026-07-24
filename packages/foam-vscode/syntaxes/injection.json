@@ -3,6 +3,22 @@
   "injectionSelector": "L:meta.paragraph.markdown, L:markup.heading.markdown, L:markup.list.unnumbered.markdown, L:markup.list.numbered.markdown, L:markup.table.markdown, L:meta.table.markdown",
   "patterns": [
     {
+      "comment": "Wikilink split by table cell boundary (first half)",
+      "match": "(\\[\\[)([^|\\]]+?)\\s*$",
+      "captures": {
+        "1": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "2": { "name": "comment.line.wikilink.target.markdown.foam" }
+      }
+    },
+    {
+      "comment": "Wikilink split by table cell boundary (second half)",
+      "match": "(?<=\\|)\\s*([^\\[|\\]]+)(\\]\\])",
+      "captures": {
+        "1": { "name": "string.other.link.title.markdown.foam" },
+        "2": { "name": "punctuation.definition.metadata.markdown.foam" }
+      }
+    },
+    {
       "comment": "Footnote reference: [^id] (not a definition line [^id]: ...)",
       "match": "\\[(\\^[^\\]]+)\\](?!:)",
       "captures": {
