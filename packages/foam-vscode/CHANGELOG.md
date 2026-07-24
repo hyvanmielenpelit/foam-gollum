@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.8
+
+### Patch Changes
+
+- Fix a coloring problem with wikilinks with an alias in Markdown tables.
+- Image tags and hyperlinks now have their alias in green and their link in reddish.
+
 ## 1.6.7
 
 ### Patch Changes

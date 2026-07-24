@@ -19,6 +19,18 @@
       }
     },
     {
+      "comment": "Standard Markdown hyperlink and image link coloring",
+      "match": "(!?\\[)(.*?)(\\])(\\()([^\\)]*)(\\))",
+      "captures": {
+        "1": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "2": { "name": "comment.line.wikilink.target.markdown.foam" },
+        "3": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "4": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "5": { "name": "string.other.link.title.markdown.foam" },
+        "6": { "name": "punctuation.definition.metadata.markdown.foam" }
+      }
+    },
+    {
       "comment": "Footnote reference: [^id] (not a definition line [^id]: ...)",
       "match": "\\[(\\^[^\\]]+)\\](?!:)",
       "captures": {
