@@ -127,6 +127,13 @@ export class FoamWorkspace implements IDisposable {
   set(resource: Resource) {
     const old = this.find(resource.uri);
 
+    // ensure arrays are initialized
+    resource.links = resource.links ?? [];
+    resource.tags = resource.tags ?? [];
+    resource.sections = resource.sections ?? [];
+    resource.blocks = resource.blocks ?? [];
+    resource.footnotes = resource.footnotes ?? [];
+
     // store resource
     this._resources.set(this.getTrieIdentifier(resource.uri.path), resource);
     this._registerDirectoryIndex(resource);

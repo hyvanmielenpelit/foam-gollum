@@ -35,7 +35,7 @@ const updateDecorations =
       editor.document.getText()
     );
     const placeholderRanges = [];
-    note.links.forEach(link => {
+    (note.links || []).forEach(link => {
       const linkUri = workspace.resolveLink(note, link);
       if (linkUri.isPlaceholder()) {
         placeholderRanges.push(
@@ -52,14 +52,14 @@ const updateDecorations =
 
     editor.setDecorations(
       footnoteDecoration,
-      note.footnotes
+      (note.footnotes || [])
         .filter(f => f.definitionRange !== null)
         .flatMap(f => f.references.map(r => toVsCodeRange(r)))
     );
 
     editor.setDecorations(
       blockAnchorDecoration,
-      note.blocks.map(
+      (note.blocks || []).map(
         b =>
           new vscode.Range(
             b.markerRange.start.line,

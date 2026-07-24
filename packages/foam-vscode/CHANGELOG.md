@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.5
+
+### Patch Changes
+
+- Fix hopefully the rest of minor errors related to traversing undefined lists.
+
 ## 1.6.4
 
 ### Patch Changes
