@@ -1,6 +1,10 @@
 # Change Log
 
-All notable changes to the "foam-vscode-gollum" extension will be documented in this file.
+All notable changes to the Foam for Gollum extension are documented in this file.
+
+## 1.6.3
+
+- Change the style and structure of the Foam for Gollum change log (this page) to match what has been used in the original Foam repository recently.
 
 ## [1.6.2] - 2026-07-23
 
@@ -235,6 +239,10 @@ Fixed page lookup being relative to the end of the lookup path so that when look
 - Forked Foam 0.26.12.
 - Added support for Gollum-style wikilinks `[[Alias|Page Name]]`.
 - Added `foam.wikilinks.order` setting with `alias-first` and `alias-last` options.
+
+# Foam Change Log
+
+This section contains the changes to the original Foam extension.
 
 ## 0.44.2
 
