@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    pool: 'threads',
+    poolOptions: {
+      threads: { isolate: false },
+    },
     include: ['src/**/*.test.ts'],
     exclude: ['node_modules/**'],
     testTimeout: 20000,

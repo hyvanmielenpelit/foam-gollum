@@ -1096,7 +1096,7 @@
     "build:webview": "yarn workspace @foam/graph-view build",
     "build": "yarn build:node && yarn build:web",
     "compile": "tsc -p ./",
-    "test-reset-workspace": "rm -rf .test-workspace && mkdir .test-workspace && touch .test-workspace/.keep",
+    "test-reset-workspace": "node -e \"const fs = require('fs'); fs.rmSync('.test-workspace', { recursive: true, force: true }); fs.mkdirSync('.test-workspace'); fs.writeFileSync('.test-workspace/.keep', '');\"",
     "test-setup": "yarn compile && yarn build && yarn test-reset-workspace",
     "test": "yarn test:unit && yarn test:e2e",
     "test:unit": "yarn test-reset-workspace && vitest run",

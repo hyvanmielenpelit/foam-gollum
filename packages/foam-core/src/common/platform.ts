@@ -71,26 +71,8 @@ const isElectronRenderer =
   nodeProcess.type === 'renderer';
 export const isElectronSandboxed = isElectronRenderer && nodeProcess?.sandboxed;
 
-// Web environment
-if (typeof navigator === 'object' && !isElectronRenderer) {
-  _userAgent = navigator.userAgent;
-  _isWindows =
-    _userAgent.indexOf('Windows') >= 0 || _userAgent.indexOf('win32') >= 0;
-  _isMacintosh = _userAgent.indexOf('Macintosh') >= 0;
-  _isIOS =
-    (_userAgent.indexOf('Macintosh') >= 0 ||
-      _userAgent.indexOf('iPad') >= 0 ||
-      _userAgent.indexOf('iPhone') >= 0) &&
-    !!navigator.maxTouchPoints &&
-    navigator.maxTouchPoints > 0;
-  _isLinux = _userAgent.indexOf('Linux') >= 0;
-  _isWeb = true;
-  _locale = navigator.language;
-  _language = _locale;
-}
-
 // Native environment
-else if (typeof nodeProcess === 'object') {
+if (typeof nodeProcess === 'object') {
   _isWindows = nodeProcess.platform === 'win32';
   _isMacintosh = nodeProcess.platform === 'darwin';
   _isLinux = nodeProcess.platform === 'linux';
@@ -108,6 +90,24 @@ else if (typeof nodeProcess === 'object') {
     } catch (e) {}
   }
   _isNative = true;
+}
+
+// Web environment
+else if (typeof navigator === 'object' && !isElectronRenderer) {
+  _userAgent = navigator.userAgent;
+  _isWindows =
+    _userAgent.indexOf('Windows') >= 0 || _userAgent.indexOf('win32') >= 0;
+  _isMacintosh = _userAgent.indexOf('Macintosh') >= 0;
+  _isIOS =
+    (_userAgent.indexOf('Macintosh') >= 0 ||
+      _userAgent.indexOf('iPad') >= 0 ||
+      _userAgent.indexOf('iPhone') >= 0) &&
+    !!navigator.maxTouchPoints &&
+    navigator.maxTouchPoints > 0;
+  _isLinux = _userAgent.indexOf('Linux') >= 0;
+  _isWeb = true;
+  _locale = navigator.language;
+  _language = _locale;
 }
 
 // Unknown environment

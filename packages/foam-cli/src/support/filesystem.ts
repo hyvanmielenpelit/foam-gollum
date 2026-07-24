@@ -45,10 +45,12 @@ export class NodeFileDataStore implements IDataStore {
     await collectFiles(this.rootDir, files, this.excludedPaths);
     let uris = files.map(file => URI.file(file));
     if (pattern) {
-      const absoluteGlob = path.posix.join(this.rootDir, pattern);
-      const matched = micromatch(uris.map(u => u.toFsPath()), [absoluteGlob]);
+      const rootUri = URI.file(this.rootDir);
+      const rootPath = rootUri.path.endsWith('/') ? rootUri.path : rootUri.path + '/';
+      const absoluteGlob = rootPath + pattern;
+      const matched = micromatch(uris.map(u => u.path), [absoluteGlob]);
       const matchedSet = new Set(matched);
-      uris = uris.filter(u => matchedSet.has(u.toFsPath()));
+      uris = uris.filter(u => matchedSet.has(u.path));
     }
     return uris.filter(uri => this.matcher.isMatch(uri));
   }

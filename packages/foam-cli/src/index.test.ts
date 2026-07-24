@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 
+import { URI } from '@foam/core';
 import { runCli } from './index';
 import { TestLogger } from './test/test-utils';
 
@@ -101,7 +102,7 @@ describe('foam CLI', () => {
         )
       ).toEqual([
         {
-          sourcePath: path.join(workspaceDir, 'user', 'index.md'),
+          sourcePath: URI.file(path.join(workspaceDir, 'user', 'index.md')).path,
           route: '/',
         },
       ]);

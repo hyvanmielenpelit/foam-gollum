@@ -6,6 +6,7 @@ import {
 } from '../test/test-utils';
 import { URI } from '@foam/core';
 import { Logger } from '@foam/core';
+import { Config, DefaultFoamConfig } from '@foam/core';
 
 Logger.setLevel('error');
 
@@ -32,6 +33,17 @@ dupilcated wikilink to file [[first-document]]
 # one section`;
 
 describe('generateStdMdLink', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig({
+      ...new DefaultFoamConfig(),
+      getWikilinksSyntax: () => 'mediawiki',
+    });
+  });
+
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
   const makeWorkspace = () => {
     const dataStore = new InMemoryDataStore();
     const workspace = createTestWorkspace([URI.file('/')], dataStore);
