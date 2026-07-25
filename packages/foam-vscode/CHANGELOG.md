@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.10
+
+### Patch Changes
+
+- Change the default coloring for wikilinks to be reddish while editing a plain text into a wikilink.
+
 ## 1.6.9
 
 ### Patch Changes

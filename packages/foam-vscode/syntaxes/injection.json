@@ -7,7 +7,7 @@
       "match": "(\\[\\[)([^|\\]]+?)\\s*$",
       "captures": {
         "1": { "name": "punctuation.definition.metadata.markdown.foam" },
-        "2": { "name": "comment.line.wikilink.target.markdown.foam" }
+        "2": { "name": "string.other.link.title.markdown.foam" }
       }
     },
     {
@@ -54,7 +54,7 @@
       "patterns": [
         {
           "comment": "Wikilink with alias: [[target|alias]]",
-          "match": "([^|\\]]+)(\\|)([^\\]]+)",
+          "match": "([^|\\]]+)(\\|)([^\\]]*)",
           "captures": {
             "1": {
               "name": "comment.line.wikilink.target.markdown.foam"
@@ -66,6 +66,11 @@
               "name": "string.other.link.title.markdown.foam"
             }
           }
+        },
+        {
+          "comment": "Alias before table cell boundary",
+          "match": "([^|\\]]+?)\\s*(?=\\|)",
+          "name": "comment.line.wikilink.target.markdown.foam"
         },
         {
           "comment": "Wikilink without alias: [[target]]",
