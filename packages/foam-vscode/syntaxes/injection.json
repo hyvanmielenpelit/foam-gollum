@@ -1,6 +1,6 @@
 {
   "scopeName": "foam.wikilink.injection",
-  "injectionSelector": "L:text.html.markdown - meta.table.markdown - markup.table.markdown",
+  "injectionSelector": "L:meta.paragraph.markdown, L:markup.heading.markdown, L:markup.list.unnumbered.markdown, L:markup.list.numbered.markdown, L:meta.block.html, L:text.html.basic, L:meta.tag.inline.any.html, L:meta.tag.block.any.html, L:markup.quote.markdown",
   "patterns": [
     {
       "comment": "Standard Markdown hyperlink and image link coloring",
