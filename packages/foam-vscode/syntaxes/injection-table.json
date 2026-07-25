@@ -1,7 +1,15 @@
 {
-  "scopeName": "foam.wikilink.injection",
-  "injectionSelector": "L:text.html.markdown - meta.table.markdown - markup.table.markdown",
+  "scopeName": "a.foam.wikilink.injection.table",
+  "injectionSelector": "L:meta.table.markdown, L:markup.table.markdown",
   "patterns": [
+    {
+      "comment": "Wikilink split by table cell boundary (second half)",
+      "match": "(?<=\\|)\\s*([^\\[|\\]]+)(\\]\\])",
+      "captures": {
+        "1": { "name": "string.other.link.title.markdown.foam" },
+        "2": { "name": "punctuation.definition.metadata.markdown.foam" }
+      }
+    },
     {
       "comment": "Standard Markdown hyperlink and image link coloring",
       "match": "(!?\\[)(.*?)(\\])(\\()([^\\)]*)(\\))",
@@ -26,35 +34,30 @@
       "begin": "\\[\\[",
       "end": "\\]\\]",
       "beginCaptures": {
-        "0": {
-          "name": "punctuation.definition.metadata.markdown.foam"
-        }
+        "0": { "name": "punctuation.definition.metadata.markdown.foam" }
       },
       "endCaptures": {
-        "0": {
-          "name": "punctuation.definition.metadata.markdown.foam"
-        }
+        "0": { "name": "punctuation.definition.metadata.markdown.foam" }
       },
       "patterns": [
         {
           "comment": "Wikilink with alias: [[target|alias]]",
           "match": "([^|\\]]+)(\\|)([^\\]]*)",
           "captures": {
-            "1": {
-              "name": "comment.line.wikilink.target.markdown.foam"
-            },
-            "2": {
-              "name": "punctuation.definition.metadata.markdown.foam"
-            },
-            "3": {
-              "name": "string.other.link.title.markdown.foam"
-            }
+            "1": { "name": "comment.line.wikilink.target.markdown.foam" },
+            "2": { "name": "punctuation.definition.metadata.markdown.foam" },
+            "3": { "name": "string.other.link.title.markdown.foam" }
           }
         },
         {
-          "comment": "Wikilink without alias (unclosed or target)",
-          "match": "[^|\\]]+",
+          "comment": "Plain target link: [[target]]",
+          "match": "([^|\\]]+)(?=\\]\\])",
           "name": "string.other.link.title.markdown.foam"
+        },
+        {
+          "comment": "Fallback for unclosed or split links in tables",
+          "match": "[^|\\]]+",
+          "name": "comment.line.wikilink.target.markdown.foam"
         }
       ]
     }

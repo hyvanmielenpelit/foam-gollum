@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.11
+
+### Patch Changes
+
+- More fixes to coloring problems.
+
 ## 1.6.10
 
 ### Patch Changes

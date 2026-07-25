@@ -8,7 +8,7 @@
     "type": "git"
   },
   "homepage": "https://github.com/hyvanmielenpelit/foam-gollum",
-  "version": "1.6.10",
+  "version": "1.6.11",
   "license": "MIT",
   "publisher": "Hyvnmielenpelitry",
   "engines": {
@@ -41,6 +41,13 @@
         "injectTo": [
           "text.html.markdown",
           "text.html.basic"
+        ]
+      },
+      {
+        "path": "./syntaxes/injection-table.json",
+        "scopeName": "a.foam.wikilink.injection.table",
+        "injectTo": [
+          "text.html.markdown"
         ]
       }
     ],
