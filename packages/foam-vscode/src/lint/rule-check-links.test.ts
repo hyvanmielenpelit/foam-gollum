@@ -2,7 +2,9 @@ import { URI } from '@foam/core';
 import { Logger } from '@foam/core';
 import { createMarkdownParser } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
+import { Config } from '@foam/core';
 import { checkLinks, checkDuplicateBlocks } from './rule-check-links';
+import { vi } from 'vitest';
 
 Logger.setLevel('error');
 
@@ -17,6 +19,14 @@ const makeWorkspace = (notes: { uri: string; content: string }[]) => {
 };
 
 describe('checkLinks', () => {
+  beforeEach(() => {
+    vi.spyOn(Config, 'getWikilinksSyntax').mockReturnValue('mediawiki');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('returns no issues when all wikilinks resolve unambiguously', () => {
     const ws = makeWorkspace([
       { uri: '/a.md', content: 'Link to [[b]]' },
@@ -44,6 +54,20 @@ describe('checkLinks', () => {
     expect(issues[0].fix).toBeUndefined();
     expect(issues[0].relatedInfo).toHaveLength(2);
     expect(issues[0].relatedInfo!.every(i => i.message.startsWith('Possible target:'))).toBe(true);
+  });
+
+  it('returns no ambiguous-identifier issue in gollum mode when multiple resources have the same name in different folders', () => {
+    vi.spyOn(Config, 'getWikilinksSyntax').mockReturnValue('gollum');
+    const ws = makeWorkspace([
+      { uri: '/project/todo.md', content: '# Todo' },
+      { uri: '/another/todo.md', content: '# Todo' },
+      { uri: '/note.md', content: 'Link to [[project/todo]]' },
+    ]);
+    const resource = ws.get(URI.file('/note.md'))!;
+
+    const issues = checkLinks(resource, ws);
+
+    expect(issues).toHaveLength(0);
   });
 
   it('returns no issue for an unknown-section when the target is a placeholder', () => {

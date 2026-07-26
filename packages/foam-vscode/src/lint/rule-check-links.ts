@@ -3,6 +3,7 @@ import { Range } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 import { MarkdownLink } from '@foam/core';
 import { isNone } from '@foam/core';
+import { Config } from '@foam/core';
 
 export const AMBIGUOUS_IDENTIFIER_CODE = 'ambiguous-identifier';
 export const UNKNOWN_SECTION_CODE = 'unknown-section';
@@ -24,6 +25,7 @@ export function checkLinks(
   workspace: FoamWorkspace
 ): LintIssue[] {
   const issues: LintIssue[] = [];
+  const wikiLinkSyntax = Config.getWikilinksSyntax();
 
   for (const link of resource.links || []) {
     if (link.type !== 'wikilink') {
@@ -31,14 +33,36 @@ export function checkLinks(
     }
 
     const { target, section, blockId } = MarkdownLink.analyzeLink(link);
-    const targets = workspace.listByIdentifier(target);
+    
+    let targetResource: Resource | undefined = undefined;
+    let isAmbiguous = false;
+    let ambiguousTargets: Resource[] = [];
 
-    if (targets.length > 1) {
+    if (wikiLinkSyntax === 'gollum') {
+      try {
+        const targetUri = workspace.resolveLink(resource, link);
+        if (targetUri && !targetUri.isPlaceholder()) {
+          targetResource = workspace.find(targetUri.asPlain()) ?? undefined;
+        }
+      } catch (e) {
+        // provider not found or other error
+      }
+    } else {
+      const targets = workspace.listByIdentifier(target);
+      if (targets.length > 1) {
+        isAmbiguous = true;
+        ambiguousTargets = targets;
+      } else if (targets.length === 1) {
+        targetResource = targets[0];
+      }
+    }
+
+    if (isAmbiguous) {
       issues.push({
         code: AMBIGUOUS_IDENTIFIER_CODE,
         message: 'Resource identifier is ambiguous',
         range: link.range,
-        relatedInfo: targets.map(t => ({
+        relatedInfo: ambiguousTargets.map(t => ({
           uri: t.uri,
           range: Range.create(0, 0, 0, 0),
           message: `Possible target: ${t.uri.path}`,
@@ -46,15 +70,15 @@ export function checkLinks(
       });
     }
 
-    if (section && targets.length === 1) {
-      const target = targets[0];
-      if (isNone(Resource.findSection(target, section))) {
+    if (section && targetResource) {
+      const currentTarget = targetResource;
+      if (isNone(Resource.findSection(currentTarget, section))) {
         issues.push({
           code: UNKNOWN_SECTION_CODE,
           message: `Cannot find section "${section}" in document, available sections are:`,
           range: getFragmentRange(link, section),
-          relatedInfo: (target.sections || []).map(s => ({
-            uri: target.uri,
+          relatedInfo: (currentTarget.sections || []).map(s => ({
+            uri: currentTarget.uri,
             range: s.range,
             message: s.label,
           })),
@@ -62,15 +86,15 @@ export function checkLinks(
       }
     }
 
-    if (blockId && targets.length === 1) {
-      const target = targets[0];
-      if (isNone(Resource.findBlock(target, blockId))) {
+    if (blockId && targetResource) {
+      const currentTarget = targetResource;
+      if (isNone(Resource.findBlock(currentTarget, blockId))) {
         issues.push({
           code: UNKNOWN_BLOCK_CODE,
           message: `Cannot find block "^${blockId}" in document, available blocks are:`,
           range: getFragmentRange(link, `^${blockId}`),
-          relatedInfo: (target.blocks || []).map(b => ({
-            uri: target.uri,
+          relatedInfo: (currentTarget.blocks || []).map(b => ({
+            uri: currentTarget.uri,
             range: b.markerRange,
             message: `^${b.id}`,
           })),
