@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.12
+
+### Patch Changes
+
+- Change Foam link to GitHub in README.
+- A minor bug fix.
+
 ## 1.6.11
 
 ### Patch Changes

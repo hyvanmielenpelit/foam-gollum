@@ -1,3 +1,3 @@
 import slugger from 'github-slugger';
 
-export const toSlug = (s: string) => slugger.slug(s);
+export const toSlug = (s: string) => slugger.slug(s).replace(/^-+|-+$/g, '');
