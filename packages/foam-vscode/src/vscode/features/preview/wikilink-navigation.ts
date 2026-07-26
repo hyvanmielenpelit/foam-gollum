@@ -9,8 +9,7 @@ import { Resource } from '@foam/core';
 import { escapeHtml } from '@foam/core';
 import { isEmpty } from 'lodash';
 import { toSlug } from '@foam/core';
-import { isNone } from '@foam/core';
-
+import { isNone, Config } from '@foam/core';
 /**
  * Per-link render result returned by the host. Plugins shouldn't need to
  * know about VS Code's webview href shape, the report's intra-document
@@ -101,8 +100,11 @@ export const markdownItWikilinkNavigation = (
           formattedFragment,
           alias,
         });
+        const parsedTarget = target.split('/').pop() ?? target;
         const defaultLabel = isEmpty(alias)
-          ? `${resource.title}${formattedFragment}`
+          ? Config.getWikilinksSyntax() === 'gollum' && Config.getWikilinksCaseInsensitive()
+            ? `${parsedTarget}${formattedFragment}`
+            : `${resource.title}${formattedFragment}`
           : alias;
         const renderedLabel = rendering.label ?? defaultLabel;
         const renderedTitle =

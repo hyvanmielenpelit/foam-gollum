@@ -148,9 +148,9 @@ describe('renderReport', () => {
     });
     // delta is in the workspace but excluded — no anchor at all for it.
     expect(html).not.toMatch(/href='[^']*delta[^']*'/);
-    // The visible text "Delta" should still appear since wikilinks render
-    // their label as plain text when excluded.
-    expect(html).toContain('Delta');
+    // The visible text "delta" should still appear since wikilinks render
+    // their label as plain text when excluded (using gollum case-insensitive wikilink formatting).
+    expect(html).toContain('delta');
   });
 
   it('includes a Backlinks section listing in-report backlinks', async () => {

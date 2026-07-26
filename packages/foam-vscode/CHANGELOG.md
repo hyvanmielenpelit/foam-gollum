@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.13
+
+### Patch Changes
+
+- Fix incorrect casing in the Markdown preview pane in the case-insensitive wikilink mode.
+
 ## 1.6.12
 
 ### Patch Changes
