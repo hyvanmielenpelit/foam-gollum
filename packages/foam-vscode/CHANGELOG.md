@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.14
+
+### Patch Changes
+
+- Fix wrong ambiguous page name underlining in the Gollum wikilink mode.
+- Fix a "cannot find section" error when referring to sections in other pages in a wikilink.
+
 ## 1.6.13
 
 ### Patch Changes

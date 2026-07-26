@@ -14,6 +14,7 @@ import { URI } from '@foam/core';
 import { Range } from '@foam/core';
 import { FoamGraph } from '@foam/core';
 import { Position } from '@foam/core';
+import { Config } from '@foam/core';
 import { CREATE_NOTE_COMMAND } from '../notes/create-note';
 import { commandAsURI } from '../../utils/commands';
 import { Location } from '@foam/core';
@@ -399,5 +400,5 @@ function resolveFragmentRange(
   if (fragment.startsWith('^')) {
     return Resource.findBlock(resource, fragment.slice(1))?.range ?? null;
   }
-  return Resource.findSection(resource, fragment)?.range ?? null;
+  return Resource.findSection2(resource, fragment, Config.getWikilinksSyntax() === 'gollum')?.range ?? null;
 }

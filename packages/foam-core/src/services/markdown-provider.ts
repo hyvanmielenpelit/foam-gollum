@@ -71,7 +71,7 @@ export class MarkdownResourceProvider implements ResourceProvider {
           }
         }
       } else {
-        const section = Resource.findSection(resource, uri.fragment);
+        const section = Resource.findSection2(resource, uri.fragment, Config.getWikilinksSyntax() === 'gollum');
         if (isSome(section)) {
           content = rows
             .slice(section.range.start.line, section.range.end.line)

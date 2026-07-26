@@ -12,6 +12,7 @@ import { Position } from '@foam/core';
 import { TextEdit } from '@foam/core';
 import { isNone, isSome } from '@foam/core';
 import { RenderContext } from '@foam/core';
+import { Config } from '@foam/core';
 
 export const WIKILINK_EMBED_REGEX =
   /((?:(?:full|content)-(?:inline|card)|full|content|inline|card)?!\[\[[^[\]]+?\]\])/;
@@ -319,7 +320,7 @@ function fullExtractor(
       noteText = extractBlockContent(noteText, note, block);
     }
   } else {
-    const section = Resource.findSection(note, note.uri.fragment);
+    const section = Resource.findSection2(note, note.uri.fragment, Config.getWikilinksSyntax() === 'gollum');
     if (isSome(section)) {
       const rows = noteText.split('\n');
       noteText = rows
@@ -349,7 +350,7 @@ function contentExtractor(
       noteText = extractBlockContent(noteText, note, block);
     }
   } else {
-    let section = Resource.findSection(note, note.uri.fragment);
+    let section = Resource.findSection2(note, note.uri.fragment, Config.getWikilinksSyntax() === 'gollum');
     if (!note.uri.fragment) {
       // if there's no fragment(section), the wikilink is linking to the entire note,
       // in which case we need to remove the title. We could just use rows.shift()

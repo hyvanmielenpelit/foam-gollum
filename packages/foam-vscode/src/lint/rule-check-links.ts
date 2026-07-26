@@ -72,7 +72,7 @@ export function checkLinks(
 
     if (section && targetResource) {
       const currentTarget = targetResource;
-      if (isNone(Resource.findSection(currentTarget, section))) {
+      if (isNone(Resource.findSection2(currentTarget, section, wikiLinkSyntax === 'gollum'))) {
         issues.push({
           code: UNKNOWN_SECTION_CODE,
           message: `Cannot find section "${section}" in document, available sections are:`,
