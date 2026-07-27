@@ -13,6 +13,7 @@ import { ResourceProvider } from './provider';
 import { IDisposable } from '../common/lifecycle';
 import { IDataStore } from '../services/datastore';
 import TrieMap from 'mnemonist/trie-map';
+import { Config } from '../config';
 
 export class FoamWorkspace implements IDisposable {
   private onDidAddEmitter = new Emitter<Resource>();
@@ -285,13 +286,21 @@ export class FoamWorkspace implements IDisposable {
       this._resources.find(mdNeedle).forEach(elm => resources.push(elm[1]));
     }
 
-    // if multiple resources found, try to filter exact case matches
-    if (resources.length > 1) {
-      resources = resources.filter(
-        r =>
-          r.uri.getBasename() === identifier ||
-          r.uri.getBasename() === identifier + this.defaultExtension
-      );
+    const exactMatches = resources.filter(
+      r =>
+        r.uri.getBasename() === identifier ||
+        r.uri.getBasename() === identifier + this.defaultExtension
+    );
+
+    if (Config.getWikilinksSyntax() === 'gollum' && !Config.getWikilinksCaseInsensitive()) {
+      resources = exactMatches;
+    } else {
+      // if multiple resources found, try to filter exact case matches
+      if (resources.length > 1) {
+        if (exactMatches.length > 0) {
+          resources = exactMatches;
+        }
+      }
     }
 
     return resources.sort(Resource.sortByPath);
@@ -443,6 +452,14 @@ export class FoamWorkspace implements IDisposable {
       this._resources.find(mdId).forEach(elm => resources.push(elm[1]));
     }
     
+    if (Config.getWikilinksSyntax() === 'gollum' && !Config.getWikilinksCaseInsensitive()) {
+      const exactMatches = resources.filter(
+        r => r.uri.path === reference || r.uri.path === reference + this.defaultExtension
+      );
+      resources.length = 0;
+      resources.push(...exactMatches);
+    }
+
     if (resources.length > 0) {
       resources.sort((a, b) => a.uri.path.localeCompare(b.uri.path));
       return resources[0];

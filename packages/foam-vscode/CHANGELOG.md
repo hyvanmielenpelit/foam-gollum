@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.15
+
+### Patch Changes
+
+- Fix a link to non-existing resource bug in the Markdown preview pane when there were multiple pages of the same name and a wikilink was case-insensitive and written in lowercase.
+
 ## 1.6.14
 
 ### Patch Changes
