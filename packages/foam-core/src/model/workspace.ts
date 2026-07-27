@@ -292,8 +292,10 @@ export class FoamWorkspace implements IDisposable {
         r.uri.getBasename() === identifier + this.defaultExtension
     );
 
-    if (Config.getWikilinksSyntax() === 'gollum' && !Config.getWikilinksCaseInsensitive()) {
-      resources = exactMatches;
+    if (Config.getWikilinksSyntax() === 'gollum') {
+      if (!Config.getWikilinksCaseInsensitive()) {
+        resources = exactMatches;
+      }
     } else {
       // if multiple resources found, try to filter exact case matches
       if (resources.length > 1) {
@@ -452,12 +454,14 @@ export class FoamWorkspace implements IDisposable {
       this._resources.find(mdId).forEach(elm => resources.push(elm[1]));
     }
     
-    if (Config.getWikilinksSyntax() === 'gollum' && !Config.getWikilinksCaseInsensitive()) {
-      const exactMatches = resources.filter(
-        r => r.uri.path === reference || r.uri.path === reference + this.defaultExtension
-      );
-      resources.length = 0;
-      resources.push(...exactMatches);
+    if (Config.getWikilinksSyntax() === 'gollum') {
+      if (!Config.getWikilinksCaseInsensitive()) {
+        const exactMatches = resources.filter(
+          r => r.uri.path === reference || r.uri.path === reference + this.defaultExtension
+        );
+        resources.length = 0;
+        resources.push(...exactMatches);
+      }
     }
 
     if (resources.length > 0) {
