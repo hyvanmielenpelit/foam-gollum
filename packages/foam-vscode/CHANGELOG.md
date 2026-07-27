@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.6.16
+
+### Patch Changes
+
+- Small check to case-insesitivity.
+
 ## 1.6.15
 
 ### Patch Changes
