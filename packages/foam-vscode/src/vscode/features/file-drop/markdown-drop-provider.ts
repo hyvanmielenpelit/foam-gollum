@@ -1,10 +1,26 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import * as os from 'os';
-import { getFoamVsCodeConfig } from '../../vscode/config';
-import { imageExtensions } from '@foam/core';
+import { getFoamVsCodeConfig } from '../../config';
 import { imageSizeFromFile } from 'image-size/fromFile';
+import {
+  GOLLUM_UPLOAD_KIND_ID,
+  computeDropTarget,
+  isImageExtension,
+  parseUriList,
+  splitFileName,
+} from './drop-paths';
 
+export const GOLLUM_UPLOAD_KIND = vscode.DocumentDropOrPasteEditKind.Empty.append(
+  ...GOLLUM_UPLOAD_KIND_ID.split('.')
+);
+
+const toForwardSlashes = (fsPath: string) => fsPath.replace(/\\/g, '/');
+
+/**
+ * Inserts links to dropped files and copies files from outside the workspace
+ * to the document's uploads folder. The copy is part of the edit's
+ * `additionalEdit`, so it happens only when VS Code applies this edit.
+ */
 export class CustomMarkdownDropProvider implements vscode.DocumentDropEditProvider {
    async provideDocumentDropEdits(
     document: vscode.TextDocument,
@@ -12,71 +28,71 @@ export class CustomMarkdownDropProvider implements vscode.DocumentDropEditProvid
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken
   ): Promise<vscode.DocumentDropEdit | undefined> {
-    const fileTemplateFormat: string = getFoamVsCodeConfig("fileDropdown.fileTemplateFormat"); 
-    const imageTemplateFormat: string = getFoamVsCodeConfig("fileDropdown.imageTemplateFormat"); 
-    const uploadsFolderName: string = getFoamVsCodeConfig("fileDropdown.uploadsFolderName"); 
-    
-    const workspaceFolder = vscode.workspace.workspaceFolders[0];
+    const uriList = dataTransfer.get('text/uri-list');
+    if (!uriList) {
+      return undefined;
+    }
+    const files = parseUriList(await uriList.asString());
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (files.length === 0 || !workspaceFolder) {
+      return undefined;
+    }
 
-    const files = dataTransfer.get("text/uri-list").value.split(/\r?\n/);
+    const fileTemplateFormat: string = getFoamVsCodeConfig('fileDropdown.fileTemplateFormat', 'markdown');
+    const imageTemplateFormat: string = getFoamVsCodeConfig('fileDropdown.imageTemplateFormat', 'markdown');
+    const uploadsFolderName: string = getFoamVsCodeConfig('fileDropdown.uploadsFolderName', 'uploads');
+
+    const copyEdit = new vscode.WorkspaceEdit();
+    let copyCount = 0;
     let text = '';
 
-    for(const file of files) {
-      const filePathUri = vscode.Uri.parse(file);
-      const fileName = path.basename(filePathUri.fsPath);
-      const fileNameDotIndex = fileName.indexOf('.', 1); 
-      const fileNameWithoutExtension = fileNameDotIndex > 0 ? fileName.substring(0, fileNameDotIndex) : fileName; 
-      const fileExtension = fileNameDotIndex > 0 ? fileName.substring(fileNameDotIndex) : '';
-      const isImage = imageExtensions.includes(fileExtension.toLowerCase());
+    for (const file of files) {
+      const fileUri = vscode.Uri.parse(file);
+      const droppedFilePath = toForwardSlashes(fileUri.fsPath);
+      const { name: fileNameWithoutExtension, extension } = splitFileName(
+        droppedFilePath.substring(droppedFilePath.lastIndexOf('/') + 1)
+      );
+      const isImage = isImageExtension(extension);
 
-      const documentRelPath = path.relative(workspaceFolder.uri.fsPath, document.uri.fsPath).replace(/\\/g, "/");
-      const documentLastIndexOfSlash = documentRelPath.lastIndexOf('/');
-      const documentRelativeDirectory = documentLastIndexOfSlash >= 0 ? documentRelPath.substring(0, documentLastIndexOfSlash) : "";
-      const documentName = path.basename(documentRelPath);
-      const documentNameDotIndex = documentName.indexOf('.', 1); 
-      const documentNameWithoutExtension = documentNameDotIndex > 0 ? documentName.substring(0, documentNameDotIndex) : documentName; 
-      
-      let documentAndFileRelativeDirectory = documentNameWithoutExtension;
-      if (documentRelativeDirectory.length > 0) {
-        documentAndFileRelativeDirectory = documentRelativeDirectory + "/" + documentNameWithoutExtension;
-      }
+      const { linkPath, needsCopy } = computeDropTarget({
+        workspacePath: toForwardSlashes(workspaceFolder.uri.fsPath),
+        documentPath: toForwardSlashes(document.uri.fsPath),
+        droppedFilePath,
+        uploadsFolderName,
+      });
 
-      let targetRelPath = '';
-      const filePathStr = filePathUri.fsPath.replace(/\\/g, '/');
-      const workspacePathStr = workspaceFolder.uri.fsPath.replace(/\\/g, '/') + '/';
-      
-      if(filePathStr.toLowerCase().startsWith(workspacePathStr.toLowerCase())) {
-        const fileRelPath = path.relative(workspaceFolder.uri.fsPath, filePathUri.fsPath).replace(/\\/g, "/");
-        targetRelPath = '/' + fileRelPath;
-      } else {
-        const uploadDir = (uploadsFolderName && uploadsFolderName.trim().length > 0) ? uploadsFolderName : 'uploads';
-        targetRelPath = "/" + uploadDir + "/";
-        if (documentAndFileRelativeDirectory !== '') {
-          targetRelPath += documentAndFileRelativeDirectory + "/";
-        }
-        targetRelPath += fileName;
-
-        // Ensure we strip the leading slash when using joinPath
-        const targetFsPathUri = vscode.Uri.joinPath(workspaceFolder.uri, targetRelPath.substring(1));
-        await vscode.workspace.fs.copy(filePathUri, targetFsPathUri, {
-          overwrite: true
+      if (needsCopy) {
+        const targetUri = vscode.Uri.joinPath(workspaceFolder.uri, ...linkPath.substring(1).split('/'));
+        copyEdit.createFile(targetUri, {
+          overwrite: true,
+          contents: await vscode.workspace.fs.readFile(fileUri),
         });
+        copyCount++;
       }
 
       let dimensions = null;
-      if (isImage && filePathUri.scheme === 'file') {
-        dimensions = await this.readImageDimensions(filePathUri);
+      if (isImage && fileUri.scheme === 'file') {
+        dimensions = await this.readImageDimensions(fileUri);
       }
-      
-      const altText = fileNameWithoutExtension;
-      const templateFormat = isImage ? imageTemplateFormat : fileTemplateFormat; 
 
-      text += this.getTemplate(targetRelPath, altText, files.length, templateFormat, isImage, dimensions, text === '');
+      const templateFormat = isImage ? imageTemplateFormat : fileTemplateFormat;
+
+      text += this.getTemplate(linkPath, fileNameWithoutExtension, files.length, templateFormat, isImage, dimensions, text === '');
     }
 
-    const textSnippet = new vscode.SnippetString(text);
-    let ret: vscode.DocumentDropEdit = new vscode.DocumentDropEdit(textSnippet);
-    return ret;
+    if (token.isCancellationRequested) {
+      return undefined;
+    }
+
+    const edit = new vscode.DocumentDropEdit(
+      new vscode.SnippetString(text),
+      'Insert as Gollum upload',
+      GOLLUM_UPLOAD_KIND
+    );
+    if (copyCount > 0) {
+      edit.additionalEdit = copyEdit;
+    }
+    return edit;
   }
 
   getTemplate(link: string, altText: string, filesCount: number, templateFormat: string, isImage: boolean, dimensions: {width: number, height: number}, isFirst: boolean) : string {

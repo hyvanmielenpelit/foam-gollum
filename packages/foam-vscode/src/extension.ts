@@ -24,7 +24,10 @@ import { createMatcherAndDataStore } from './vscode/services/editor';
 import { OllamaEmbeddingProvider } from './ai/providers/ollama/ollama-provider';
 import { initTelemetry } from './vscode/services/telemetry';
 import { getFoamVsCodeConfig } from './vscode/config';
-import { CustomMarkdownDropProvider } from './core/services/markdown-drop-provider';
+import {
+  CustomMarkdownDropProvider,
+  GOLLUM_UPLOAD_KIND,
+} from './vscode/features/file-drop/markdown-drop-provider';
 
 // Injected by esbuild's `define` (and the vitest config), so telemetry can
 // attach version dimensions without a runtime package.json read
@@ -176,7 +179,11 @@ export async function activate(context: ExtensionContext) {
       context.subscriptions.push(
         languages.registerDocumentDropEditProvider(
           { language: 'markdown' },
-          new CustomMarkdownDropProvider()
+          new CustomMarkdownDropProvider(),
+          {
+            providedDropEditKinds: [GOLLUM_UPLOAD_KIND],
+            dropMimeTypes: ['text/uri-list'],
+          }
         )
       );
     }

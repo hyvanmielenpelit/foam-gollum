@@ -760,6 +760,111 @@ export class SnippetString {
   }
 }
 
+// ===== Drag and Drop =====
+
+export interface DataTransferFile {
+  readonly name: string;
+  readonly uri?: Uri;
+  data(): Thenable<Uint8Array>;
+}
+
+export class DataTransferItem {
+  constructor(public readonly value: any) {}
+
+  asString(): Thenable<string> {
+    return Promise.resolve(
+      typeof this.value === 'string' ? this.value : JSON.stringify(this.value)
+    );
+  }
+
+  asFile(): DataTransferFile | undefined {
+    return undefined;
+  }
+}
+
+export class DataTransfer
+  implements Iterable<[mimeType: string, item: DataTransferItem]>
+{
+  private readonly _items = new Map<string, DataTransferItem>();
+
+  get(mimeType: string): DataTransferItem | undefined {
+    return this._items.get(mimeType.toLowerCase());
+  }
+
+  set(mimeType: string, value: DataTransferItem): void {
+    this._items.set(mimeType.toLowerCase(), value);
+  }
+
+  forEach(
+    callbackfn: (
+      item: DataTransferItem,
+      mimeType: string,
+      dataTransfer: DataTransfer
+    ) => void,
+    thisArg?: any
+  ): void {
+    for (const [mimeType, item] of this._items) {
+      callbackfn.call(thisArg, item, mimeType, this);
+    }
+  }
+
+  [Symbol.iterator](): IterableIterator<
+    [mimeType: string, item: DataTransferItem]
+  > {
+    return this._items.entries();
+  }
+}
+
+export class DocumentDropOrPasteEditKind {
+  private static readonly sep = '.';
+
+  static readonly Empty = new DocumentDropOrPasteEditKind('');
+  static readonly Text = new DocumentDropOrPasteEditKind('text');
+  static readonly TextUpdateImports = new DocumentDropOrPasteEditKind(
+    'text.updateImports'
+  );
+
+  private constructor(public readonly value: string) {}
+
+  append(...parts: string[]): DocumentDropOrPasteEditKind {
+    return new DocumentDropOrPasteEditKind(
+      (this.value ? [this.value, ...parts] : parts).join(
+        DocumentDropOrPasteEditKind.sep
+      )
+    );
+  }
+
+  contains(other: DocumentDropOrPasteEditKind): boolean {
+    return (
+      this.value === other.value ||
+      this.value === '' ||
+      other.value.startsWith(this.value + DocumentDropOrPasteEditKind.sep)
+    );
+  }
+
+  intersects(other: DocumentDropOrPasteEditKind): boolean {
+    return this.contains(other) || other.contains(this);
+  }
+}
+
+export class DocumentDropEdit {
+  title?: string;
+  kind?: DocumentDropOrPasteEditKind;
+  yieldTo?: readonly DocumentDropOrPasteEditKind[];
+  insertText: string | SnippetString;
+  additionalEdit?: WorkspaceEdit;
+
+  constructor(
+    insertText: string | SnippetString,
+    title?: string,
+    kind?: DocumentDropOrPasteEditKind
+  ) {
+    this.insertText = insertText;
+    this.title = title;
+    this.kind = kind;
+  }
+}
+
 // ===== Configuration =====
 
 export interface WorkspaceConfiguration {
@@ -1185,6 +1290,21 @@ export class WorkspaceEdit {
       this._edits.set(key, []);
     }
     this._edits.get(key)!.push({ type: 'rename', oldUri, newUri, options });
+  }
+
+  createFile(
+    uri: Uri,
+    options?: {
+      overwrite?: boolean;
+      ignoreIfExists?: boolean;
+      contents?: Uint8Array | DataTransferFile;
+    }
+  ): void {
+    const key = uri.toString();
+    if (!this._edits.has(key)) {
+      this._edits.set(key, []);
+    }
+    this._edits.get(key)!.push({ type: 'create', uri, options });
   }
 
   set(uri: Uri, edits: TextEdit[]): void {
@@ -2074,6 +2194,27 @@ export const workspace = {
 
       for (const [uriString, edits] of edit._getEdits()) {
         const uri = createVSCodeUri(URI.parse(uriString, 'file'));
+
+        // Handle file creations before text edits on the same file
+        for (const e of edits) {
+          if (e.type === 'create') {
+            const existed = fs.existsSync(e.uri.fsPath);
+            if (existed && !e.options?.overwrite) {
+              if (e.options?.ignoreIfExists) {
+                continue;
+              }
+              throw new Error(`File already exists: ${e.uri.fsPath}`);
+            }
+            const contents = e.options?.contents;
+            const bytes: Uint8Array =
+              contents === undefined
+                ? new Uint8Array()
+                : contents instanceof Uint8Array
+                ? contents
+                : await contents.data();
+            await mockState.fileSystem.writeFile(e.uri, bytes);
+          }
+        }
 
         // Apply text edits
         const textEdits = edits.filter(e => e instanceof TextEdit || e.range);

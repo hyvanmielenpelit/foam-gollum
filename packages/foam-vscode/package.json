@@ -8,7 +8,7 @@
     "type": "git"
   },
   "homepage": "https://github.com/hyvanmielenpelit/foam-gollum",
-  "version": "1.6.16",
+  "version": "1.6.17",
   "license": "MIT",
   "publisher": "Hyvnmielenpelitry",
   "engines": {
@@ -698,6 +698,13 @@
         "icon": "$(list-flat)"
       }
     ],
+    "configurationDefaults": {
+      "[markdown]": {
+        "editor.dropIntoEditor.preferences": [
+          "gollum.upload"
+        ]
+      }
+    },
     "configuration": {
       "title": "Foam for Gollum",
       "properties": {

@@ -88,6 +88,10 @@ When `"foam.wikilinks.caseInsensitive"` setting is `true`, wikilink parsing is c
 
 When the `"foam.useCustomFileDropdownProvider"` setting is `true`, Visual Studio Code uses a custom file dropdown provider that places dropped files under `/uploads/` using a special logic. It creates a folder under `/uploads/` based on the current document folder and the current document name. For example, files related to `/Items/Amulets.md` will go under `/uploads/Items/Amulets/`.
 
+Dots in a page name are kept, and only the file extension is removed: files related to `/Comparisons/A vs. B.md` will go under `/uploads/Comparisons/A vs. B/`.
+
+When you drop files into a Markdown file, Foam's upload ("Insert as Gollum upload") is the default drop option. The drop widget shown after a drop still offers VS Code's own options. Set `"foam.useCustomFileDropdownProvider": false` to restore VS Code's built-in behavior.
+
 #### 3.1. Uploads Folder Name Customization
 
 The uploads folder name is customizable via the `"foam.fileDropdown.uploadsFolderName"` setting.
