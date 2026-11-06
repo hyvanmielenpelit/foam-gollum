@@ -6,6 +6,8 @@ import { createRenderContext } from '@foam/core';
 import {
   createFile,
   deleteFile,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
   withModifiedFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import {
@@ -19,6 +21,8 @@ const getEmbedNoteType = () =>
   getFoamVsCodeConfig<string>(CONFIG_EMBED_NOTE_TYPE);
 
 describe('Displaying included notes in preview', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('should render an included note in full inline mode', async () => {
     const note = await createFile('This is the text of note A', [
       'preview',
@@ -779,5 +783,157 @@ Add wet ingredients ^wet-step
     );
 
     await deleteFile(source);
+  });
+});
+
+describe('Displaying included notes in preview with Gollum syntax', () => {
+  // Gollum links name a section by its anchor slug (`#section-2`), not by
+  // its heading text.
+  const noteWithSections = `
+# Section 1
+This is the first section of note E
+
+# Section 2 
+This is the second section of note E
+
+# Section 3
+This is the third section of note E
+    `;
+
+  const renderEmbedding = async (
+    noteContent: string,
+    embedType: string,
+    markdown: string,
+    options: { currentNote?: boolean } = {}
+  ) => {
+    const note = await createFile(noteContent, ['gollum-embed', 'note-e.md']);
+    const parser = createMarkdownParser([]);
+    const parsedNote = parser.parse(note.uri, note.content);
+    const ws = new FoamWorkspace().set(parsedNote);
+    let result = '';
+    try {
+      await withModifiedFoamConfiguration(CONFIG_EMBED_NOTE_TYPE, embedType, () => {
+        const md = markdownItWikilinkEmbed(MarkdownIt(), ws, parser, {
+          getCurrentResource: options.currentNote ? () => parsedNote : undefined,
+          renderContext: createRenderContext(),
+          getEmbedNoteType,
+        });
+        result = md.render(markdown);
+      });
+    } finally {
+      await deleteFile(note);
+    }
+    return result;
+  };
+
+  it('should render an included section in full inline mode', async () => {
+    const res = await renderEmbedding(
+      noteWithSections,
+      'full-inline',
+      `This is the root node. 
+
+ ![[note-e#section-2]]`
+    );
+    expect(res).toMatch(
+      `<p>This is the root node.</p>
+<p><h1>Section 2</h1>
+<p>This is the second section of note E</p>
+</p>`
+    );
+  });
+
+  it('should not render the section title, but still render subsection titles in content inline mode', async () => {
+    const res = await renderEmbedding(
+      `# Title
+
+
+## Section 1
+This is the first section of note E
+
+### Subsection a
+This is the first subsection of note E
+      `,
+      'content-inline',
+      `This is the root node. 
+              
+![[note-e#section-1]]`
+    );
+    expect(res).toMatch(
+      `<p>This is the root node.</p>
+<p><p>This is the first section of note E</p>
+<h3>Subsection a</h3>
+<p>This is the first subsection of note E</p>
+</p>`
+    );
+  });
+
+  it('should not render the subsection title in content mode if you link to it and regardless of its level', async () => {
+    const res = await renderEmbedding(
+      `# Title
+## Section 1
+This is the first section of note E
+
+### Subsection a
+This is the first subsection of note E`,
+      'content-inline',
+      `This is the root node. 
+
+![[note-e#subsection-a]]`
+    );
+    expect(res).toMatch(
+      `<p>This is the root node.</p>
+<p><p>This is the first subsection of note E</p>
+</p>`
+    );
+  });
+
+  it('should allow a note embedding type to be overridden if a modifier is passed in', async () => {
+    const res = await renderEmbedding(
+      noteWithSections,
+      'full-inline',
+      `This is the root node. 
+
+ content![[note-e#section-2]]
+ 
+ full![[note-e#section-3]]`
+    );
+    expect(res).toMatch(
+      `<p>This is the root node.</p>
+<p><p>This is the second section of note E</p>
+</p>
+<p><h1>Section 3</h1>
+<p>This is the third section of note E</p>
+</p>
+`
+    );
+  });
+
+  it('should allow a note embedding type to be overridden if two modifiers are passed in', async () => {
+    const res = await renderEmbedding(
+      noteWithSections,
+      'full-inline',
+      `This is the root node. 
+ 
+content-card![[note-e#section-2]]`
+    );
+    expect(res).toContain('This is the root node');
+    expect(res).toContain('embed-container-note');
+    expect(res).toContain('This is the second section of note E');
+    expect(res).not.toContain('Section 2');
+  });
+
+  it('should embed a section from the current note using a self-referencing link', async () => {
+    const res = await renderEmbedding(
+      `# Section 1
+Content of section one.
+
+# Section 2
+Content of section two.`,
+      'full-inline',
+      `Intro. ![[#section-2]]`,
+      { currentNote: true }
+    );
+    expect(res).toContain('Content of section two');
+    expect(res).not.toContain('Content of section one');
   });
 });

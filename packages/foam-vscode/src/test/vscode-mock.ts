@@ -19,7 +19,7 @@ import {
   IWatcher,
 } from '@foam/core';
 import { MarkdownResourceProvider } from '@foam/core';
-import { randomString } from './test-utils';
+import { FOAM_EXTENSION_ID, randomString } from './test-utils';
 import micromatch from 'micromatch';
 import { Emitter } from '@foam/core';
 
@@ -1622,7 +1622,7 @@ export function createMockExtensionContext(): ExtensionContext {
     logPath: '/mock/logs',
     extensionMode: 1,
     extension: {
-      id: 'foam.foam-vscode',
+      id: FOAM_EXTENSION_ID,
       packageJSON: {},
     },
     languageModelAccessInformation: {
@@ -2308,8 +2308,23 @@ export const workspace = {
       return typeof pathOrUri === 'string' ? pathOrUri : pathOrUri.fsPath;
     }
 
-    const fsPath = typeof pathOrUri === 'string' ? pathOrUri : pathOrUri.fsPath;
-    const relativePath = path.relative(workspaceFolder.uri.fsPath, fsPath);
+    // Like VS Code, a string is read as a file path, which may be in URI path
+    // form (`/C:/dir/file.md`) on Windows.
+    const fsPath =
+      typeof pathOrUri === 'string'
+        ? Uri.file(pathOrUri).fsPath
+        : pathOrUri.fsPath;
+    const relative = path.relative(workspaceFolder.uri.fsPath, fsPath);
+    // VS Code returns a path outside the workspace folder unchanged
+    if (
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      return typeof pathOrUri === 'string' ? pathOrUri : pathOrUri.fsPath;
+    }
+    // VS Code returns forward slashes on every platform.
+    const relativePath = relative.split(path.sep).join('/');
 
     if (includeWorkspaceFolder) {
       return `${workspaceFolder.name}/${relativePath}`;
@@ -2413,7 +2428,8 @@ export const languages = {
 // Extensions namespace
 export const extensions = {
   getExtension<T = any>(extensionId: string): Extension<T> | undefined {
-    if (extensionId === 'foam.foam-vscode') {
+    // VS Code matches extension ids case-insensitively
+    if (extensionId.toLowerCase() === FOAM_EXTENSION_ID.toLowerCase()) {
       return new MockExtension<any>(
         extensionId,
         {
@@ -2429,7 +2445,7 @@ export const extensions = {
 
   get all(): Extension<any>[] {
     const foamExtension = new MockExtension<any>(
-      'foam.foam-vscode',
+      FOAM_EXTENSION_ID,
       {
         get foam() {
           return TestFoam.getInstance();

@@ -1,6 +1,7 @@
 import { markdownItHtmlImageLinks } from './html-image-links';
 import MarkdownIt from 'markdown-it';
 import { FoamWorkspace, Resource, URI } from '@foam/core';
+import { createTestNote } from '../../../test/test-utils';
 
 describe('markdownItHtmlImageLinks', () => {
   let md: MarkdownIt;
@@ -18,15 +19,11 @@ describe('markdownItHtmlImageLinks', () => {
   });
 
   it('rewrites src for existing workspace image in html_inline', () => {
-    const resource: Resource = {
-      uri: URI.file('/mock/path/uploads/image.webp'),
+    const resource = createTestNote({
+      uri: '/mock/path/uploads/image.webp',
       type: 'image',
       title: 'image',
-      properties: {},
-      links: [],
-      sections: [],
-      text: ''
-    };
+    });
     workspace.set(resource);
 
     const input = 'Some text <img src="/uploads/image.webp" width="330" /> and more';
@@ -35,15 +32,11 @@ describe('markdownItHtmlImageLinks', () => {
   });
 
   it('rewrites src for existing workspace image in html_block', () => {
-    const resource: Resource = {
-      uri: URI.file('/mock/path/uploads/image.webp'),
+    const resource = createTestNote({
+      uri: '/mock/path/uploads/image.webp',
       type: 'image',
       title: 'image',
-      properties: {},
-      links: [],
-      sections: [],
-      text: ''
-    };
+    });
     workspace.set(resource);
 
     const input = '<img src="/uploads/image.webp" width="330" />\n';
@@ -64,15 +57,11 @@ describe('markdownItHtmlImageLinks', () => {
   });
 
   it('handles URI encoded srcs', () => {
-    const resource: Resource = {
-      uri: URI.file('/mock/path/uploads/test file.webp'),
+    const resource = createTestNote({
+      uri: '/mock/path/uploads/test file.webp',
       type: 'image',
       title: 'test file',
-      properties: {},
-      links: [],
-      sections: [],
-      text: ''
-    };
+    });
     workspace.set(resource);
 
     const input = '<img src="/uploads/test%20file.webp" />';

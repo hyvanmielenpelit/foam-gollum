@@ -8,7 +8,7 @@ import { fromVsCodeUri, toVsCodeUri } from '../vscode/utils/vsc-utils';
 import { Logger } from '@foam/core';
 import { URI } from '@foam/core';
 import { Resource } from '@foam/core';
-import { randomString, wait } from './test-utils';
+import { FOAM_EXTENSION_ID, randomString, wait } from './test-utils';
 import { Foam } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 
@@ -77,8 +77,7 @@ export const getUriInWorkspace = (...filepath: string[]) => {
 };
 
 export const getFoamFromVSCode = async (): Promise<Foam> => {
-  // In test environment, try different extension IDs
-  const extension = vscode.extensions.getExtension('foam.foam-vscode');
+  const extension = vscode.extensions.getExtension(FOAM_EXTENSION_ID);
 
   const exports = extension.isActive
     ? extension.exports
@@ -224,6 +223,38 @@ export const withModifiedFoamConfiguration = (
   value,
   fn: () => void | Promise<void>
 ) => withModifiedConfiguration(`foam.${key}`, value, fn);
+
+/**
+ * Foam settings for MediaWiki-style wikilinks (`[[target|alias]]`, case
+ * sensitive), the syntax the upstream Foam specs are written in.
+ */
+export const MEDIAWIKI_SYNTAX = {
+  'wikilinks.syntax': 'mediawiki',
+  'wikilinks.caseInsensitive': false,
+};
+
+/**
+ * Applies Foam settings for every test of the enclosing `describe` block and
+ * restores the previous workspace values afterwards.
+ *
+ * @param settings Foam setting keys (without the `foam.` prefix) and values
+ */
+export const useFoamConfiguration = (settings: Record<string, unknown>) => {
+  const previous: Record<string, unknown> = {};
+  beforeAll(async () => {
+    const config = vscode.workspace.getConfiguration();
+    for (const [key, value] of Object.entries(settings)) {
+      previous[key] = config.inspect(`foam.${key}`)?.workspaceValue;
+      await config.update(`foam.${key}`, value);
+    }
+  });
+  afterAll(async () => {
+    const config = vscode.workspace.getConfiguration();
+    for (const key of Object.keys(settings)) {
+      await config.update(`foam.${key}`, previous[key]);
+    }
+  });
+};
 
 /**
  * Utility function to check if two URIs are the same.

@@ -12,7 +12,7 @@ function findSpecFiles(dir: string, base = dir): string[] {
     if (statSync(full).isDirectory()) {
       results.push(...findSpecFiles(full, base));
     } else if (entry.endsWith('.spec.ts')) {
-      results.push(path.relative(base, full));
+      results.push(path.relative(base, full).split(path.sep).join('/'));
     }
   }
   return results;

@@ -1,4 +1,6 @@
 import dayjs from 'dayjs';
+import advancedFormat from 'dayjs/plugin/advancedFormat';
+import isoWeek from 'dayjs/plugin/isoWeek';
 import { Uri, window, workspace } from 'vscode';
 import { joinPath } from '@foam/core';
 import { URI } from '@foam/core';
@@ -13,6 +15,10 @@ import {
 } from '../../services/editor';
 import { resolveDailyNote } from '@foam/core';
 import { Resolver } from '@foam/core';
+
+// isoWeek adds ISO week number support; advancedFormat exposes the W/WW tokens
+dayjs.extend(isoWeek);
+dayjs.extend(advancedFormat);
 
 // ─── Format conversion ────────────────────────────────────────────────────────
 

@@ -763,13 +763,40 @@ describe('MarkdownLink', () => {
 
   describe('Gollum syntax', () => {
     beforeEach(() => {
-      Config.setDefaultConfig({
-        ...new DefaultFoamConfig(),
-        getWikilinksSyntax: () => 'gollum',
-      });
+      Config.setDefaultConfig(
+        Object.assign(new DefaultFoamConfig(), {
+          getWikilinksSyntax: () => 'gollum' as const,
+        })
+      );
     });
     afterEach(() => {
       Config.setDefaultConfig(new DefaultFoamConfig());
+    });
+
+    it('should parse a section of the same note', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[#section]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.blockId).toEqual('');
+      expect(parsed.alias).toEqual('');
+    });
+
+    it('should parse a block of the same note', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[#^block-id]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('');
+      expect(parsed.blockId).toEqual('block-id');
+      expect(parsed.alias).toEqual('');
+    });
+
+    it('should parse an aliased section of the same note', () => {
+      const link = parser.parse(getRandomURI(), `this is a [[alias|#section]]`).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('');
+      expect(parsed.section).toEqual('section');
+      expect(parsed.alias).toEqual('alias');
     });
 
     it('should parse target and alias', () => {

@@ -5,6 +5,8 @@
  * them here so existing imports keep working, and override the few values
  * that need to be foam-vscode-specific (e.g. TEST_DATA_DIR).
  */
+import { readFileSync } from 'fs';
+import path from 'path';
 import { URI } from '@foam/core';
 
 export {
@@ -29,3 +31,14 @@ export const TEST_DATA_DIR = URI.file(__dirname).joinPath(
   '..',
   'test-data'
 );
+
+/**
+ * The extension id VS Code knows foam-vscode by: `<publisher>.<name>` from its
+ * package.json, two levels up from this file.
+ */
+export const FOAM_EXTENSION_ID = (() => {
+  const manifest = JSON.parse(
+    readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')
+  );
+  return `${manifest.publisher}.${manifest.name}`;
+})();

@@ -34,10 +34,11 @@ dupilcated wikilink to file [[first-document]]
 
 describe('generateStdMdLink', () => {
   beforeEach(() => {
-    Config.setDefaultConfig({
-      ...new DefaultFoamConfig(),
-      getWikilinksSyntax: () => 'mediawiki',
-    });
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'mediawiki' as const,
+      })
+    );
   });
 
   afterEach(() => {

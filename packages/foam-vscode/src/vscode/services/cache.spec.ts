@@ -265,7 +265,12 @@ describe('VsCodeBasedParserCache', () => {
     });
   });
 
-  it('does not stamp the new cache version if clearing the old cache fails', async () => {
+  it('does not stamp the new cache version if clearing the old cache fails', async context => {
+    // A read-only directory mode does not stop deleting the files in it on
+    // Windows, so the clear cannot be made to fail this way there.
+    if (process.platform === 'win32') {
+      context.skip();
+    }
     await withTmpStorageDir(async storageDir => {
       const context = createContext(storageDir);
 

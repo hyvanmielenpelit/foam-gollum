@@ -4,6 +4,7 @@ import { createMarkdownParser } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 import { Config } from '@foam/core';
 import { checkLinks, checkDuplicateBlocks } from './rule-check-links';
+import { createTestWorkspace } from '../test/test-utils';
 import { vi } from 'vitest';
 
 Logger.setLevel('error');
@@ -124,6 +125,59 @@ describe('checkLinks', () => {
     expect(issues[0].code).toEqual('unknown-block');
     expect(issues[0].fix).toBeUndefined();
     expect(issues[0].relatedInfo!.map(i => i.message)).toEqual(['^existing']);
+  });
+
+  describe('with Gollum syntax', () => {
+    // Gollum links resolve through the workspace's resource provider
+    const makeGollumWorkspace = (notes: { uri: string; content: string }[]) => {
+      const ws = createTestWorkspace([URI.file('/')]);
+      for (const { uri, content } of notes) {
+        ws.set(parser.parse(URI.file(uri), content));
+      }
+      return ws;
+    };
+
+    beforeEach(() => {
+      vi.spyOn(Config, 'getWikilinksSyntax').mockReturnValue('gollum');
+    });
+
+    it('returns no issue when the section anchor exists in the target', () => {
+      const ws = makeGollumWorkspace([
+        { uri: '/a.md', content: '# Section 1\nContent' },
+        { uri: '/b.md', content: 'Link to [[a#section-1]]' },
+      ]);
+
+      expect(checkLinks(ws.get(URI.file('/b.md'))!, ws)).toHaveLength(0);
+    });
+
+    it('returns an unknown-section issue offering the anchors of the target', () => {
+      const ws = makeGollumWorkspace([
+        { uri: '/a.md', content: '# Section 1\nContent\n\n# Section 2\nMore' },
+        { uri: '/b.md', content: 'Link to [[a#section-99]]' },
+      ]);
+
+      const issues = checkLinks(ws.get(URI.file('/b.md'))!, ws);
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].code).toEqual('unknown-section');
+      expect(issues[0].relatedInfo!.map(i => i.message)).toEqual([
+        'section-1',
+        'section-2',
+      ]);
+    });
+
+    it('returns an unknown-block issue when the block anchor is missing', () => {
+      const ws = makeGollumWorkspace([
+        { uri: '/a.md', content: 'A paragraph ^existing' },
+        { uri: '/b.md', content: 'Link to [[a#^ghost]]' },
+      ]);
+
+      const issues = checkLinks(ws.get(URI.file('/b.md'))!, ws);
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].code).toEqual('unknown-block');
+      expect(issues[0].relatedInfo!.map(i => i.message)).toEqual(['^existing']);
+    });
   });
 
   it('ignores non-wikilink links', () => {

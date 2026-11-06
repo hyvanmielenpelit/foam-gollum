@@ -7,7 +7,9 @@ import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  MEDIAWIKI_SYNTAX,
   showInEditor,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { toVsCodeUri } from '../../utils/vsc-utils';
 import { HoverProvider } from './hover-provider';
@@ -32,6 +34,8 @@ const getValue = (value: vscode.MarkdownString | vscode.MarkedString) =>
   value instanceof vscode.MarkdownString ? value.value : value;
 
 describe('Hover provider', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   const noCancelToken: vscode.CancellationToken = {
     isCancellationRequested: false,
     onCancellationRequested: null,
@@ -334,5 +338,81 @@ The content of file B`);
       ws.dispose();
       graph.dispose();
     });
+  });
+});
+
+describe('Hover provider with Gollum syntax', () => {
+  // Gollum resolves a placeholder to the file it would create, so the hover
+  // names that file.
+  const noCancelToken: vscode.CancellationToken = {
+    isCancellationRequested: false,
+    onCancellationRequested: null,
+  };
+  const parser = createMarkdownParser([]);
+  const hoverEnabled = () => true;
+
+  beforeAll(async () => {
+    await cleanWorkspace();
+  });
+
+  afterAll(async () => {
+    await cleanWorkspace();
+  });
+
+  beforeEach(async () => {
+    await closeEditors();
+  });
+
+  it('should not include references if there are none', async () => {
+    const fileA = await createFile(`This is some [[wikilink]]`);
+
+    const ws = createWorkspace().set(parser.parse(fileA.uri, fileA.content));
+    const graph = FoamGraph.fromWorkspace(ws);
+
+    const { doc } = await showInEditor(fileA.uri);
+    const provider = new HoverProvider(hoverEnabled, ws, graph, parser);
+    const result = await provider.provideHover(
+      doc,
+      new vscode.Position(0, 20),
+      noCancelToken
+    );
+
+    expect(result.contents).toHaveLength(3);
+    expect(result.contents[0]).toEqual(null);
+    expect(result.contents[1]).toEqual(null);
+    expect(getValue(result.contents[2])).toMatch(
+      "[Create note from template for 'wikilink.md'](command:foam-vscode.create-note?"
+    );
+    ws.dispose();
+    graph.dispose();
+  });
+
+  it('should work for placeholders', async () => {
+    const fileA = await createFile(`Some content and a [[placeholder]]`);
+    const fileB = await createFile(`More content to a [[placeholder]]`);
+    const fileC = await createFile(`Yet more content to a [[placeholder]]`);
+
+    const ws = createWorkspace()
+      .set(parser.parse(fileA.uri, fileA.content))
+      .set(parser.parse(fileB.uri, fileB.content))
+      .set(parser.parse(fileC.uri, fileC.content));
+    const graph = FoamGraph.fromWorkspace(ws);
+
+    const { doc } = await showInEditor(fileB.uri);
+    const provider = new HoverProvider(hoverEnabled, ws, graph, parser);
+    const result = await provider.provideHover(
+      doc,
+      new vscode.Position(0, 24),
+      noCancelToken
+    );
+
+    expect(result.contents).toHaveLength(3);
+    expect(result.contents[0]).toEqual(null);
+    expect(getValue(result.contents[1])).toMatch(/^Also referenced in 2 notes:/);
+    expect(getValue(result.contents[2])).toMatch(
+      "[Create note from template for 'placeholder.md'](command:foam-vscode.create-note?"
+    );
+    ws.dispose();
+    graph.dispose();
   });
 });

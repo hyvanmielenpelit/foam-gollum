@@ -2,7 +2,7 @@ import { ResourceLink } from '../model/note';
 import { URI } from '../model/uri';
 import { TextEdit } from './text-edit';
 import { Config } from '../config';
-import * as path from 'path';
+import { getExtension } from '../utils/path';
 import { imageExtensions } from './attachment-provider';
 
 export abstract class MarkdownLink {
@@ -71,7 +71,9 @@ export abstract class MarkdownLink {
           let [, alias, target, section] = match;
           const isMatch3 = this.wikilinkRegex3.test(link.rawText);
 
-          const extension = path.extname(alias) ?? '';
+          // [[#section]] and [[#^block]] have neither an alias nor a target
+          alias = alias ?? '';
+          const extension = getExtension(alias);
           let imageProperties = '';
           let linkType = 'link';
           if(extension !== '' && imageExtensions.includes(extension)) {

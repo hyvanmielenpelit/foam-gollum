@@ -77,10 +77,14 @@ export function checkLinks(
           code: UNKNOWN_SECTION_CODE,
           message: `Cannot find section "${section}" in document, available sections are:`,
           range: getFragmentRange(link, section),
+          // Gollum links name a section by its anchor, not its heading
           relatedInfo: (currentTarget.sections || []).map(s => ({
             uri: currentTarget.uri,
             range: s.range,
-            message: s.label,
+            message:
+              wikiLinkSyntax === 'gollum'
+                ? Resource.convertAnchor(s.label)
+                : s.label,
           })),
         });
       }

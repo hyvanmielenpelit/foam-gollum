@@ -1,4 +1,5 @@
 import * as vscode from './vscode-mock';
+import { FOAM_EXTENSION_ID } from './test-utils';
 
 describe('vscode-mock extensions API', () => {
   it('should provide extensions.getExtension', () => {
@@ -7,9 +8,9 @@ describe('vscode-mock extensions API', () => {
   });
 
   it('should return foam extension', () => {
-    const ext = vscode.extensions.getExtension('foam.foam-vscode');
+    const ext = vscode.extensions.getExtension(FOAM_EXTENSION_ID);
     expect(ext).toBeDefined();
-    expect(ext?.id).toBe('foam.foam-vscode');
+    expect(ext?.id).toBe(FOAM_EXTENSION_ID);
     expect(ext?.isActive).toBe(true);
   });
 
@@ -19,7 +20,7 @@ describe('vscode-mock extensions API', () => {
   });
 
   it('should provide foam instance through extension exports', async () => {
-    const ext = vscode.extensions.getExtension('foam.foam-vscode');
+    const ext = vscode.extensions.getExtension(FOAM_EXTENSION_ID);
     expect(ext?.exports).toBeDefined();
     expect(ext?.exports.foam).toBeDefined();
 
@@ -31,7 +32,7 @@ describe('vscode-mock extensions API', () => {
   });
 
   it('should support activate() method', async () => {
-    const ext = vscode.extensions.getExtension('foam.foam-vscode');
+    const ext = vscode.extensions.getExtension(FOAM_EXTENSION_ID);
     expect(ext?.activate).toBeDefined();
 
     const exports = await ext?.activate();

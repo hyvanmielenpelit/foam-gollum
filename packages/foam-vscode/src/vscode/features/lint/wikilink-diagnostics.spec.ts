@@ -1,16 +1,21 @@
 import * as vscode from 'vscode';
 import { createMarkdownParser } from '@foam/core';
-import { FoamWorkspace } from '@foam/core';
+import { FoamWorkspace, URI } from '@foam/core';
+import { createTestWorkspace } from '../../../test/test-utils';
 import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  MEDIAWIKI_SYNTAX,
   showInEditor,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
-import { toVsCodeUri } from '../../utils/vsc-utils';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { updateDiagnostics, IdentifierResolver } from './wikilink-diagnostics';
 
 describe('Wikilink diagnostics', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeEach(async () => {
     await cleanWorkspace();
     await closeEditors();
@@ -88,6 +93,8 @@ describe('Wikilink diagnostics', () => {
 });
 
 describe('Section diagnostics', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('should show a warning when the section name is incorrect', async () => {
     const fileA = await createFile(
       `
@@ -125,6 +132,8 @@ Content of section 2
 });
 
 describe('Block diagnostics', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('should show a warning when block anchor does not exist', async () => {
     const fileA = await createFile('A paragraph ^existing', [
       'note-for-block-diag.md',
@@ -408,6 +417,150 @@ describe('Duplicate block ID diagnostics', () => {
   });
 });
 
+describe('Wikilink diagnostics with Gollum syntax', () => {
+  // Gollum links are paths, resolved through the workspace's resource
+  // provider, and name a section by its anchor (`#section-1`).
+  beforeEach(async () => {
+    await cleanWorkspace();
+    await closeEditors();
+  });
+
+  const diagnose = async (
+    files: { uri: URI; content: string }[],
+    document: { uri: URI }
+  ) => {
+    const parser = createMarkdownParser([]);
+    const ws = createTestWorkspace([
+      fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri),
+    ]);
+    for (const file of files) {
+      ws.set(parser.parse(file.uri, file.content));
+    }
+    await showInEditor(document.uri);
+    const collection = vscode.languages.createDiagnosticCollection('foam-test');
+    updateDiagnostics(
+      ws,
+      parser,
+      vscode.window.activeTextEditor.document,
+      collection
+    );
+    return collection;
+  };
+
+  // Applies the first quick fix of the first diagnostic
+  const applyQuickFix = async (
+    diagnostics: readonly vscode.Diagnostic[],
+    expectedActions = 1
+  ) => {
+    const resolver = new IdentifierResolver('.md');
+    const actions = resolver.provideCodeActions(
+      vscode.window.activeTextEditor.document,
+      diagnostics[0].range,
+      { diagnostics, only: null } as vscode.CodeActionContext,
+      null
+    );
+    expect(actions).toHaveLength(expectedActions);
+    const editArgs = actions[0].command.arguments[0];
+    await vscode.window.activeTextEditor.edit(builder => {
+      builder.replace(editArgs.range, editArgs.value);
+    });
+    return vscode.window.activeTextEditor.document.getText();
+  };
+
+  it('should not warn about notes of the same name in other folders', async () => {
+    const fileA = await createFile('This is the todo file', [
+      'project',
+      'car',
+      'todo.md',
+    ]);
+    const fileB = await createFile('This is the todo file', ['another', 'todo.md']);
+    const fileC = await createFile('Link to [[todo]]');
+
+    const collection = await diagnose([fileA, fileB, fileC], fileC);
+    expect(countEntries(collection)).toEqual(0);
+  });
+
+  it('should show a warning offering the anchors when the section anchor is incorrect', async () => {
+    const fileA = await createFile(
+      `
+# Section 1
+Content of section 1
+
+# Section 2
+Content of section 2
+`
+    );
+    const fileB = await createFile(`Link to [[${fileA.name}#section-10]]`);
+
+    const collection = await diagnose([fileA, fileB], fileB);
+    expect(countEntries(collection)).toEqual(1);
+    const items = collection.get(toVsCodeUri(fileB.uri));
+    expect(items[0].range).toEqual(new vscode.Range(0, 15, 0, 26));
+    expect(items[0].relatedInformation.map(info => info.message)).toEqual([
+      'section-1',
+      'section-2',
+    ]);
+    expect(await applyQuickFix(items, 2)).toBe(
+      `Link to [[${fileA.name}#section-1]]`
+    );
+  });
+
+  it('should show a warning when block anchor does not exist', async () => {
+    const fileA = await createFile('A paragraph ^existing', [
+      'gollum-block-diag.md',
+    ]);
+    const fileB = await createFile(`Link to [[${fileA.name}#^ghost]]`);
+
+    const collection = await diagnose([fileA, fileB], fileB);
+    expect(countEntries(collection)).toEqual(1);
+    const items = collection.get(toVsCodeUri(fileB.uri));
+    expect(items[0].relatedInformation.map(info => info.message)).toEqual([
+      '^existing',
+    ]);
+  });
+
+  it('should generate a quick-fix that preserves the # when correcting a block anchor', async () => {
+    const fileA = await createFile('A paragraph ^existing', [
+      'gollum-quickfix.md',
+    ]);
+    const fileB = await createFile(`Link to [[${fileA.name}#^ghost]]`);
+
+    const collection = await diagnose([fileA, fileB], fileB);
+    const diagnostics = collection.get(toVsCodeUri(fileB.uri));
+    expect(diagnostics).toHaveLength(1);
+    expect(await applyQuickFix(diagnostics)).toBe(
+      `Link to [[${fileA.name}#^existing]]`
+    );
+  });
+
+  it('should preserve the # when correcting a block anchor in a target with spaces', async () => {
+    const fileA = await createFile('A paragraph ^existing', [
+      'Gollum note with spaces.md',
+    ]);
+    const fileB = await createFile(`Link to [[Gollum note with spaces#^ghost]]`);
+
+    const collection = await diagnose([fileA, fileB], fileB);
+    const diagnostics = collection.get(toVsCodeUri(fileB.uri));
+    expect(diagnostics).toHaveLength(1);
+    expect(await applyQuickFix(diagnostics)).toBe(
+      `Link to [[Gollum note with spaces#^existing]]`
+    );
+  });
+
+  it('should preserve the alias when correcting a block anchor', async () => {
+    const fileA = await createFile('A paragraph ^existing', [
+      'gollum-alias-quickfix.md',
+    ]);
+    const fileB = await createFile(`Link to [[My Label|${fileA.name}#^ghost]]`);
+
+    const collection = await diagnose([fileA, fileB], fileB);
+    const diagnostics = collection.get(toVsCodeUri(fileB.uri));
+    expect(diagnostics).toHaveLength(1);
+    expect(await applyQuickFix(diagnostics)).toBe(
+      `Link to [[My Label|${fileA.name}#^existing]]`
+    );
+  });
+});
 const countEntries = (collection: vscode.DiagnosticCollection): number => {
   let count = 0;
   collection.forEach((i, diagnostics) => {

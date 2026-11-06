@@ -2,13 +2,19 @@
 import MarkdownIt from 'markdown-it';
 import { FoamWorkspace } from '@foam/core';
 import { createTestNote } from '../../../test/test-utils';
-import { getUriInWorkspace } from '../../../test/test-utils-vscode';
+import {
+  getUriInWorkspace,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
+} from '../../../test/test-utils-vscode';
 import { markdownItWikilinkNavigation } from './wikilink-navigation';
 import { createVsCodeLinkResolver } from './link-resolvers';
 import { default as markdownItRemoveLinkReferences } from './remove-wikilink-references';
 import { default as escapeWikilinkPipes } from './escape-wikilink-pipes';
 
 describe('Link generation in preview', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   const noteA = createTestNote({
     uri: './path/to/note-a.md',
     // TODO: this should really just be the workspace folder, use that once #806 is fixed
@@ -44,18 +50,6 @@ describe('Link generation in preview', () => {
   it('generates a placeholder link to an unknown slug', () => {
     expect(md.render(`[[random-text]]`)).toEqual(
       `<p><a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">random-text</a></p>\n`
-    );
-  });
-
-  it('generates a link with spaces', () => {
-    expect(md.render(`[[/Spells/Minor healing]]`)).toEqual(
-      `<p><a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">/Spells/Minor healing</a></p>\n`
-    );
-  });
-
-  it('generates a link with alias and spaces', () => {
-    expect(md.render(`1 Random [[Abjuration spell|/Abjuration Spells]] (level -1-4)`)).toEqual(
-      `<p>1 Random <a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">Abjuration spell</a> (level -1-4)</p>\n`
     );
   });
 
@@ -226,6 +220,175 @@ describe('Link generation in preview', () => {
       expect(html).toContain('class="cls&quot;with-quote"');
       expect(html).toContain('Title with &quot;quote&quot; and &lt;tag&gt;');
       expect(html).toContain('Label with &quot;quote&quot; and &lt;tag&gt;');
+    });
+  });
+});
+
+describe('Link generation in preview with Gollum syntax', () => {
+  const noteA = createTestNote({
+    uri: './path/to/note-a.md',
+    root: getUriInWorkspace('just-a-ref.md'),
+    title: 'My note title',
+    links: [{ slug: 'placeholder' }],
+  });
+  const noteB = createTestNote({
+    uri: './path2/to/note-b.md',
+    root: getUriInWorkspace('just-a-ref.md'),
+    title: 'My second note',
+    sections: ['sec1', 'sec2'],
+  });
+  const ws = new FoamWorkspace().set(noteA).set(noteB);
+
+  const md = escapeWikilinkPipes(MarkdownIt());
+  markdownItWikilinkNavigation(md, ws, {
+    linkResolver: createVsCodeLinkResolver(),
+  });
+  markdownItRemoveLinkReferences(md, ws);
+
+  const placeholder = (label: string) =>
+    `<a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">${label}</a>`;
+
+  it('uses the link text as written, not the note title, as the label', () => {
+    expect(md.render(`[[note-a]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteA.title}" href="/path/to/note-a.md" data-href="/path/to/note-a.md">note-a</a></p>\n`
+    );
+  });
+
+  it('generates a link to a placeholder resource', () => {
+    expect(md.render(`[[placeholder]]`)).toEqual(
+      `<p>${placeholder('placeholder')}</p>\n`
+    );
+  });
+
+  it('generates a link with spaces, without the leading root slash', () => {
+    expect(md.render(`[[/Spells/Minor healing]]`)).toEqual(
+      `<p>${placeholder('Spells/Minor healing')}</p>\n`
+    );
+  });
+
+  it('generates a link with alias and spaces', () => {
+    expect(
+      md.render(`1 Random [[Abjuration spell|/Abjuration Spells]] (level -1-4)`)
+    ).toEqual(`<p>1 Random ${placeholder('Abjuration spell')} (level -1-4)</p>\n`);
+  });
+
+  it('generates a wikilink even when there is a link reference', () => {
+    const note = `[[note-a]]
+    [note-a]: <note-a.md> "Note A"`;
+    expect(md.render(note)).toEqual(
+      `<p><a class="foam-note-link" title="${noteA.title}" href="/path/to/note-a.md" data-href="/path/to/note-a.md">note-a</a>\n[note-a]: &lt;note-a.md&gt; &quot;Note A&quot;</p>\n`
+    );
+  });
+
+  it('generates a link to a section within the note', () => {
+    expect(md.render(`[[#sec]]`)).toEqual(
+      `<p><a class="foam-note-link" title="sec" href="#sec" data-href="#sec">#sec</a></p>\n`
+    );
+    expect(md.render(`[[#Section Name]]`)).toEqual(
+      `<p><a class="foam-note-link" title="Section Name" href="#section-name" data-href="#section-name">#Section Name</a></p>\n`
+    );
+  });
+
+  it('generates an aliased link to a section within the note', () => {
+    expect(md.render(`[[the section|#sec]]`)).toEqual(
+      `<p><a class="foam-note-link" title="sec" href="#sec" data-href="#sec">the section</a></p>\n`
+    );
+  });
+
+  it('generates a link to a note with a specific section', () => {
+    expect(md.render(`[[note-b#sec2]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteB.title}#sec2" href="/path2/to/note-b.md#sec2" data-href="/path2/to/note-b.md#sec2">note-b#sec2</a></p>\n`
+    );
+  });
+
+  it('generates a link to an aliased note with a specific section', () => {
+    expect(md.render(`[[this note|note-b#sec2]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteB.title}#sec2" href="/path2/to/note-b.md#sec2" data-href="/path2/to/note-b.md#sec2">this note</a></p>\n`
+    );
+  });
+
+  it('generates a link to a note if the note exists, but the section does not exist', () => {
+    expect(md.render(`[[note-b#nonexistentsec]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteB.title}#nonexistentsec" href="/path2/to/note-b.md#nonexistentsec" data-href="/path2/to/note-b.md#nonexistentsec">note-b#nonexistentsec</a></p>\n`
+    );
+  });
+
+  it('generates a link to a note with a specific block anchor', () => {
+    expect(md.render(`[[note-b#^myblock]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteB.title}#^myblock" href="/path2/to/note-b.md#__myblock" data-href="/path2/to/note-b.md#__myblock">note-b#^myblock</a></p>\n`
+    );
+  });
+
+  it('generates a link to a note with a block anchor and an alias', () => {
+    expect(md.render(`[[this block|note-b#^myblock]]`)).toEqual(
+      `<p><a class="foam-note-link" title="${noteB.title}#^myblock" href="/path2/to/note-b.md#__myblock" data-href="/path2/to/note-b.md#__myblock">this block</a></p>\n`
+    );
+  });
+
+  it('generates a self-referencing block anchor link', () => {
+    expect(md.render(`[[#^localblock]]`)).toEqual(
+      `<p><a class="foam-note-link" title="^localblock" href="#__localblock" data-href="#__localblock">#^localblock</a></p>\n`
+    );
+  });
+
+  it('generates a placeholder link if the note does not exist and a block anchor is specified', () => {
+    expect(md.render(`[[ghost#^someid]]`)).toEqual(
+      `<p>${placeholder('ghost#^someid')}</p>\n`
+    );
+  });
+
+  it('generates a placeholder link if the note does not exist and a section is specified', () => {
+    expect(md.render(`[[placeholder#sec2]]`)).toEqual(
+      `<p>${placeholder('placeholder#sec2')}</p>\n`
+    );
+  });
+
+  it('generates a placeholder link with alias if the note does not exist, but alias is given', () => {
+    expect(md.render(`[[this note|placeholder#sec2]]`)).toEqual(
+      `<p>${placeholder('this note')}</p>\n`
+    );
+  });
+
+  describe('wikilinks with aliases in tables', () => {
+    it('generates a link with alias inside a table cell', () => {
+      const table = `| Week | Week again |
+| --- | --- |
+| [[W44|note-a]] | [[W45|note-b]] |`;
+      const result = md.render(table);
+
+      expect(result).toContain(
+        `<a class="foam-note-link" title="${noteA.title}" href="/path/to/note-a.md" data-href="/path/to/note-a.md">W44</a>`
+      );
+      expect(result).toContain(
+        `<a class="foam-note-link" title="${noteB.title}" href="/path2/to/note-b.md" data-href="/path2/to/note-b.md">W45</a>`
+      );
+    });
+
+    it('generates a link with alias and section inside a table cell', () => {
+      const table = `| Week |
+| --- |
+| [[Week 1|note-b#sec1]] |`;
+      const result = md.render(table);
+
+      expect(result).toContain(
+        `<a class="foam-note-link" title="${noteB.title}#sec1" href="/path2/to/note-b.md#sec1" data-href="/path2/to/note-b.md#sec1">Week 1</a>`
+      );
+    });
+
+    it('generates placeholder link with alias inside a table cell', () => {
+      const table = `| Week |
+| --- |
+| [[Placeholder|nonexistent]] |`;
+      expect(md.render(table)).toContain(placeholder('Placeholder'));
+    });
+
+    it('handles wikilinks without aliases in tables', () => {
+      const table = `| Week |
+| --- |
+| [[note-a]] |`;
+      expect(md.render(table)).toContain(
+        `<a class="foam-note-link" title="${noteA.title}" href="/path/to/note-a.md" data-href="/path/to/note-a.md">note-a</a>`
+      );
     });
   });
 });

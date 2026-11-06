@@ -2,13 +2,16 @@
 
 import * as vscode from 'vscode';
 import { createMarkdownParser } from '@foam/core';
-import { FoamGraph } from '@foam/core';
+import { FoamGraph, FoamWorkspace, URI } from '@foam/core';
 import { createTestNote, createTestWorkspace } from '../../../test/test-utils';
 import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  getUriInWorkspace,
+  MEDIAWIKI_SYNTAX,
   showInEditor,
+  useFoamConfiguration,
   withModifiedFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { fromVsCodeUri } from '../../utils/vsc-utils';
@@ -19,6 +22,8 @@ import {
 import { CONVERT_WIKILINK_TO_MDLINK } from '../editing/convert-links';
 
 describe('Link Completion', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   const parser = createMarkdownParser([]);
   const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
   const ws = createTestWorkspace();
@@ -48,10 +53,12 @@ describe('Link Completion', () => {
         uri: 'another/file.md',
       })
     );
-  const graph = FoamGraph.fromWorkspace(ws);
+  // Built once the syntax is set, as it decides how links resolve
+  let graph: FoamGraph;
 
   beforeAll(async () => {
     await cleanWorkspace();
+    graph = FoamGraph.fromWorkspace(ws);
   });
 
   afterAll(async () => {
@@ -637,5 +644,187 @@ alias: test-alias
         expect(placeholderItem.insertText).toBe('placeholder text');
       }
     );
+  });
+});
+
+describe('Link Completion with Gollum syntax', () => {
+  // Gollum completions insert the note's path from the workspace root, without
+  // the extension, with a leading slash when either note is in a sub-folder.
+  const parser = createMarkdownParser([]);
+  let root: URI;
+  let ws: FoamWorkspace;
+  let graph: FoamGraph;
+
+  beforeAll(async () => {
+    await cleanWorkspace();
+    // createTestNote resolves its uri as a sibling of root (see #806)
+    root = getUriInWorkspace('just-a-ref.md');
+    ws = createTestWorkspace();
+    ws.set(createTestNote({ root, uri: 'file-name.md' }))
+      .set(createTestNote({ root, uri: 'File name with spaces.md' }))
+      .set(
+        createTestNote({
+          root,
+          uri: 'path/to/file.md',
+          links: [{ slug: 'placeholder text' }],
+        })
+      )
+      .set(createTestNote({ root, uri: 'another/file.md' }));
+    graph = FoamGraph.fromWorkspace(ws);
+  });
+
+  afterAll(async () => {
+    ws.dispose();
+    graph.dispose();
+    await cleanWorkspace();
+  });
+
+  beforeEach(async () => {
+    await closeEditors();
+  });
+
+  const completeAt = async (
+    provider: WikilinkCompletionProvider,
+    text = '[['
+  ) => {
+    const { uri } = await createFile(text);
+    const { doc } = await showInEditor(uri);
+    return provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, text.length)
+    );
+  };
+
+  const providerForNote = async (content: string, filepath?: string[]) => {
+    const note = await createFile(content, filepath);
+    const workspace = createTestWorkspace();
+    workspace.set(parser.parse(note.uri, note.content));
+    return {
+      noteUri: note.uri,
+      provider: new WikilinkCompletionProvider(
+        workspace,
+        FoamGraph.fromWorkspace(workspace)
+      ),
+    };
+  };
+
+  it('should return the path of every note, and no placeholders', async () => {
+    const provider = new WikilinkCompletionProvider(ws, graph);
+    for (const text of ['[[', '[[file]] [[', '[[file]] #tag [[']) {
+      const links = await completeAt(provider, text);
+
+      expect(new Set(links.items.map(i => i.insertText))).toEqual(
+        new Set([
+          '/path/to/file',
+          '/another/file',
+          'File name with spaces',
+          'file-name',
+        ])
+      );
+    }
+  });
+
+  it('should not return placeholders with either link format', async () => {
+    const provider = new WikilinkCompletionProvider(ws, graph);
+    for (const linkFormat of ['wikilink', 'link']) {
+      await withModifiedFoamConfiguration(
+        'completion.linkFormat',
+        linkFormat,
+        async () => {
+          const links = await completeAt(provider);
+          expect(
+            links.items.find(i => i.label === 'placeholder text')
+          ).toBeUndefined();
+        }
+      );
+    }
+  });
+
+  it('should use the path as the label whatever the label setting', async () => {
+    const { noteUri, provider } = await providerForNote(`# My Note Title`);
+
+    for (const label of ['title', 'path', 'identifier']) {
+      await withModifiedFoamConfiguration('completion.label', label, async () => {
+        const links = await completeAt(provider);
+        expect(links.items.map(i => i.label)).toEqual([noteUri.getName()]);
+      });
+    }
+  });
+
+  it('should put the title before the path when an alias is used', async () => {
+    const { noteUri, provider } = await providerForNote(`# My Note Title`);
+
+    await withModifiedFoamConfiguration('completion.useAlias', 'never', async () => {
+      const links = await completeAt(provider);
+      expect(links.items.map(i => i.insertText)).toEqual([noteUri.getName()]);
+    });
+
+    await withModifiedFoamConfiguration(
+      'completion.useAlias',
+      'whenPathDiffersFromTitle',
+      async () => {
+        const links = await completeAt(provider);
+        expect(links.items.map(i => i.insertText)).toEqual([
+          `My Note Title|${noteUri.getName()}`,
+        ]);
+      }
+    );
+  });
+
+  it('should insert the path and convert it with the markdown link format', async () => {
+    const { provider } = await providerForNote(`# My Note Title`, [
+      'my',
+      'path',
+      'to',
+      'test-note.md',
+    ]);
+
+    await withModifiedFoamConfiguration('completion.linkFormat', 'link', async () => {
+      const links = await completeAt(provider);
+
+      expect(links.items.length).toBe(1);
+      expect(String(links.items[0].insertText)).toBe('/my/path/to/test-note');
+      expect(links.items[0].commitCharacters).toEqual([]);
+      expect(links.items[0].command.command).toBe(
+        CONVERT_WIKILINK_TO_MDLINK.command
+      );
+    });
+  });
+
+  describe('Directory index completion', () => {
+    it('should insert the path of an index note whatever the directory mode', async () => {
+      const workspace = createTestWorkspace();
+      workspace.set(createTestNote({ root, uri: 'bar/index.md' }));
+      const provider = new WikilinkCompletionProvider(
+        workspace,
+        FoamGraph.fromWorkspace(workspace)
+      );
+
+      for (const mode of ['resolve', 'disabled']) {
+        await withModifiedFoamConfiguration('links.directory.mode', mode, async () => {
+          const links = await completeAt(provider);
+          expect(links.items.map(i => String(i.insertText))).toEqual([
+            '/bar/index',
+          ]);
+        });
+      }
+    });
+
+    it('should keep a note and an index note of the same name apart', async () => {
+      const workspace = createTestWorkspace();
+      workspace.set(createTestNote({ root, uri: 'bar.md' }));
+      workspace.set(createTestNote({ root, uri: 'bar/index.md' }));
+      const provider = new WikilinkCompletionProvider(
+        workspace,
+        FoamGraph.fromWorkspace(workspace)
+      );
+
+      await withModifiedFoamConfiguration('links.directory.mode', 'resolve', async () => {
+        const links = await completeAt(provider);
+        expect(new Set(links.items.map(i => String(i.insertText)))).toEqual(
+          new Set(['bar', '/bar/index'])
+        );
+      });
+    });
   });
 });

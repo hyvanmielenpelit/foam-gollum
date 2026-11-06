@@ -2,14 +2,19 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
-## 1.6.17
+## 1.7.0
+
+### Minor Changes
+
+- Make the custom file drop provider the default drop option for Markdown files.
 
 ### Patch Changes
 
 - Fix the custom file drop provider using the wrong uploads folder for page names that contain dots.
 - Fix dropped files with several dots in their names not being recognized as images.
 - Fix the custom file drop provider copying the file even when another drop option was chosen.
-- Make the custom file drop provider the default drop option for Markdown files.
+- Fix links to a section or block of the same page (`[[#section]]`, `[[#^block]]`) not working in the Gollum wikilink mode: the preview showed them as links to missing pages, embedded pages did not show such blocks, and renaming the heading or block did not update them.
+- Fix the quick fix for a wrong section in a Gollum wikilink suggesting heading names instead of section anchors.
 
 ## 1.6.16
 

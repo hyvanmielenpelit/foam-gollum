@@ -14,6 +14,7 @@ import {
   deleteFile,
   makeFoamMock,
   showInEditor,
+  useFoamConfiguration,
   withModifiedFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { fromVsCodeUri } from '../../utils/vsc-utils';
@@ -60,6 +61,9 @@ describe('getDailyNoteUri', () => {
 
 describe('Daily note creation and template processing', () => {
   const DAILY_NOTE_TEMPLATE = ['.foam', 'templates', 'daily-note.md'];
+
+  // Month and day names are expected in English whatever the machine locale.
+  useFoamConfiguration({ dateLocale: 'en-US' });
 
   beforeEach(async () => {
     // Ensure daily note templates are removed before each test
@@ -274,7 +278,7 @@ Unix: \${FOAM_DATE_SECONDS_UNIX}`,
 
       const jsTemplate = await createFile(
         `async function createNote ({ foamDate }) {
-  const monthName = foamDate.toLocaleString('default', { month: 'long' });
+  const monthName = foamDate.toLocaleString('en-US', { month: 'long' });
   const day = foamDate.getDate();
   return {
     filepath: \`\${foamDate.getFullYear()}-\${String(foamDate.getMonth() + 1).padStart(2, '0')}-\${String(day).padStart(2, '0')}.md\`,
@@ -362,7 +366,8 @@ Content here with \${FOAM_DATE_MONTH_NAME} \${FOAM_DATE_DATE}`,
       const result = await createDailyNoteIfNotExists(targetDate, foam);
 
       const doc = await showInEditor(uri);
-      const content = doc.editor.document.getText();
+      // The editor uses the platform's line endings
+      const content = doc.editor.document.getText().replace(/\r\n/g, '\n');
 
       expect(content).toContain(`---
 tags: [daily, journal]

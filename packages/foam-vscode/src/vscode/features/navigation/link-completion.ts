@@ -76,7 +76,7 @@ export default async function activate(
             const { line: completionLine, character: completionChar } =
               currentPosition;
 
-            const isGollum = getFoamVsCodeConfig('wikilinks.syntax') === 'gollum';
+            const isGollum = Config.getWikilinksSyntax() === 'gollum';
             let inCompleteBySectionDivider: boolean = false;
             let moveCharCount = 2;
             if (isGollum) {
@@ -141,7 +141,7 @@ export class SectionCompletionProvider
       return null;
     }
     
-    const isGollum = getFoamVsCodeConfig('wikilinks.syntax') === 'gollum';
+    const isGollum = Config.getWikilinksSyntax() === 'gollum';
     let resourceId: string | URI = null;
     if(match[1] === '#') {
       resourceId = fromVsCodeUri(document.uri);
@@ -278,7 +278,7 @@ export class WikilinkCompletionProvider
     const aliasSetting = getCompletionAliasSetting();
     const linkFormat = getCompletionLinkFormatSetting();
 
-    const isGollum = getFoamVsCodeConfig('wikilinks.syntax') === 'gollum';
+    const isGollum = Config.getWikilinksSyntax() === 'gollum';
     const documentRelativePath = vscode.workspace.asRelativePath(document.uri);
     const documentHasSubDir = documentRelativePath.indexOf('/') > 0;
 

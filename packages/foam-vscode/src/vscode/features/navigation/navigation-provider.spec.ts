@@ -4,10 +4,12 @@ import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  MEDIAWIKI_SYNTAX,
   showInEditor,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { NavigationProvider } from './navigation-provider';
-import { toVsCodeUri } from '../../utils/vsc-utils';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { createMarkdownParser } from '@foam/core';
 import { FoamGraph } from '@foam/core';
 import { URI } from '@foam/core';
@@ -17,6 +19,8 @@ import { Location } from '@foam/core';
 import { FoamTags } from '@foam/core';
 
 describe('Document navigation', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   const parser = createMarkdownParser([]);
 
   beforeAll(async () => {
@@ -140,7 +144,8 @@ describe('Document navigation', () => {
 
     it('should not create a "create note" link for an absolute path link targeting an existing file not indexed in workspace', async () => {
       const existingFile = await createFile('some content', ['.editorconfig']);
-      const absolutePath = existingFile.uri.toFsPath();
+      // The URI path is an absolute path on every platform
+      const absolutePath = existingFile.uri.path;
       const noteA = await createFile(`link to [config](${absolutePath}).`);
       // Note: .editorconfig is NOT added to workspace (no provider supports extensionless files)
       const ws = createTestWorkspace().set(
@@ -301,7 +306,8 @@ describe('Document navigation', () => {
 
     it('should create a definition for an absolute path link targeting an existing file not indexed in workspace', async () => {
       const existingFile = await createFile('some content', ['.editorconfig']);
-      const absolutePath = existingFile.uri.toFsPath();
+      // The URI path is an absolute path on every platform
+      const absolutePath = existingFile.uri.path;
       const noteA = await createFile(`link to [config](${absolutePath}).`);
       // Note: existingFile is NOT added to workspace (no provider supports extensionless files)
       const ws = createTestWorkspace().set(
@@ -643,5 +649,109 @@ describe('Document navigation', () => {
     });
 
     it.todo('should provide references for placeholders');
+  });
+});
+
+describe('Document navigation with Gollum syntax', () => {
+  // Gollum links put the alias first, and a leading slash makes a path
+  // relative to the workspace root.
+  const parser = createMarkdownParser([]);
+
+  beforeAll(async () => {
+    await cleanWorkspace();
+  });
+
+  afterAll(async () => {
+    await cleanWorkspace();
+  });
+
+  beforeEach(async () => {
+    await closeEditors();
+  });
+
+  const providerFor = async (
+    files: { uri: URI; content: string }[],
+    document: { uri: URI }
+  ) => {
+    const ws = createTestWorkspace([
+      fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri),
+    ]);
+    for (const file of files) {
+      ws.set(parser.parse(file.uri, file.content));
+    }
+    const graph = FoamGraph.fromWorkspace(ws);
+    const tags = FoamTags.fromWorkspace(ws);
+    const { doc } = await showInEditor(document.uri);
+    return { doc, provider: new NavigationProvider(ws, graph, parser, tags) };
+  };
+
+  it('should not create a "create note" link for a root path link targeting an existing file not indexed in workspace', async () => {
+    await createFile('some content', ['.editorconfig']);
+    const noteA = await createFile(`link to [config](/.editorconfig).`);
+
+    const { doc, provider } = await providerFor([noteA], noteA);
+    const links = await provider.provideDocumentLinks(doc);
+
+    expect(links.length).toEqual(0);
+  });
+
+  it('should create a definition for a root path link targeting an existing file not indexed in workspace', async () => {
+    const existingFile = await createFile('some content', ['.editorconfig']);
+    const noteA = await createFile(`link to [config](/.editorconfig).`);
+
+    const { doc, provider } = await providerFor([noteA], noteA);
+    const definitions = await provider.provideDefinition(
+      doc,
+      new vscode.Position(0, 10)
+    );
+
+    expect(definitions).toBeDefined();
+    expect(definitions.length).toEqual(1);
+    expect(definitions[0].targetUri).toEqual(toVsCodeUri(existingFile.uri));
+  });
+
+  it('should support wikilinks that have an alias', async () => {
+    const fileA = await createFile("# File A that's aliased");
+    const fileB = await createFile(`this is a link to [[alias|${fileA.name}]].`);
+
+    const { doc, provider } = await providerFor([fileA, fileB], fileB);
+    const definitions = await provider.provideDefinition(
+      doc,
+      new vscode.Position(0, 22)
+    );
+
+    expect(definitions.length).toEqual(1);
+    expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+  });
+
+  it('should support wikilink aliases in tables using escape character', async () => {
+    const fileA = await createFile('# File that has to be aliased');
+    const fileB = await createFile(`
+  | Col A | ColB |
+  | --- | --- |
+  | [[alias\\|${fileA.name}]] | test |
+    `);
+
+    const { doc, provider } = await providerFor([fileA, fileB], fileB);
+    const definitions = await provider.provideDefinition(
+      doc,
+      new vscode.Position(3, 10)
+    );
+
+    expect(definitions.length).toEqual(1);
+    expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+  });
+
+  it('should not resolve a link to a folder to its index note', async () => {
+    const index = await createFile('# Bar Index', ['bar', 'index.md']);
+    const note = await createFile(`link to [[bar]]`);
+
+    const { doc, provider } = await providerFor([index, note], note);
+    const definitions = await provider.provideDefinition(
+      doc,
+      new vscode.Position(0, 10)
+    );
+
+    expect(definitions).toBeUndefined();
   });
 });
