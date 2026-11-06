@@ -33,6 +33,10 @@ To create a note from a template:
 
 ![Create new note from template GIF](../../assets/images/create-new-note-from-template.gif)
 
+## Multi-root workspaces
+
+If your VS Code workspace has several folders, see [[multi-root-workspaces]] for where Foam looks for templates and how to create notes in a specific folder.
+
 ## Special templates
 
 ### Default template
@@ -86,7 +90,10 @@ async function createNote({ trigger, foam, resolver, foamDate }) {
   // if you need a variable you can use the resolver
   // const title = await resolver.resolveFromName('FOAM_TITLE');
 
-  console.log('Creating note for today: ' + formattedDay, JSON.stringify(trigger));
+  console.log(
+    'Creating note for today: ' + formattedDay,
+    JSON.stringify(trigger)
+  );
 
   let content = `# Daily Note - ${formattedDay}
 
@@ -190,7 +197,7 @@ async function createNote({ trigger, foam, resolver }) {
 
 JavaScript templates must return an object with:
 
-- `content` (required): The note content as a string
+- `content` (required): The note content as a string. Foam variables in it (e.g. `${FOAM_TITLE}`) are resolved like in a Markdown template
 - `filepath` (required): Custom file path for the note
   - NOTE: the path must be within the workspace.
     - A relative path will be resolved based on the `onRelativePath` command configuration.
@@ -201,6 +208,21 @@ return {
   content: '# My Note\n\nContent here...',
   filepath: 'custom-folder/my-note.md',
 };
+```
+
+### Tab stops
+
+[VS Code tab stops](https://code.visualstudio.com/docs/editor/userdefinedsnippets#_snippet-syntax) work in `content`, but `${...}` is also JavaScript template literal syntax. Escape the `$` so the tab stop reaches the note:
+
+```javascript
+const content = `# ${title}
+
+## Mood
+\${1:great}
+
+## To-dos
+- [ ] \${2}
+`;
 ```
 
 ### Security and limitations
@@ -239,15 +261,32 @@ Markdown templates can use all the variables available in [VS Code Snippets](htt
 
 In addition, you can also use variables provided by Foam:
 
-| Name                 | Description                                                                                                                                                                                                                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `FOAM_SELECTED_TEXT` | Foam will fill it with selected text when creating a new note, if any text is selected. Selected text will be replaced with a wikilink to the new                                                                                                                                          |
-| `FOAM_TITLE`         | The title of the note. If used, Foam will prompt you to enter a title for the note.                                                                                                                                                                                                        |
-| `FOAM_TITLE_SAFE`    | The title of the note in a file system safe format. If used, Foam will prompt you to enter a title for the note unless `FOAM_TITLE` has already caused the prompt.                                                                                                                         |
-| `FOAM_SLUG`          | The sluggified title of the note (using the default github slug method). If used, Foam will prompt you to enter a title for the note unless `FOAM_TITLE` has already caused the prompt.                                                                                                    |
-| `FOAM_CURRENT_DIR`   | The current editor's directory path. Resolves to the directory of the currently active file, or falls back to workspace root if no editor is active. Useful for creating notes in the current directory context.                                                                           |
-| `FOAM_DATE_FORMAT`   | The Foam date formatted using a [dayjs format string](https://day.js.org/docs/en/display/format). Defaults to ISO 8601 with local timezone offset (e.g. `2026-03-12T22:06:55+01:00`). Use as `$FOAM_DATE_FORMAT` for the default, or `${FOAM_DATE_FORMAT:YYYY-MM-DD}` for a custom format. |
-| `FOAM_DATE_*`        | `FOAM_DATE_YEAR`, `FOAM_DATE_MONTH`, `FOAM_DATE_WEEK`, `FOAM_DATE_DAY_ISO` etc. Foam-specific versions of [VS Code's datetime snippet variables](https://code.visualstudio.com/docs/editor/userdefinedsnippets#_variables). Prefer these versions over VS Code's.                          |
+| Name                       | Description                                                                                                                                                                                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FOAM_SELECTED_TEXT`       | Foam will fill it with selected text when creating a new note, if any text is selected. Selected text will be replaced with a wikilink to the new                                                                                                                                          |
+| `FOAM_TITLE`               | The title of the note. If used, Foam will prompt you to enter a title for the note.                                                                                                                                                                                                        |
+| `FOAM_TITLE_SAFE`          | The title of the note in a file system safe format. If used, Foam will prompt you to enter a title for the note unless `FOAM_TITLE` has already caused the prompt.                                                                                                                         |
+| `FOAM_SLUG`                | The sluggified title of the note (using the default github slug method). If used, Foam will prompt you to enter a title for the note unless `FOAM_TITLE` has already caused the prompt.                                                                                                    |
+| `FOAM_CURRENT_DIR`         | The current editor's directory path. Resolves to the directory of the currently active file, or falls back to workspace root if no editor is active. Useful for creating notes in the current directory context.                                                                           |
+| `FOAM_PREVIOUS_DAILY_NOTE` | The most recent daily note that exists before the one being created, skipping any gap. Daily note templates only. See [[daily-notes]].                                                                                                                                                     |
+| `FOAM_DATE_FORMAT`         | The Foam date formatted using a [dayjs format string](https://day.js.org/docs/en/display/format). Defaults to ISO 8601 with local timezone offset (e.g. `2026-03-12T22:06:55+01:00`). Use as `$FOAM_DATE_FORMAT` for the default, or `${FOAM_DATE_FORMAT:YYYY-MM-DD}` for a custom format. |
+| `FOAM_DATE_*`              | `FOAM_DATE_YEAR`, `FOAM_DATE_MONTH`, `FOAM_DATE_WEEK`, `FOAM_DATE_DAY_ISO` etc. Foam-specific versions of [VS Code's datetime snippet variables](https://code.visualstudio.com/docs/editor/userdefinedsnippets#_variables). Prefer these versions over VS Code's.                          |
+
+### Tab stops
+
+Use [VS Code tab stops](https://code.visualstudio.com/docs/editor/userdefinedsnippets#_snippet-syntax) to jump the cursor through the new note with `Tab`:
+
+```markdown
+# $FOAM_TITLE
+
+## Mood
+
+${1:great}
+
+## To-dos
+
+- [ ] ${2}
+```
 
 ### `FOAM_DATE_FORMAT` variable
 
@@ -281,7 +320,7 @@ For example, `FOAM_DATE_YEAR` has the same behaviour as VS Code's `CURRENT_YEAR`
 
 By default, prefer using the `FOAM_DATE_` versions. The datetime used to compute the values will be the same for both `FOAM_DATE_` and VS Code's variables, with the exception of the creation notes using the daily note template.
 
-For more nitty-gritty details about the supported date formats, [see here](https://github.com/foambubble/foam/blob/main/packages/foam-vscode/src/services/variable-resolver.ts).
+For more nitty-gritty details about the supported date formats, [see here](https://github.com/foambubble/foam/blob/main/packages/foam-core/src/templates/variable-resolver.ts).
 
 #### Relative daily notes
 
@@ -308,15 +347,17 @@ When creating notes in any other scenario, the `FOAM_DATE_` values are computed 
 
 **Markdown templates** can also contain metadata about the templates themselves. The metadata is defined in YAML "Frontmatter" blocks within the templates.
 
-| Name          | Description                                                                                                                      |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `filepath`    | The filepath to use when creating the new note. If the filepath is a relative filepath, it is relative to the current workspace. |
-| `name`        | A human readable name to show in the template picker.                                                                            |
-| `description` | A human readable description to show in the template picker.                                                                     |
+| Name          | Description                                                                                                                                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filepath`    | The filepath to use when creating the new note. If the filepath is a relative filepath, it is relative to the current workspace. Without a `filepath`, Foam prompts you for a title (at most once) and names the new note after it. |
+| `name`        | A human readable name to show in the template picker.                                                                                                                                                                               |
+| `description` | A human readable description to show in the template picker.                                                                                                                                                                        |
 
 Foam-specific variables (e.g. `$FOAM_TITLE`) can be used within template metadata. However, VS Code snippet variables are ([currently](https://github.com/foambubble/foam/pull/655)) not supported.
 
 #### `filepath` attribute
+
+> In a [restricted workspace](https://code.visualstudio.com/docs/editor/workspace-trust), notes must be created inside the workspace: a `filepath` that points outside it is refused. Trust the workspace to allow it.
 
 It is possible to vary the `filepath` value based on the current date using the `FOAM_DATE_*` variables. This is especially useful for the [[daily-notes]] template if you wish to organize by years, months, etc. Below is an example of a daily-note template metadata section that will create new daily notes under the `journal/YEAR/MONTH-MONTH_NAME/` filepath. For example, when a note is created on November 15, 2022, a new file will be created at `C:\Users\foam_user\foam_notes\journal\2022\11-Nov\2022-11-15-daily-note.md`. This method also respects the creation of daily notes relative to the current date (i.e. `/+1d`).
 
@@ -411,3 +452,4 @@ This is the rest of the template
 ```
 
 [daily-notes]: daily-notes.md 'Daily Notes'
+[multi-root-workspaces]: ../recipes/multi-root-workspaces.md 'Multi-root workspaces'

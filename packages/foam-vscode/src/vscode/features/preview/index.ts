@@ -1,13 +1,14 @@
 /*global markdownit:readonly*/
 
 import * as vscode from 'vscode';
-import { Foam, URI, createRenderContext } from '@foam/core';
+import { Config, Foam, URI, createRenderContext } from '@foam/core';
 import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { createFoamMarkdownIt } from './foam-markdown-it';
 import { createVsCodeLinkResolver } from './link-resolvers';
 import { getFoamVsCodeConfig } from '../../config';
 import { isVirtualWorkspace } from '../../services/editor';
 import { CONFIG_EMBED_NOTE_TYPE } from './wikilink-embed';
+import { CONFIG_FOOTNOTES_ENABLE } from '../navigation/navigation-provider';
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -57,6 +58,8 @@ export default async function activate(
           graph,
           parser,
           linkResolver: createVsCodeLinkResolver(),
+          // Read once, like the markdown provider's copy in extension.ts.
+          directoryMode: Config.getLinksDirectoryMode(),
           getCurrentResource,
           isTrusted: () => vscode.workspace.isTrusted,
           // Build the full href shape the preview webview expects:
@@ -71,10 +74,46 @@ export default async function activate(
           isVirtualWorkspace: () => isVirtualWorkspace(),
           getEmbedNoteType: () =>
             getFoamVsCodeConfig<string>(CONFIG_EMBED_NOTE_TYPE),
+          // VS Code builds the preview engine once, so this is read once:
+          // a change takes effect after a window reload.
+          footnotes: getFoamVsCodeConfig<boolean>(
+            CONFIG_FOOTNOTES_ENABLE,
+            true
+          ),
           renderContext,
+          // By render time `md` carries every extension's plugins and VS
+          // Code's own, so embedded content renders with all of them.
+          createInnerMd: () => withoutSourceMap(md),
         },
         md
       );
     },
   };
+}
+
+/**
+ * `md`, rendering without the `data-line` attribute and `code-line` class
+ * that VS Code's preview puts on block tokens to sync scrolling with the
+ * editor. Line numbers from embedded content index another note, so the
+ * preview would map them onto the wrong lines of the open document.
+ */
+function withoutSourceMap(md: markdownit): markdownit {
+  const inner: markdownit = Object.create(md);
+  inner.render = (src: string, env: any = {}) => {
+    const tokens = md.parse(src, env);
+    for (const token of tokens) {
+      token.attrs = token.attrs?.filter(([name]) => name !== 'data-line');
+      const classes = token
+        .attrGet('class')
+        ?.split(' ')
+        .filter(c => c !== 'code-line');
+      if (classes?.length) {
+        token.attrSet('class', classes.join(' '));
+      } else if (classes) {
+        token.attrs = token.attrs.filter(([name]) => name !== 'class');
+      }
+    }
+    return md.renderer.render(tokens, md.options, env);
+  };
+  return inner;
 }

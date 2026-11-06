@@ -5,16 +5,80 @@ import { Config } from '../config';
 import { getExtension } from '../utils/path';
 import { imageExtensions } from './attachment-provider';
 
+/**
+ * The parts of a link. The optional fields are only set for Gollum syntax.
+ */
+export interface LinkAnalysis {
+  target: string;
+  section: string;
+  blockId: string;
+  alias: string;
+  /** Gollum: the target started with `/` (relative to the wiki root) */
+  isRoot?: boolean;
+  /** Gollum: how many leading `../` segments the target had */
+  parentCount?: number;
+  /** Gollum: the text after the pipe of an image link, e.g. `frame|align=center` */
+  imageProperties?: string;
+  /** Gollum: `image` for an image link, else `link` */
+  linkType?: 'link' | 'image';
+  /** Gollum: the target as written, before `/`, `./` and `../` are removed */
+  rawTarget?: string;
+}
+
+/**
+ * Splits `[[target#section|alias]]`. The wikilink runs from the first `[[` to
+ * the last `]]`; the target stops at the first `#` or `|`, the section at the
+ * first `|`.
+ */
+function parseWikilink(text: string) {
+  const open = text.indexOf('[[');
+  const close = text.lastIndexOf(']]');
+  if (open < 0 || close < open + 2) {
+    return undefined;
+  }
+  const inner = text.slice(open + 2, close);
+  const pipe = inner.indexOf('|');
+  const reference = pipe < 0 ? inner : inner.slice(0, pipe);
+  const hash = reference.indexOf('#');
+  return {
+    target: hash < 0 ? reference : reference.slice(0, hash),
+    section: hash < 0 ? '' : reference.slice(hash + 1),
+    alias: pipe < 0 ? '' : inner.slice(pipe + 1),
+  };
+}
+
+/**
+ * Splits a Gollum `[[alias|target#section]]`. The wikilink runs from the
+ * first `[[` to the last `]]`; the first `|` ends the alias, and the first
+ * `#` after it ends the target. Without a `|` the whole text is the
+ * reference. `[[a|]]` reads as `[[a]]`.
+ */
+export function parseGollumWikilink(text: string) {
+  const open = text.indexOf('[[');
+  const close = text.lastIndexOf(']]');
+  if (open < 0 || close < open + 2) {
+    return undefined;
+  }
+  const inner = text.slice(open + 2, close);
+  const pipe = inner.indexOf('|');
+  // A table cell escapes the pipe as `\|`
+  let alias = pipe < 0 ? '' : inner.slice(0, pipe).replace(/\\$/, '').trim();
+  let reference = pipe < 0 ? inner : inner.slice(pipe + 1);
+  if (pipe >= 0 && reference.trim() === '') {
+    reference = alias;
+    alias = '';
+  }
+  const hash = reference.indexOf('#');
+  return {
+    alias,
+    target: (hash < 0 ? reference : reference.slice(0, hash)).trim(),
+    section: hash < 0 ? '' : reference.slice(hash + 1).trimEnd(),
+  };
+}
+
 export abstract class MarkdownLink {
-  private static wikilinkRegex = new RegExp(
-    /\[\[([^#|]+)?#?([^|]+)?\|?(.*)?]]/
-  );
-  private static wikilinkRegex2 = new RegExp(
-    /\[\[\s*([^|#\]]+)?\s*\|?\s*([^#\]]+)?#?([^\]]*)?\s*]]/
-  );
   private static directLinkRegex =
     /\[(.*)\]\((?:<([^#>]*)(?:#([^>]*))?>\s*|([^#>]*?)(?:#([^)>"']*))?(?:\s+(?:"[^"]*"|'[^']*'))?)?\)/;
-  private static wikilinkRegex3 = /\|\s*#/;
 
   public static convertGollumTarget(target: string) {
     let isRoot = false;
@@ -38,81 +102,73 @@ export abstract class MarkdownLink {
     return {
       target: target,
       isRoot: isRoot,
-      parentCount: parentCount
+      parentCount: parentCount,
     };
   }
 
-  public static analyzeLink(link: ResourceLink) {
+  private static analyzeGollumWikilink(link: ResourceLink): LinkAnalysis {
+    const wikilink = parseGollumWikilink(link.rawText);
+    if (!wikilink) {
+      throw new Error('No wikilink found');
+    }
+    let { alias, target, section } = wikilink;
+    let imageProperties = '';
+    let linkType: 'link' | 'image' = 'link';
+    // An image link names the file first: `[[image.png|frame|align=center]]`
+    const file = alias !== '' ? alias : target;
+    const extension = getExtension(file).toLocaleLowerCase();
+    if (extension !== '' && imageExtensions.includes(extension)) {
+      if (alias !== '') {
+        imageProperties = target;
+      }
+      try {
+        target = decodeURI(file);
+      } catch (e) {
+        target = file;
+      }
+      alias = '';
+      linkType = 'image';
+    }
+    const rawTarget = target.replace(/\\/g, '');
+    const converted = this.convertGollumTarget(rawTarget);
+    // A fragment starting with ^ is a block anchor (e.g. #^myblock), not a section
+    const blockMatch = section.match(/^\^([a-zA-Z0-9-]+)$/);
+    return {
+      target: converted.target,
+      section: blockMatch ? '' : section,
+      blockId: blockMatch?.[1] ?? '',
+      alias,
+      isRoot: converted.isRoot,
+      parentCount: converted.parentCount,
+      imageProperties,
+      linkType,
+      rawTarget,
+    };
+  }
+
+  public static analyzeLink(link: ResourceLink): LinkAnalysis {
     try {
-      const wikiLinkSyntax = Config.getWikilinksSyntax();
+      const isGollum = Config.getWikilinksSyntax() === 'gollum';
       if (link.type === 'wikilink') {
-        if (wikiLinkSyntax === 'mediawiki') {
-          // Wikilinks are always parsed from rawText. Any resolved definition is a
-          // Foam-generated rendering artifact, not authoritative content — the user's
-          // intent is expressed by the wikilink identifier itself.
-          const [, target, section, alias] = this.wikilinkRegex.exec(
-            link.rawText
-          );
-          // A fragment starting with ^ is a block anchor (e.g. #^myblock), not a section
-          const blockMatch = section?.match(/^\^([a-zA-Z0-9-]+)$/);
-          return {
-            target: target?.replace(/\\/g, '') ?? '',
-            section: blockMatch ? '' : section ?? '',
-            blockId: blockMatch?.[1] ?? '',
-            alias: alias ?? '',
-          };
+        if (isGollum) {
+          return this.analyzeGollumWikilink(link);
         }
-        if (wikiLinkSyntax === 'gollum') {
-          // use Gollum-style syntax
-          const match = this.wikilinkRegex2.exec(link.rawText);
-          if (!match) {
-            throw new Error(`Failed to parse Gollum link: ${link.rawText}`);
-          }
-          let [, alias, target, section] = match;
-          const isMatch3 = this.wikilinkRegex3.test(link.rawText);
-
-          // [[#section]] and [[#^block]] have neither an alias nor a target
-          alias = alias ?? '';
-          const extension = getExtension(alias);
-          let imageProperties = '';
-          let linkType = 'link';
-          if(extension !== '' && imageExtensions.includes(extension)) {
-            //Image link
-            if((target ?? '').length > 0) {
-              imageProperties = target;
-            }
-            try {
-              target = decodeURI(alias);
-            } catch (e) {
-              target = alias; // Fallback if malformed URI
-            }
-            alias = '';
-            linkType = "image";
-          }
-          else if ((target ?? '') === '') {           
-            if (!isMatch3) {
-              target = alias;
-              alias = '';
-            } else {
-              target = '';
-            } 
-          }
-
-          let {target: target2, isRoot, parentCount} = this.convertGollumTarget(target);
-
-          // A fragment starting with ^ is a block anchor (e.g. #^myblock), not a section
-          const blockMatch = section?.match(/^\^([a-zA-Z0-9-]+)$/);
-          return {
-            target: target2?.replace(/\\/g, '') ?? '',
-            section: blockMatch ? '' : section ?? '',
-            blockId: blockMatch?.[1] ?? '',
-            alias: alias ?? '',
-            isRoot: isRoot,
-            parentCount: parentCount,
-            imageProperties: imageProperties,
-            linkType: linkType
-          };
+        // Wikilinks are always parsed from rawText. Any resolved definition is a
+        // Foam-generated rendering artifact, not authoritative content — the user's
+        // intent is expressed by the wikilink identifier itself.
+        const wikilink = parseWikilink(link.rawText);
+        if (!wikilink) {
+          throw new Error('No wikilink found');
         }
+        const { target, section, alias } = wikilink;
+        // A fragment starting with ^ is a block anchor (e.g. #^myblock), not a section
+        const blockMatch = section.match(/^\^([a-zA-Z0-9-]+)$/);
+        return {
+          target: target.replace(/\\/g, ''),
+          section: blockMatch ? '' : section,
+          blockId: blockMatch?.[1] ?? '',
+          alias,
+        };
       }
       if (link.type === 'external') {
         const url =
@@ -155,38 +211,27 @@ export abstract class MarkdownLink {
             alias: alias,
           };
         }
-        let [, alias, angleTarget, angleSection, plainTarget, plainSection] =
+        const [, alias, angleTarget, angleSection, plainTarget, plainSection] =
           match;
-        let target = angleTarget ?? plainTarget ?? '';
+        const target = angleTarget ?? plainTarget ?? '';
         const section = angleSection ?? plainSection ?? '';
-
-        let isRoot = false;
-        let parentCount = 0;
-
-        if (wikiLinkSyntax === 'gollum') {
-          const retValue = this.convertGollumTarget(target);
-          target = retValue.target;
-          isRoot = retValue.isRoot;
-          parentCount = retValue.parentCount;
-        }
-
-        try {
-          target = decodeURIComponent(target);
-        } catch (e) {
-          // ignore malformed URI
-        }
-
         const blockMatch = section?.match(/^\^([a-zA-Z0-9-]+)$/);
-        return {
+        const analysis: LinkAnalysis = {
           target,
           section: blockMatch ? '' : section,
           blockId: blockMatch?.[1] ?? '',
           alias: alias ?? '',
-          isRoot: isRoot,
-          parentCount: parentCount,
-          imageProperties: '',
-          linkType: 'link'
         };
+        if (isGollum) {
+          const converted = this.convertGollumTarget(target);
+          analysis.target = converted.target;
+          analysis.isRoot = converted.isRoot;
+          analysis.parentCount = converted.parentCount;
+          analysis.imageProperties = '';
+          analysis.linkType = 'link';
+          analysis.rawTarget = target;
+        }
+        return analysis;
       }
       throw new Error(`Link of type ${link.type} is not supported`);
     } catch (e) {
@@ -207,46 +252,45 @@ export abstract class MarkdownLink {
     if (link.type === 'external') {
       throw new Error('Cannot update an external link');
     }
-    // Support for Gollum image links with properties
-    const { target, section, blockId, alias, imageProperties, linkType: pType } = MarkdownLink.analyzeLink(link);
+    const analysis = MarkdownLink.analyzeLink(link);
+    const { section, blockId, alias, imageProperties, linkType } = analysis;
+    // A Gollum target keeps its `/` or `../` prefix unless a new one is given
+    const target = analysis.rawTarget ?? analysis.target;
     const newTarget = delta.target ?? target;
     // Preserve the existing fragment (section or block anchor) when not overriding.
     const existingFragment = blockId ? `^${blockId}` : section;
     const newSection = delta.section ?? existingFragment ?? '';
     const newAlias = delta.alias ?? alias ?? '';
     const sectionDivider = newSection ? '#' : '';
-    let aliasDivider = newAlias ? '|' : '';
+    const aliasDivider = newAlias ? '|' : '';
     const embed = delta.isEmbed ?? link.isEmbed ? '!' : '';
     const type = delta.type ?? link.type;
     if (type === 'wikilink') {
-      const wikiLinkSyntax = Config.getWikilinksSyntax();
-      if (wikiLinkSyntax === 'gollum') {
-        if (pType === 'image') {
+      if (Config.getWikilinksSyntax() === 'gollum') {
+        if (linkType === 'image') {
           // Gollum images put properties after the pipe
           const props = imageProperties ? `|${imageProperties}` : '';
           return {
             newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${props}]]`,
             range: link.range,
           };
-        } else {
-          return {
-            newText: `${embed}[[${newAlias}${aliasDivider}${newTarget}${sectionDivider}${newSection}]]`,
-            range: link.range,
-          };      
         }
-      } else {
         return {
-          newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${aliasDivider}${newAlias}]]`,
+          newText: `${embed}[[${newAlias}${aliasDivider}${newTarget}${sectionDivider}${newSection}]]`,
           range: link.range,
         };
       }
+      return {
+        newText: `${embed}[[${newTarget}${sectionDivider}${newSection}${aliasDivider}${newAlias}]]`,
+        range: link.range,
+      };
     }
     if (type === 'link') {
       const defaultAlias = () => {
         return `${newTarget}${sectionDivider}${newSection}`;
       };
       const useAngles =
-        newTarget.indexOf(' ') > 0 || newSection.indexOf(' ') > 0;
+        newTarget.includes(' ') || newSection.includes(' ');
       return {
         newText: `${embed}[${newAlias ? newAlias : defaultAlias()}](${
           useAngles ? '<' : ''

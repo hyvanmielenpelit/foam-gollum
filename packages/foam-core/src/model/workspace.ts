@@ -1,10 +1,12 @@
 import { Resource, ResourceLink } from './note';
-import { URI } from './uri';
+import { URI, resolveInRootByName } from './uri';
 import {
   isAbsolute,
   getExtension,
   changeExtension,
   fromFsPath,
+  isPathWithin,
+  relativeTo,
 } from '../utils/path';
 import { isSome } from '../utils';
 import { mapWithConcurrency } from '../utils/core';
@@ -26,9 +28,12 @@ export class FoamWorkspace implements IDisposable {
   private providers: ResourceProvider[] = [];
 
   /**
-   * Resources by path
+   * Resources by case-normalized path.
+   * Each entry is a bucket: resources whose paths differ only by case are
+   * distinct files on case-sensitive filesystems and must coexist, so they
+   * share a trie key but keep their own slot in the bucket.
    */
-  private _resources: TrieMap<string, Resource> = new TrieMap();
+  private _resources: TrieMap<string, Resource[]> = new TrieMap();
 
   /**
    * Maps a normalized directory path to the URI of its directory index file owner.
@@ -38,7 +43,7 @@ export class FoamWorkspace implements IDisposable {
   private _directoryIndex: Map<string, URI> = new Map();
 
   /** Basenames (without extension, lowercase) that qualify as directory index files, in priority order */
-  private static readonly DIRECTORY_INDEX_NAMES = ['index', 'readme'];
+  public static readonly DIRECTORY_INDEX_NAMES = ['index', 'readme'];
 
   /**
    * The root URIs of this workspace, in priority order.
@@ -94,18 +99,7 @@ export class FoamWorkspace implements IDisposable {
           'Cannot resolve absolute path without workspace roots or a relativeTo URI'
         );
       }
-      // Drive paths require case-insensitive comparison against root.path
-      // (Windows filesystems are case-insensitive); POSIX paths use exact
-      // comparison.
-      const isDrivePath = normalized.length >= 3 && normalized[2] === ':';
-      const isUnderRoot = this.roots.some(root =>
-        isDrivePath
-          ? normalized.toLowerCase().startsWith(root.path.toLowerCase() + '/') ||
-            normalized.toLowerCase() === root.path.toLowerCase()
-          : normalized.startsWith(root.path + '/') ||
-            normalized === root.path
-      );
-      if (isUnderRoot) {
+      if (this.findContainingRoot(normalized)) {
         return this.roots[0].forPath(normalized); // case 1: already absolute under root
       }
       return this.roots[0].joinPath(normalized); // case 2: workspace-relative absolute
@@ -125,18 +119,72 @@ export class FoamWorkspace implements IDisposable {
     return this.roots[0].joinPath(normalized);
   }
 
-  set(resource: Resource) {
-    const old = this.find(resource.uri);
+  /**
+   * Resolves where a new note goes. Like {@link resolveUri}, except that a
+   * workspace-relative absolute path whose first segment is a root's folder
+   * name resolves into that root: `/notes/inbox/x.md` lands in the `notes`
+   * root rather than in `roots[0]/notes/`. This holds with a single root too,
+   * so a template kept in a notes folder works the same whether that folder
+   * is opened on its own or as part of a multi-root workspace. Links keep
+   * using `resolveUri`, where a leading slash means "under any root, roots[0]
+   * first".
+   */
+  resolveNoteUri(filepath: string): URI {
+    const [normalized] = fromFsPath(filepath);
+    if (isAbsolute(normalized) && !this.findContainingRoot(normalized)) {
+      const inNamedRoot = resolveInRootByName(normalized, this.roots);
+      if (inNamedRoot) {
+        return inNamedRoot;
+      }
+    }
+    return this.resolveUri(filepath);
+  }
 
+  /**
+   * Returns the workspace root that contains `path` (a POSIX path string), or
+   * `undefined` if it lies under no root. Drive paths compare case-insensitively
+   * (Windows filesystems ignore case, and drive-letter case isn't trusted);
+   * POSIX paths compare exactly.
+   */
+  private findContainingRoot(path: string): URI | undefined {
+    return this.roots.find(root => isPathWithin(path, root.path));
+  }
+
+  /**
+   * Turns an absolute resource URI into a workspace-relative path with a leading
+   * slash (e.g. `/projects/note.md`, or `/` for a note at the root). Falls back
+   * to the URI's absolute path when it lies under no workspace root. This is the
+   * form documented for query `path`/`folder` fields and matched by `path:`
+   * filters — see docs/user/features/foam-queries.md.
+   */
+  relativePath(uri: URI): string {
+    const root = this.findContainingRoot(uri.path);
+    if (!root) return uri.path;
+    const rel = relativeTo(uri.path, root.path);
+    return rel === '' ? '/' : '/' + rel;
+  }
+
+  set(resource: Resource) {
     // ensure arrays are initialized
     resource.links = resource.links ?? [];
     resource.tags = resource.tags ?? [];
     resource.sections = resource.sections ?? [];
     resource.blocks = resource.blocks ?? [];
     resource.footnotes = resource.footnotes ?? [];
+    resource.tasks = resource.tasks ?? [];
 
-    // store resource
-    this._resources.set(this.getTrieIdentifier(resource.uri.path), resource);
+    const key = this.getTrieIdentifier(resource.uri.path);
+    const bucket = this._resources.get(key) ?? [];
+    // Only an exact-case path match is an update: a resource whose path
+    // differs only by case is a different file and must be added alongside
+    const index = bucket.findIndex(r => r.uri.path === resource.uri.path);
+    const old = index >= 0 ? bucket[index] : null;
+    if (index >= 0) {
+      bucket[index] = resource;
+    } else {
+      bucket.push(resource);
+    }
+    this._resources.set(key, bucket);
     this._registerDirectoryIndex(resource);
 
     isSome(old)
@@ -146,8 +194,20 @@ export class FoamWorkspace implements IDisposable {
   }
 
   delete(uri: URI) {
-    const deleted = this._resources.get(this.getTrieIdentifier(uri));
-    this._resources.delete(this.getTrieIdentifier(uri));
+    const key = this.getTrieIdentifier(uri);
+    const bucket = this._resources.get(key) ?? [];
+    let index = bucket.findIndex(r => r.uri.path === uri.path);
+    if (index < 0 && bucket.length === 1) {
+      // a single case-insensitive match keeps the historical lenient lookup
+      index = 0;
+    }
+    const deleted = index >= 0 ? bucket[index] : null;
+    if (index >= 0) {
+      bucket.splice(index, 1);
+      bucket.length > 0
+        ? this._resources.set(key, bucket)
+        : this._resources.delete(key);
+    }
     this._unregisterDirectoryIndex(uri);
 
     isSome(deleted) && this.onDidDeleteEmitter.fire(deleted);
@@ -155,7 +215,7 @@ export class FoamWorkspace implements IDisposable {
   }
 
   clear() {
-    const resources = Array.from(this._resources.values());
+    const resources = Array.from(this._resources.values()).flat();
     this._resources.clear();
     this._directoryIndex.clear();
 
@@ -174,6 +234,11 @@ export class FoamWorkspace implements IDisposable {
     if (!ext) return -1;
     const name = uri.getBasename().slice(0, -ext.length).toLowerCase();
     return FoamWorkspace.DIRECTORY_INDEX_NAMES.indexOf(name);
+  }
+
+  /** Whether the URI qualifies as a directory index file (e.g. index.md, README.md) */
+  public isDirectoryIndexFile(uri: URI): boolean {
+    return this._directoryIndexPriority(uri) !== -1;
   }
 
   private _registerDirectoryIndex(resource: Resource): void {
@@ -226,7 +291,7 @@ export class FoamWorkspace implements IDisposable {
   public findByDirectory(dirPath: string): Resource | null {
     const ownerUri = this._directoryIndex.get(normalize(dirPath));
     if (!ownerUri) return null;
-    return this._resources.get(this.getTrieIdentifier(ownerUri)) ?? null;
+    return this.getResourceByPath(ownerUri);
   }
 
   /**
@@ -239,7 +304,7 @@ export class FoamWorkspace implements IDisposable {
     const results: Resource[] = [];
     for (const [dirPath, uri] of this._directoryIndex.entries()) {
       if (dirPath === normalizedId || dirPath.endsWith('/' + normalizedId)) {
-        const resource = this._resources.get(this.getTrieIdentifier(uri));
+        const resource = this.getResourceByPath(uri);
         if (resource) results.push(resource);
       }
     }
@@ -251,13 +316,13 @@ export class FoamWorkspace implements IDisposable {
   }
 
   public list(): Resource[] {
-    return Array.from(this._resources.values());
+    return Array.from(this._resources.values()).flat();
   }
 
   public resources(): IterableIterator<Resource> {
-    const resources: Array<Resource> = Array.from(
-      this._resources.values()
-    ).sort(Resource.sortByPath);
+    const resources: Array<Resource> = Array.from(this._resources.values())
+      .flat()
+      .sort(Resource.sortByPath);
 
     return resources.values();
   }
@@ -280,10 +345,10 @@ export class FoamWorkspace implements IDisposable {
 
     let resources: Resource[] = [];
 
-    this._resources.find(needle).forEach(elm => resources.push(elm[1]));
+    this._resources.find(needle).forEach(elm => resources.push(...elm[1]));
 
     if (mdNeedle) {
-      this._resources.find(mdNeedle).forEach(elm => resources.push(elm[1]));
+      this._resources.find(mdNeedle).forEach(elm => resources.push(...elm[1]));
     }
 
     const exactMatches = resources.filter(
@@ -330,9 +395,58 @@ export class FoamWorkspace implements IDisposable {
       amongst.push(res.uri);
     });
 
+    return this.getIdentifierAmongst(
+      forResource,
+      amongst.map(uri => uri.path)
+    );
+  }
+
+  /**
+   * Returns the minimal identifier for each of the given resources, in order,
+   * as {@link getIdentifier} computes it for one.
+   *
+   * @param forResources the resources to compute the identifiers for
+   */
+  public getIdentifiers(forResources: URI[]): string[] {
+    // Ordered by reversed segments, the paths sharing the longest suffix with
+    // a path are adjacent to it, so only those can lengthen its identifier.
+    const adjacentPaths = new Map<string, Map<string, string[]>>();
+    for (const uri of forResources) {
+      const basename = uri.getBasename();
+      if (adjacentPaths.has(basename)) {
+        continue;
+      }
+      const sorted = this.listByIdentifier(basename)
+        .map(r => ({
+          path: r.uri.path,
+          key: r.uri.path.split('/').reverse().join('\0'),
+        }))
+        .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+        .map(({ path }) => path);
+      adjacentPaths.set(
+        basename,
+        new Map(
+          sorted.map((path, i) => [
+            path,
+            [sorted[i - 1], sorted[i + 1]].filter(isSome),
+          ])
+        )
+      );
+    }
+
+    return forResources.map(uri => {
+      const amongst = adjacentPaths.get(uri.getBasename()).get(uri.path);
+      // A URI outside the workspace has no place in the order
+      return amongst
+        ? this.getIdentifierAmongst(uri, amongst)
+        : this.getIdentifier(uri);
+    });
+  }
+
+  private getIdentifierAmongst(forResource: URI, amongst: string[]): string {
     let identifier = FoamWorkspace.getShortestIdentifier(
       forResource.path,
-      amongst.map(uri => uri.path)
+      amongst
     );
     identifier = changeExtension(identifier, this.defaultExtension, '');
     if (forResource.fragment) {
@@ -366,12 +480,7 @@ export class FoamWorkspace implements IDisposable {
    * @param reference the URI path to reverse
    */
   private getTrieIdentifier(reference: URI | string): string {
-    let path: string;
-    if (reference instanceof URI) {
-      path = (reference as URI).path;
-    } else {
-      path = reference as string;
-    }
+    const path = typeof reference === 'string' ? reference : reference.path;
 
     let reversedPath = normalize(path).split('/').reverse().join('/');
 
@@ -382,12 +491,26 @@ export class FoamWorkspace implements IDisposable {
     return reversedPath;
   }
 
+  /**
+   * Returns the resource stored at the given URI/path.
+   * Lookup is case-insensitive; when several resources share a
+   * case-normalized path, only an exact-case match is returned.
+   */
+  private getResourceByPath(reference: URI | string): Resource | null {
+    const path = typeof reference === 'string' ? reference : reference.path;
+    const bucket = this._resources.get(this.getTrieIdentifier(path)) ?? [];
+    return (
+      bucket.find(r => r.uri.path === path) ??
+      (bucket.length === 1 ? bucket[0] : null)
+    );
+  }
+
   public find(reference: URI | string, baseUri?: URI): Resource | null {
-    if (reference instanceof URI) {
-      return this._resources.get(this.getTrieIdentifier(reference)) ?? null;
+    if (typeof reference !== 'string') {
+      return this.getResourceByPath(reference);
     }
     let resource: Resource | null = null;
-    const [path, fragment] = (reference as string).split('#');
+    const [path, fragment] = reference.split('#');
     if (FoamWorkspace.isIdentifier(path)) {
       resource = this.listByIdentifier(path)[0];
     } else {
@@ -396,15 +519,13 @@ export class FoamWorkspace implements IDisposable {
         if (isAbsolute(candidate)) {
           // Try roots[0] first (via resolveUri which handles already-under-root paths)
           const resolvedUri = this.resolveUri(candidate, baseUri);
-          resource =
-            this._resources.get(this.getTrieIdentifier(resolvedUri)) ?? null;
+          resource = this.getResourceByPath(resolvedUri);
           // For workspace-relative absolute paths in multi-root workspaces,
           // also search remaining roots in case the resource lives in a different root
           if (!resource && this.roots.length > 1) {
             for (let i = 1; i < this.roots.length; i++) {
               const altUri = this.roots[i].joinPath(candidate);
-              resource =
-                this._resources.get(this.getTrieIdentifier(altUri)) ?? null;
+              resource = this.getResourceByPath(altUri);
               if (resource) {
                 break;
               }
@@ -414,9 +535,7 @@ export class FoamWorkspace implements IDisposable {
           const resolvedUri = isSome(baseUri)
             ? baseUri.resolve(candidate)
             : null;
-          resource = resolvedUri
-            ? this._resources.get(this.getTrieIdentifier(resolvedUri))
-            : null;
+          resource = resolvedUri ? this.getResourceByPath(resolvedUri) : null;
         }
         if (resource) {
           break;
@@ -447,25 +566,31 @@ export class FoamWorkspace implements IDisposable {
       mdId = mdId + '/';
     }
     
-    const resources: Resource[] = [];
-    this._resources.find(id).forEach(elm => resources.push(elm[1]));
-    
+    let resources: Resource[] = [];
+    this._resources.find(id).forEach(elm => resources.push(...elm[1]));
+
     if (resources.length === 0) {
-      this._resources.find(mdId).forEach(elm => resources.push(elm[1]));
+      this._resources.find(mdId).forEach(elm => resources.push(...elm[1]));
     }
-    
-    if (Config.getWikilinksSyntax() === 'gollum') {
-      if (!Config.getWikilinksCaseInsensitive()) {
-        const exactMatches = resources.filter(
-          r => r.uri.path === reference || r.uri.path === reference + this.defaultExtension
-        );
-        resources.length = 0;
-        resources.push(...exactMatches);
-      }
+
+    const exactMatches = resources.filter(
+      r =>
+        r.uri.path === reference ||
+        r.uri.path === reference + this.defaultExtension
+    );
+    // An exact-case match wins over the paths that differ only by case
+    if (
+      exactMatches.length > 0 ||
+      (Config.getWikilinksSyntax() === 'gollum' &&
+        !Config.getWikilinksCaseInsensitive())
+    ) {
+      resources = exactMatches;
     }
 
     if (resources.length > 0) {
-      resources.sort((a, b) => a.uri.path.localeCompare(b.uri.path));
+      resources.sort((a, b) =>
+        a.uri.path < b.uri.path ? -1 : a.uri.path > b.uri.path ? 1 : 0
+      );
       return resources[0];
     }
     return null;
@@ -515,6 +640,8 @@ export class FoamWorkspace implements IDisposable {
   }
 
   public dispose(): void {
+    this.providers.forEach(p => p.dispose());
+    this.providers = [];
     this.onDidAddEmitter.dispose();
     this.onDidDeleteEmitter.dispose();
     this.onDidUpdateEmitter.dispose();

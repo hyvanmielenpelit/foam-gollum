@@ -1,10 +1,12 @@
 // Core models
 export { URI, asAbsoluteUri } from './model/uri';
+export type { URIComponents } from './model/uri';
 export { Range } from './model/range';
 export { Position } from './model/position';
 export { Location } from './model/location';
 export { Resource, ResourceLink, NoteLinkDefinition, Block, Footnote } from './model/note';
-export type { ResourceParser, Tag, Section } from './model/note';
+export type { ResourceParser, ResourceJson, Tag, Section } from './model/note';
+export { Task, TaskStatus } from './model/task';
 export { FoamWorkspace } from './model/workspace';
 export { FoamGraph } from './model/graph';
 export type { Connection } from './model/graph';
@@ -21,8 +23,18 @@ export {
   AlwaysIncludeMatcher,
   SubstringExcludeMatcher,
 } from './services/datastore';
+export { GlobMatcher, PlaceholderMatcher } from './services/glob-matcher';
+export type { GlobMatcherRoot } from './services/glob-matcher';
 export { createMarkdownParser, getLinkDefinitions, getBlockFor } from './services/markdown-parser';
-export type { ParserPlugin, ParserCache, ParserCacheEntry } from './services/markdown-parser';
+export type {
+  ParserPlugin,
+  ParserCache,
+  ParserCacheEntry,
+  ParseObserver,
+} from './services/markdown-parser';
+export { LoadProfiler } from './services/load-profiler';
+export type { LoadProfileStats, ParseSample } from './services/load-profiler';
+export { EventLoopMonitor, formatMemoryUsage } from './services/host-metrics';
 export { MarkdownResourceProvider, createMarkdownReferences } from './services/markdown-provider';
 export {
   AttachmentResourceProvider,
@@ -32,6 +44,8 @@ export {
 export { TextEdit, WorkspaceTextEdit } from './services/text-edit';
 export type { WorkspaceTextEditGroup } from './services/text-edit';
 export { MarkdownLink } from './services/markdown-link';
+export { completionAt } from './services/completion';
+export type { CompletionContext } from './services/completion';
 export { HeadingEdit } from './services/heading-edit';
 export type { HeadingEditResult } from './services/heading-edit';
 export { TagEdit } from './services/tag-edit';
@@ -39,23 +53,70 @@ export type { TagEditResult } from './services/tag-edit';
 export {
   computeWikilinkRenameEdits,
   computeDirectoryWikilinkRenameEdits,
+  listDirectoryRenamePairs,
 } from './services/link-integrity';
 
 // Templates / note creation
+// NOTE: functionality that executes user-supplied JavaScript via Node's `vm`
+// (TemplateLoader, resolveDailyNote, noteCreate, renderJsQuery) lives in the
+// `@foam/core/scripting` subpath so this barrel stays bundler-safe for
+// non-Node runtimes (browsers, React Native).
 export { NoteCreationEngine } from './templates/note-creation-engine';
-export type { NoteCreationResult } from './templates/note-creation-types';
+export {
+  createNote,
+  isNoteTargetAllowed,
+  DEFAULT_NEW_NOTE_TEXT,
+} from './services/note-creation-flow';
+export type {
+  NoteCreationHooks,
+  NoteCreationRequest,
+  NoteCreationOutcome,
+} from './services/note-creation-flow';
+export type {
+  NoteCreationResult,
+  NoteCreationTrigger,
+} from './templates/note-creation-types';
 export type { Template, TemplateContext } from './templates/note-creation-types';
 export { TriggerFactory } from './templates/note-creation-triggers';
-export { resolveDailyNote } from './templates/daily-note-resolver';
-export type { ResolveDailyNoteOptions } from './templates/daily-note-resolver';
-export { TemplateLoader } from './templates/template-loader';
 export {
+  findFirstTemplate,
   getDailyNoteTemplateCandidateUris,
   getNewNoteTemplateCandidateUris,
   getTemplatesDir,
 } from './templates/template-discovery';
-export { Resolver } from './templates/variable-resolver';
+export {
+  Resolver,
+  DEFAULT_FOAM_DATE_FORMAT,
+} from './templates/variable-resolver';
 export type { VariableProvider } from './templates/variable-resolver';
+export {
+  partsFromDayjsFormat,
+  partsFromTemplateFilepath,
+  dailyNotePathMatcher,
+} from './templates/daily-note-path-pattern';
+export type {
+  PatternPart,
+  DateToken,
+} from './templates/daily-note-path-pattern';
+export { findPreviousDailyNote } from './templates/previous-daily-note';
+export {
+  DEFAULT_DAILY_NOTE_TEMPLATE,
+  dailyNoteFilepath,
+  dailyNoteName,
+  dailyNotePattern,
+  dailyNoteRule,
+  defaultDailyNotePath,
+  ignoredDailyNoteSettingsNotice,
+  legacyDailyNoteFrontmatter,
+  legacyDailyNoteTemplate,
+} from './templates/daily-note-location';
+export type {
+  DailyNoteRule,
+  IgnoredDailyNoteSettingsFix,
+  IgnoredDailyNoteSettingsNotice,
+} from './templates/daily-note-location';
+export { prepareDailyNote } from './templates/daily-note-creation';
+export type { DailyNoteCreation } from './templates/daily-note-creation';
 
 // Query
 export type {
@@ -78,8 +139,6 @@ export {
 } from './query/index';
 export { renderDqlQuery } from './query/dql';
 export type { RenderDqlQueryOptions } from './query/dql';
-export { renderJsQuery } from './query/js';
-export type { RenderJsQueryOptions } from './query/js';
 export type { Query, ParseQueryResult } from './query/saved';
 export {
   parseQuery,
@@ -116,18 +175,30 @@ export type { RenderContext } from './query/render-context';
 export { createRenderContext } from './query/render-context';
 
 // Config
-export type { IFoamConfig, IFoamConfigSource } from './config';
+export type {
+  IFoamConfig,
+  IFoamConfigSource,
+  LegacyDailyNoteSettings,
+} from './config';
 export { Config, DefaultFoamConfig, cascadeFoamConfig } from './config';
+export {
+  ALWAYS_EXCLUDED,
+  foamConfigFromVsCodeSettings,
+} from './vscode-settings';
 
 // Utilities
 export { Logger, BaseLogger, ConsoleLogger, NoOpLogger } from './utils/log';
 export type { ILogger, LogLevel, LogLevelThreshold } from './utils/log';
 export { toSlug } from './utils/slug';
+export { convertDateformatToDayjs } from './utils/date-format';
+export { calendarDate, parseIsoDate, formatIsoDate } from './utils/date';
 export { isSubsequence } from './utils/string';
 export { extractHashtags, extractTagsFromProp, HASHTAG_REGEX } from './utils/hashtags';
 export {
   getExcerpt,
+  getFrontMatterRange,
   stripFrontMatter,
+  stripFrontMatterAndTitle,
   stripImages,
   isInFrontMatter,
   isOnYAMLKeywordLine,
@@ -143,11 +214,19 @@ export {
   joinPath,
   changeExtension,
   isWithinPath,
+  isPathWithin,
   asAbsolutePaths,
   relativeTo,
   fromFsPath,
 } from './utils/path';
-export { isWindows, isMacintosh, isLinux } from './common/platform';
+export {
+  isWindows,
+  isMacintosh,
+  isLinux,
+  isReactNative,
+  detectPlatform,
+} from './common/platform';
+export type { PlatformEnv, PlatformInfo } from './common/platform';
 export { TaskDeduplicator } from './utils/task-deduplicator';
 export type { Progress, ProgressCallback } from './services/progress';
 export { CancellationError } from './services/progress';
@@ -259,7 +338,14 @@ export type { FoamErrorCode } from './common/errors';
 // Commands (high-level workspace operations, used by CLI / MCP / VS Code)
 export { uriToWorkspacePath, getRootUriFor, resolveNote } from './commands/workspace';
 export type { NoteRef } from './commands/workspace';
-export { listNotes, listTags, listOrphans, listDeadends, listPlaceholders } from './commands/list';
+export {
+  listNotes,
+  listTags,
+  getOrphans,
+  listOrphans,
+  listDeadends,
+  listPlaceholders,
+} from './commands/list';
 export type {
   NoteItem,
   NoteSummary,
@@ -279,12 +365,20 @@ export type {
 export { outlineData } from './commands/outline';
 export type { OutlineSection, OutlineResult } from './commands/outline';
 export { searchWorkspace } from './commands/search';
-export type { SearchMatch, PropertyFilter, SearchOptions } from './commands/search';
-export { noteShowData, noteIdData, noteCreate, noteMove, noteDelete } from './commands/note';
+export type {
+  SearchMatch,
+  PropertyFilter,
+  SearchOptions,
+} from './commands/search';
+export {
+  noteShowData,
+  noteIdData,
+  noteMove,
+  noteDelete,
+} from './commands/note';
 export type {
   NoteDetail,
   NoteIdResult,
-  NoteCreateResult,
   NoteMoveResult,
   NoteDeleteResult,
 } from './commands/note';

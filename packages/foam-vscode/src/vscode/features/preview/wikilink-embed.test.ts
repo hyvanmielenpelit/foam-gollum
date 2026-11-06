@@ -1,4 +1,9 @@
+import MarkdownIt from 'markdown-it';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import {
+  default as markdownItWikilinkEmbed,
   WIKILINK_EMBED_REGEX,
   WIKILINK_EMBED_REGEX_GROUPS,
   retrieveNoteConfig,
@@ -7,11 +12,17 @@ import {
   extractBlockContent,
   withLinksRelativeToWorkspaceRoot,
 } from './wikilink-embed';
-import { createMarkdownParser } from '@foam/core';
+import {
+  FoamWorkspace,
+  URI,
+  createMarkdownParser,
+  createRenderContext,
+} from '@foam/core';
 import {
   createTestNote,
   createTestWorkspace,
   getRandomURI,
+  useWikilinkSyntax,
 } from '../../../test/test-utils';
 
 describe('Wikilink Note Embedding', () => {
@@ -383,6 +394,45 @@ describe('Wikilink Note Embedding', () => {
         '<img src="image.png" style="width: 300.5px; height: auto" alt="">'
       );
     });
+
+    // Size parameters are written into a `style="..."` attribute, so a value
+    // carrying a quote can break out of the attribute and inject an event
+    // handler. Only values that look like a CSS dimension are emitted.
+    it('should drop a width that breaks out of the style attribute', () => {
+      const params = { filename: 'image.png', width: '100" onload="alert(1)' };
+      const result = generateImageStyles(params, mockMd);
+      expect(result).not.toContain('onload');
+      expect(result).toEqual('<img src="image.png" alt="">');
+    });
+
+    it('should drop a height that breaks out of the style attribute', () => {
+      const params = {
+        filename: 'image.png',
+        width: '300',
+        height: '100" onload="alert(1)',
+      };
+      const result = generateImageStyles(params, mockMd);
+      expect(result).not.toContain('onload');
+      expect(result).toEqual(
+        '<img src="image.png" style="width: 300px; height: auto" alt="">'
+      );
+    });
+
+    it('should drop a width carrying extra css declarations', () => {
+      const params = {
+        filename: 'image.png',
+        width: '10px; background: url(http://evil.test)',
+      };
+      const result = generateImageStyles(params, mockMd);
+      expect(result).not.toContain('evil.test');
+      expect(result).toEqual('<img src="image.png" alt="">');
+    });
+
+    it('should drop a non-dimension width keyword', () => {
+      const params = { filename: 'image.png', width: 'auto' };
+      const result = generateImageStyles(params, mockMd);
+      expect(result).toEqual('<img src="image.png" alt="">');
+    });
   });
 
   describe('extractBlockContent', () => {
@@ -466,6 +516,8 @@ describe('Wikilink Note Embedding', () => {
   });
 
   describe('withLinksRelativeToWorkspaceRoot — fragment preservation', () => {
+    useWikilinkSyntax('mediawiki');
+
     const parser = createMarkdownParser();
 
     function makeWs() {
@@ -507,6 +559,309 @@ describe('Wikilink Note Embedding', () => {
       const out = withLinksRelativeToWorkspaceRoot(noteUri, text, parser, ws);
       expect(out).toContain('/ws/notes/beta.md');
       expect(out).not.toContain('#');
+    });
+  });
+
+  describe('withLinksRelativeToWorkspaceRoot with Gollum syntax', () => {
+    useWikilinkSyntax('gollum');
+
+    const parser = createMarkdownParser();
+
+    // A Gollum path is relative to the linking note's folder, so links in an
+    // embedded note are rewritten from the wiki root
+    function makeWs() {
+      const ws = createTestWorkspace([URI.file('/ws')]);
+      ws.set(createTestNote({ uri: '/ws/notes/alpha.md', title: 'Alpha' }));
+      ws.set(createTestNote({ uri: '/ws/notes/beta.md', title: 'Beta' }));
+      ws.set(createTestNote({ uri: '/ws/other/gamma.md', title: 'Gamma' }));
+      return ws;
+    }
+
+    it('rewrites a relative link as a path from the wiki root, keeping the alias first and the section', () => {
+      const ws = makeWs();
+      const out = withLinksRelativeToWorkspaceRoot(
+        URI.file('/ws/notes/alpha.md'),
+        'See [[The beta|beta#section-2]] and [[../other/gamma]].\n',
+        parser,
+        ws
+      );
+      expect(out).toBe(
+        'See [[The beta|/notes/beta#section-2]] and [[/other/gamma]].\n'
+      );
+    });
+
+    it('keeps the extension of a markdown link', () => {
+      const ws = makeWs();
+      const out = withLinksRelativeToWorkspaceRoot(
+        URI.file('/ws/notes/alpha.md'),
+        'See [Beta](beta.md).\n',
+        parser,
+        ws
+      );
+      expect(out).toBe('See [Beta](/notes/beta.md).\n');
+    });
+
+    it('leaves a link to a missing page as it is', () => {
+      const ws = makeWs();
+      const text = 'See [[missing]].\n';
+      const out = withLinksRelativeToWorkspaceRoot(
+        URI.file('/ws/notes/alpha.md'),
+        text,
+        parser,
+        ws
+      );
+      expect(out).toBe(text);
+    });
+  });
+
+  // Writes `source` to a temp file as `Child.md` and renders `input` through
+  // the embed plugin. The default embed type is content-inline; an explicit
+  // modifier in `input` (e.g. `full-inline![[Child]]`) overrides it.
+  function renderChildEmbed(source: string, input: string): string {
+    const dir = mkdtempSync(path.join(tmpdir(), 'foam-embed-'));
+    const uri = URI.file(path.join(dir, 'Child.md'));
+    writeFileSync(uri.toFsPath(), source);
+    const parser = createMarkdownParser();
+    const ws = new FoamWorkspace([URI.file(dir)]).set(
+      parser.parse(uri, source)
+    );
+    try {
+      const md = markdownItWikilinkEmbed(
+        MarkdownIt({ html: true }),
+        ws,
+        parser,
+        {
+          renderContext: createRenderContext(),
+          getEmbedNoteType: () => 'content-inline',
+        }
+      );
+      return md.render(input);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  describe('frontmatter in embedded notes', () => {
+    useWikilinkSyntax('mediawiki');
+
+    it('is hidden when embedding the whole note', () => {
+      for (const type of ['full-inline', 'full-card']) {
+        const html = renderChildEmbed(
+          '---\naliases: [example]\n---\n# Title\n\nBody',
+          `${type}![[Child]]`
+        );
+        expect(html).toContain('<h1>Title</h1>');
+        expect(html).toContain('Body');
+        expect(html).not.toContain('<hr');
+        expect(html).not.toContain('aliases');
+      }
+    });
+
+    it('keeps an indented code block at the start of the note', () => {
+      const html = renderChildEmbed(
+        '    code line\n\nText',
+        'full-inline![[Child]]'
+      );
+      expect(html).toContain('<pre><code>code line');
+    });
+
+    it('is hidden when the section fragment does not resolve', () => {
+      const html = renderChildEmbed(
+        '---\nid: 1\n---\n# Title\n\nBody',
+        'full-inline![[Child#Missing]]'
+      );
+      expect(html).toContain('Body');
+      expect(html).not.toContain('<hr');
+      expect(html).not.toContain('id: 1');
+    });
+
+    it('is hidden when the block fragment does not resolve', () => {
+      const html = renderChildEmbed(
+        '---\nid: 1\n---\n# Title\n\nBody',
+        'full-inline![[Child#^deleted]]'
+      );
+      expect(html).toContain('Body');
+      expect(html).not.toContain('<hr');
+      expect(html).not.toContain('id: 1');
+    });
+
+    it('is hidden in content mode when the note has no title', () => {
+      const html = renderChildEmbed('---\nid: 1\n---\nBody', '![[Child]]');
+      expect(html).toContain('<p>Body</p>');
+      expect(html).not.toContain('<hr');
+      expect(html).not.toContain('id: 1');
+    });
+
+    it('does not shift section and block ranges', () => {
+      const source =
+        '---\nid: 1\n---\n# Title\n\nIntro\n\n## Section\n\nSelected ^sel\n\n## Other\n\nTail';
+      for (const input of [
+        'full-inline![[Child#Section]]',
+        'full-inline![[Child#^sel]]',
+      ]) {
+        const html = renderChildEmbed(source, input);
+        expect(html).toContain('Selected');
+        expect(html).not.toContain('Intro');
+        expect(html).not.toContain('Tail');
+      }
+    });
+  });
+
+  describe('content mode keeps everything but the title', () => {
+    useWikilinkSyntax('mediawiki');
+
+    it('keeps the sections that follow the title', () => {
+      const html = renderChildEmbed(
+        '# Title\n\nFirst\n\n# Second\n\nLast',
+        '![[Child]]'
+      );
+      expect(html).not.toContain('Title');
+      expect(html).toContain('<p>First</p>');
+      expect(html).toContain('<h1>Second</h1>');
+      expect(html).toContain('<p>Last</p>');
+    });
+
+    it('keeps the first line of a note without headings', () => {
+      const html = renderChildEmbed('First line\n\nSecond line', '![[Child]]');
+      expect(html).toContain('<p>First line</p>');
+      expect(html).toContain('<p>Second line</p>');
+    });
+
+    it('keeps the text before the first heading', () => {
+      const html = renderChildEmbed(
+        'First line\n\n## Later heading\n\nTail',
+        '![[Child]]'
+      );
+      expect(html).toContain('<p>First line</p>');
+      expect(html).toContain('<p>Tail</p>');
+    });
+
+    it('keeps an indented code block that follows the title', () => {
+      const html = renderChildEmbed(
+        '# Title\n\n    code line\n\nText',
+        '![[Child]]'
+      );
+      expect(html).toContain('<pre><code>code line');
+      expect(html).not.toContain('Title');
+    });
+
+    it('keeps a leading H2 when the note has no H1', () => {
+      const html = renderChildEmbed('## Intro\n\nText', '![[Child]]');
+      expect(html).toContain('<h2>Intro</h2>');
+      expect(html).toContain('<p>Text</p>');
+    });
+
+    it('removes the H1 title when an H2 precedes it', () => {
+      const html = renderChildEmbed(
+        '## Intro\n\nText\n\n# Title\n\nBody',
+        '![[Child]]'
+      );
+      expect(html).toContain('<h2>Intro</h2>');
+      expect(html).toContain('<p>Text</p>');
+      expect(html).toContain('<p>Body</p>');
+      expect(html).not.toContain('Title');
+    });
+
+    it('keeps a thematic break that directly follows the title', () => {
+      const html = renderChildEmbed(
+        '# Title\n---\nText paragraph\n\n---\nFooter',
+        '![[Child]]'
+      );
+      expect(html).not.toContain('Title');
+      expect(html).toContain('<p>Text paragraph</p>');
+      expect(html).toContain('<p>Footer</p>');
+      expect(html.match(/<hr>/g)).toHaveLength(2);
+    });
+
+    it('removes a setext title together with its underline', () => {
+      const html = renderChildEmbed('Title\n=====\n\nBody', '![[Child]]');
+      expect(html).toContain('<p>Body</p>');
+      expect(html).not.toContain('Title');
+      expect(html).not.toContain('===');
+      expect(html).not.toContain('<hr');
+    });
+
+    it('removes a setext section heading together with its underline', () => {
+      const html = renderChildEmbed(
+        '# Title\n\nSection\n-------\n\nBody\n\n# Tail',
+        '![[Child#Section]]'
+      );
+      expect(html).toContain('<p>Body</p>');
+      expect(html).not.toContain('Section');
+      expect(html).not.toContain('<hr');
+      expect(html).not.toContain('Tail');
+    });
+  });
+
+  describe('content mode strips the title using the parsed sections', () => {
+    useWikilinkSyntax('mediawiki');
+
+    it('removes the title when an HTML comment precedes it', () => {
+      const html = renderChildEmbed(
+        '<!-- note -->\n# Title\n\nBody',
+        '![[Child]]'
+      );
+      expect(html).toContain('Body');
+      expect(html).not.toContain('Title');
+    });
+
+    it('removes the title when a badge image precedes it', () => {
+      const html = renderChildEmbed(
+        '![Badge](badge.png)\n\n# Title\n\nBody',
+        '![[Child]]'
+      );
+      expect(html).toContain('Body');
+      expect(html).not.toContain('Title');
+    });
+
+    it('hides frontmatter the YAML parser rejects', () => {
+      for (const frontmatter of [
+        '---\ntags:\n\t- a\n---',
+        '---\nid: 1\nid: 2\n---',
+      ]) {
+        const html = renderChildEmbed(
+          `${frontmatter}\n# Title\n\nBody`,
+          '![[Child]]'
+        );
+        expect(html).toContain('Body');
+        expect(html).not.toContain('<hr');
+        expect(html).not.toContain('tags');
+        expect(html).not.toContain('id:');
+        expect(html).not.toContain('Title');
+      }
+    });
+
+    it('hides frontmatter that is not a YAML mapping', () => {
+      for (const frontmatter of [
+        '---\n- a\n---',
+        '---\nordinary prose\n---',
+      ]) {
+        const html = renderChildEmbed(
+          `${frontmatter}\n# Title\n\nBody`,
+          '![[Child]]'
+        );
+        expect(html).toContain('Body');
+        expect(html).not.toContain('<hr');
+        expect(html).not.toContain('<li>');
+        expect(html).not.toContain('ordinary prose');
+        expect(html).not.toContain('Title');
+      }
+    });
+
+    it('removes a section heading nested in a blockquote', () => {
+      const html = renderChildEmbed(
+        '> # Quoted heading\n> body text\n\n# Next\n\nTail',
+        '![[Child#Quoted heading]]'
+      );
+      expect(html).toContain('body text');
+      expect(html).not.toContain('Quoted heading');
+      expect(html).not.toContain('Tail');
+    });
+
+    it('removes the title of a note that starts with a byte order mark', () => {
+      const html = renderChildEmbed('﻿# Title\n\nBody', '![[Child]]');
+      expect(html).toContain('Body');
+      expect(html).not.toContain('Title');
     });
   });
 });

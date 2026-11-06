@@ -11,10 +11,15 @@ import { FoamWorkspace } from '@foam/core';
 import { Range } from '@foam/core';
 import { FoamGraph } from '@foam/core';
 import { OPEN_COMMAND } from './open-resource';
+import { getContentCacheFor } from '../../services/content-cache';
 import { CREATE_NOTE_COMMAND } from '../notes/create-note';
 import { commandAsURI } from '../../utils/commands';
 import { Location } from '@foam/core';
-import { getNoteTooltip, getFoamDocSelectors } from '../../services/editor';
+import {
+  getNoteTooltip,
+  getFoamDocSelectors,
+  FOAM_TOOLTIP_TRUSTED_COMMANDS,
+} from '../../services/editor';
 import { isSome } from '@foam/core';
 
 export const CONFIG_KEY = 'links.hover.enable';
@@ -77,6 +82,10 @@ export class HoverProvider implements vscode.HoverProvider {
 
     const documentUri = fromVsCodeUri(document.uri);
     const targetUri = this.workspace.resolveLink(startResource, targetLink);
+    // A Gollum link that climbs above the wiki root resolves to nothing
+    if (!targetUri) {
+      return;
+    }
     const sources = uniqWith(
       this.graph
         .getBacklinks(targetUri)
@@ -101,7 +110,9 @@ export class HoverProvider implements vscode.HoverProvider {
 
     let mdContent = null;
     if (!targetUri.isPlaceholder()) {
-      const content: string = await this.workspace.readAsMarkdown(targetUri);
+      const content: string = await getContentCacheFor(
+        this.workspace
+      ).readAsMarkdown(targetUri);
 
       mdContent = isSome(content)
         ? getNoteTooltip(content)
@@ -121,7 +132,9 @@ export class HoverProvider implements vscode.HoverProvider {
         command
       ).toString()})`
     );
-    newNoteFromTemplate.isTrusted = true;
+    newNoteFromTemplate.isTrusted = {
+      enabledCommands: FOAM_TOOLTIP_TRUSTED_COMMANDS,
+    };
 
     const hover: vscode.Hover = {
       contents: [

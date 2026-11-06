@@ -4,7 +4,11 @@ import { FoamGraph } from '@foam/core';
 import { URI } from '@foam/core';
 import { createMarkdownParser } from '@foam/core';
 import { createRenderContext } from '@foam/core';
-import { createTestNote, createTestWorkspace } from '../../../test/test-utils';
+import {
+  createTestNote,
+  createTestWorkspace,
+  useWikilinkSyntax,
+} from '../../../test/test-utils';
 import { markdownItFoamQuery } from './foam-query-renderer';
 
 describe('markdownItFoamQuery', () => {
@@ -571,6 +575,8 @@ describe('markdownItFoamQuery', () => {
   // are dependency-injected so the test doesn't touch the filesystem.
 
   describe('source-derived fields end to end', () => {
+    useWikilinkSyntax('mediawiki');
+
     // Build a fresh workspace with real (parsed-from-markdown) notes so the
     // section ranges line up with the source we hand back from `readSource`.
     const parser = createMarkdownParser();

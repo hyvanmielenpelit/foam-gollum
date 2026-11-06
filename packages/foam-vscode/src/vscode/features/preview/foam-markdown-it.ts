@@ -46,6 +46,10 @@ export interface FoamMarkdownItOptions {
   toHref?: ToHref;
   /** Whether the host is a virtual workspace (no local FS). Defaults to false. */
   isVirtualWorkspace?: () => boolean;
+  /** Whether to render `[^id]` footnotes. Defaults to true. */
+  footnotes?: boolean;
+  /** Forwarded to `markdownItWikilinkNavigation`. Defaults to `resolve`. */
+  directoryMode?: 'resolve' | 'disabled';
   /** Default embed note type, e.g. `full-card`. */
   getEmbedNoteType?: () => string;
   /** Initial markdown-it options for fresh inner instances. */
@@ -56,12 +60,19 @@ export interface FoamMarkdownItOptions {
   /** Forwarded to `markdownItFoamQuery`. See its docstring. */
   onDidRender?: (event: FoamQueryRenderEvent) => string;
   /**
+   * Returns the instance that renders note embeds and foam-query
+   * source-derived cells. It is called during a render, so it must be safe
+   * to re-enter. Defaults to a fresh instance built by this factory from the
+   * same options.
+   */
+  createInnerMd?: () => markdownit;
+  /**
    * Host-supplied installers that run on every markdown-it instance produced
-   * by this factory — including inner instances built by `createInnerMd` for
-   * note embeds and foam-query source-derived cells. Use this for plugins
-   * that must apply uniformly across the pipeline (e.g. the report's image
-   * inliner, id-scoping, link rewriting), not for one-shot extensions that
-   * should only run on the outer instance.
+   * by this factory — including the inner instances it builds when
+   * `createInnerMd` is not given. Use this for plugins that must apply
+   * uniformly across the pipeline (e.g. the report's image inliner,
+   * id-scoping, link rewriting), not for one-shot extensions that should only
+   * run on the outer instance.
    */
   extensions?: ((md: markdownit) => void)[];
 }
@@ -72,8 +83,8 @@ export interface FoamMarkdownItOptions {
  * → block anchors → foam-query.
  *
  * The caller can either pass in an existing `md` to extend or omit it to get
- * a fresh one. Inner renders (for embeds and queries) get fresh instances
- * built from the same options.
+ * a fresh one. Inner renders (for embeds and queries) go through
+ * `createInnerMd`, by default fresh instances built from the same options.
  */
 export function createFoamMarkdownIt(
   options: FoamMarkdownItOptions,
@@ -84,11 +95,13 @@ export function createFoamMarkdownIt(
     graph,
     parser,
     linkResolver,
+    directoryMode,
     getCurrentResource,
     isTrusted = () => false,
     toHref = (uri: URI) => uri.path,
     isVirtualWorkspace,
     getEmbedNoteType,
+    footnotes = true,
     innerMdOptions = { html: true },
     renderContext = createRenderContext(),
     onDidRender,
@@ -104,23 +117,30 @@ export function createFoamMarkdownIt(
     innerMdOptions.html ??
     true;
 
-  const buildInner = (): markdownit =>
-    createFoamMarkdownIt(
-      { ...options, renderContext },
-      MarkdownIt({ html: outerHtmlOption })
-    );
+  const createInnerMd =
+    options.createInnerMd ??
+    ((): markdownit =>
+      createFoamMarkdownIt(
+        { ...options, renderContext },
+        MarkdownIt({ html: outerHtmlOption })
+      ));
 
   let r = escapeWikilinkPipes(md);
-  r = r.use(markdownItFootnote);
+  if (footnotes) {
+    r = r.use(markdownItFootnote);
+  }
   r = markdownItWikilinkEmbed(r, workspace, parser, {
     getCurrentResource,
-    createInnerMd: buildInner,
+    createInnerMd,
     renderContext,
     isVirtualWorkspace,
     getEmbedNoteType,
   });
   r = markdownItFoamTags(r, workspace);
-  r = markdownItWikilinkNavigation(r, workspace, { linkResolver });
+  r = markdownItWikilinkNavigation(r, workspace, {
+    linkResolver,
+    directoryMode,
+  });
   r = markdownItRemoveLinkReferences(r, workspace);
   r = markdownItBlockAnchorIds(r);
   r = markdownItHtmlImageLinks(r, workspace);
@@ -128,16 +148,16 @@ export function createFoamMarkdownIt(
     isTrusted,
     toHref,
     getCurrentResource,
-    createInnerMd: buildInner,
+    createInnerMd,
     parser,
     renderContext,
     onDidRender,
   });
   // Run host extensions LAST so they can override or wrap behaviour from the
-  // base Foam plugins. Inner instances pick these up via the recursive call
-  // in `buildInner` (the spread carries `extensions` along) — important for
-  // the report renderer's image inliner, id-scoping, and link rewriting,
-  // which must apply inside embedded notes too.
+  // base Foam plugins. Default inner instances pick these up via the
+  // recursive call in `createInnerMd` (the spread carries `extensions` along)
+  // — important for the report renderer's image inliner, id-scoping, and link
+  // rewriting, which must apply inside embedded notes too.
   if (extensions) {
     for (const ext of extensions) ext(r);
   }

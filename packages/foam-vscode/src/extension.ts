@@ -4,11 +4,20 @@ import {
   workspace,
   ExtensionContext,
   window,
-  commands,
   TextEditor,
   languages,
+  RelativePattern,
+  FileType,
+  Uri,
 } from 'vscode';
-import { MarkdownResourceProvider, Logger, Config } from '@foam/core';
+import {
+  MarkdownResourceProvider,
+  Logger,
+  Config,
+  LoadProfiler,
+  EventLoopMonitor,
+  formatMemoryUsage,
+} from '@foam/core';
 import { bootstrap } from './core/model/foam';
 import { fromVsCodeUri } from './vscode/utils/vsc-utils';
 
@@ -21,6 +30,7 @@ import { VsCodeWatcher } from './vscode/services/watcher';
 import { createMarkdownParser } from '@foam/core';
 import VsCodeBasedParserCache from './vscode/services/cache';
 import { createMatcherAndDataStore } from './vscode/services/editor';
+import { buildWorkspaceWatchGlob } from './vscode/utils/watch-glob';
 import { OllamaEmbeddingProvider } from './ai/providers/ollama/ollama-provider';
 import { initTelemetry } from './vscode/services/telemetry';
 import { getFoamVsCodeConfig } from './vscode/config';
@@ -66,8 +76,12 @@ export async function activate(context: ExtensionContext) {
     // Prepare Foam
     const includes = Config.getFilesInclude();
     const excludes = Config.getFilesExclude();
-    const { matcher, dataStore, includePatterns, excludePatterns } =
-      await createMatcherAndDataStore(includes, excludes);
+    const {
+      matcher,
+      dataStore: rawDataStore,
+      includePatterns,
+      excludePatterns,
+    } = await createMatcherAndDataStore(includes, excludes);
 
     Logger.info('Loading from directories:');
     for (const folder of workspace.workspaceFolders) {
@@ -76,15 +90,57 @@ export async function activate(context: ExtensionContext) {
       Logger.info('  Exclude: ' + excludePatterns.get(folder.name).join(','));
     }
 
-    const watcher = new VsCodeWatcher(
-      workspace.createFileSystemWatcher('**/*'),
-      workspace.onDidSaveTextDocument
-    );
-    const parserCache = await VsCodeBasedParserCache.create(context);
-    const parser = createMarkdownParser([], parserCache);
-
     const notesExtensions = Config.getNotesExtensions();
     const defaultExtension = Config.getDefaultNoteExtension();
+    const attachmentProvider = new AttachmentResourceProvider(
+      Config.getAttachmentExtensions()
+    );
+
+    const watchGlob = buildWorkspaceWatchGlob(
+      notesExtensions,
+      attachmentProvider
+    );
+    const watcher = new VsCodeWatcher(
+      workspace.workspaceFolders.map(folder =>
+        workspace.createFileSystemWatcher(
+          new RelativePattern(folder.uri, watchGlob)
+        )
+      ),
+      workspace.onDidSaveTextDocument,
+      {
+        watchers: workspace.workspaceFolders.map(folder =>
+          workspace.createFileSystemWatcher(
+            new RelativePattern(folder.uri, '**/*'),
+            false,
+            true,
+            false
+          )
+        ),
+        listFilesInFolder: async (uri: Uri) => {
+          try {
+            const stat = await workspace.fs.stat(uri);
+            return stat.type & FileType.Directory
+              ? await workspace.findFiles(new RelativePattern(uri, watchGlob))
+              : [];
+          } catch {
+            // Already gone again
+            return [];
+          }
+        },
+      }
+    );
+    context.subscriptions.push(watcher);
+    // Attributes the workspace load time to reading vs parsing vs neither, so
+    // that a slow startup reported by a user can be diagnosed from the log
+    // alone. See issue #1689.
+    const profiler = new LoadProfiler();
+    const eventLoopMonitor = new EventLoopMonitor();
+
+    const dataStore = profiler.instrumentDataStore(rawDataStore);
+
+    const parserCache = await VsCodeBasedParserCache.create(context);
+    context.subscriptions.push(parserCache);
+    const parser = createMarkdownParser([], parserCache, profiler.onParse);
 
     const workspaceRoots =
       workspace.workspaceFolders?.map(folder => fromVsCodeUri(folder.uri)) ??
@@ -98,10 +154,7 @@ export async function activate(context: ExtensionContext) {
       directoryMode
     );
 
-    const attachmentExtConfig = Config.getAttachmentExtensions();
-    const attachmentProvider = new AttachmentResourceProvider(
-      attachmentExtConfig
-    );
+    context.subscriptions.push(markdownProvider, attachmentProvider);
 
     // Initialize embedding provider
     const experimentalEnabled = workspace
@@ -110,6 +163,9 @@ export async function activate(context: ExtensionContext) {
     const embeddingProvider = experimentalEnabled
       ? new OllamaEmbeddingProvider()
       : undefined;
+
+    profiler.start();
+    eventLoopMonitor.start();
 
     const foamPromise = bootstrap(
       workspaceRoots,
@@ -128,16 +184,46 @@ export async function activate(context: ExtensionContext) {
     );
 
     const foam = await foamPromise;
+    // Register for disposal right away: a feature failing to load further
+    // down must not leave the workspace/graph/watchers alive and untracked
+    context.subscriptions.push(foam);
+    profiler.stop();
+    eventLoopMonitor.stop();
+
     const resources = foam.workspace.list();
     const noteCount = resources.filter(r => r.type === 'note').length;
     const attachmentCount = resources.filter(
       r => r.type === 'image' || r.type === 'attachment'
     ).length;
     Logger.info(`Loaded ${resources.length} resources`);
-
-    const feats = (await Promise.all(featuresPromises)).filter(
-      (r): r is FoamFeatureResult => r != null
+    Logger.info(
+      profiler.formatReport({
+        resources: `${resources.length} (${noteCount} notes, ${attachmentCount} attachments) from ${workspace.workspaceFolders.length} folder(s)`,
+        'event loop': eventLoopMonitor.format(),
+        memory: formatMemoryUsage(),
+      })
     );
+
+    // One broken feature must degrade that feature only, not abort the whole
+    // activation (which would also skip extendMarkdownIt for every feature)
+    const settled = await Promise.allSettled(featuresPromises);
+    settled.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        Logger.error(
+          `Feature #${i} (${
+            features[i].name || 'anonymous'
+          }) failed to activate`,
+          result.reason
+        );
+      }
+    });
+    const feats = settled
+      .filter(
+        (r): r is PromiseFulfilledResult<FoamFeatureResult | void> =>
+          r.status === 'fulfilled'
+      )
+      .map(r => r.value)
+      .filter((r): r is FoamFeatureResult => r != null);
 
     const featureTelemetry = feats.reduce(
       (acc, r) => ({ ...acc, ...r.telemetry }),
@@ -147,24 +233,17 @@ export async function activate(context: ExtensionContext) {
     telemetry.trackWorkspaceStats(noteCount, attachmentCount, featureTelemetry);
 
     context.subscriptions.push(
-      foam,
-      watcher,
-      parserCache,
-      markdownProvider,
-      attachmentProvider,
-      commands.registerCommand('foam-vscode.clear-cache', () =>
-        parserCache.clear()
-      ),
       workspace.onDidChangeConfiguration(e => {
         if (
           [
-            'foam.files.ignore',
             'foam.files.exclude',
             'foam.files.include',
             'foam.files.attachmentExtensions',
             'foam.files.noteExtensions',
             'foam.files.defaultNoteExtension',
             'foam.useCustomFileDropdownProvider',
+            'foam.wikilinks.syntax',
+            'foam.wikilinks.caseInsensitive',
           ].some(setting => e.affectsConfiguration(setting))
         ) {
           window.showInformationMessage(

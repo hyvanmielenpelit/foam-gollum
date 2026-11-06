@@ -7,8 +7,26 @@ All notable changes to the Foam for Gollum extension are documented in this file
 ### Minor Changes
 
 - Make the custom file drop provider the default drop option for Markdown files.
+- Update to Foam 0.47.1:
+  - A daily note template can link to the previous daily note with `$FOAM_PREVIOUS_DAILY_NOTE`.
+  - A new `foam.footnotes.enable` setting turns off Foam's footnote support when another extension handles footnotes.
+  - Math renders in embedded pages.
+  - An embedded page in `content` mode leaves out its title, the first top-level heading.
+  - Large wikis load faster, and the Orphans and Placeholders panels no longer slow down every save.
+  - Notes open in the editor you associated with Markdown files.
+- Daily notes go where the daily note template puts them, and otherwise to the `journal` folder. The `foam.openDailyNote.directory`, `filenameFormat`, `fileExtension` and `titleFormat` settings are no longer used; if yours would place a note differently, Foam asks before creating it and offers to write a template that keeps them.
+- Remove the `Foam: Copy To Clipboard Without Brackets`, `Foam: Clear Cache` and `Foam: Update Graph` commands, and the `foam.files.ignore` setting (use `foam.files.exclude`).
 
 ### Patch Changes
+
+- Fix the editor slowing down while typing a long wikilink with no closing `]]`.
+- Fix completion after an alias (`[[My alias|`) repeating the page title, and make alias completions use the Gollum order `[[Alias|page]]`.
+- Fix renaming or moving a page, a folder or a heading not updating Gollum wikilinks to it.
+- Fix converting a Markdown link to a wikilink not producing a Gollum page path.
+- Fix date snippets such as `/today` linking to a missing page outside the daily notes folder.
+- Fix links inside embedded pages pointing to the wrong place in the Gollum wikilink mode.
+- Fix embedding a page by a relative path, such as `![[../folder/page]]`, in the Gollum wikilink mode.
+- Fix errors in the editor, the panels and link conversion caused by a Gollum wikilink that climbs above the wiki root, such as `[[../..]]`.
 
 - Fix the custom file drop provider using the wrong uploads folder for page names that contain dots.
 - Fix dropped files with several dots in their names not being recognized as images.

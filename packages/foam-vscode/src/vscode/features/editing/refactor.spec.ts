@@ -1,5 +1,6 @@
 /* @unit-ready */
 
+import { URI } from '@foam/core';
 import { wait, waitForExpect } from '../../../test/test-utils';
 import {
   closeEditors,
@@ -8,12 +9,25 @@ import {
   readFile,
   renameFile,
   showInEditor,
-  runCommand,
   deleteFile,
+  getFoamFromVSCode,
+  waitForNoteInFoamWorkspace,
+  GOLLUM_SYNTAX,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
-import { UPDATE_GRAPH_COMMAND_NAME } from '../notes/update-graph';
+
+/**
+ * A rename only syncs what Foam has indexed, and a file created on disk is
+ * indexed asynchronously, once the watcher reports it. A fixed sleep is not
+ * enough for that on a loaded CI runner.
+ */
+const waitForNotesIndexed = (...notes: Array<{ uri: URI }>) =>
+  Promise.all(notes.map(n => waitForNoteInFoamWorkspace(n.uri)));
 
 describe('Note rename sync', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeAll(async () => {
     await closeEditors();
     await cleanWorkspace();
@@ -41,9 +55,8 @@ describe('Note rename sync', () => {
       const newName = 'renamed-note-a';
       const newUri = noteA.uri.resolve(newName);
 
-      // wait for the rename events to be propagated
-      await wait(1000);
-      await runCommand(UPDATE_GRAPH_COMMAND_NAME);
+      await waitForNotesIndexed(noteA, noteB, noteC);
+      (await getFoamFromVSCode()).graph.update();
       await renameFile(noteA.uri, newUri);
 
       await waitForExpect(async () => {
@@ -71,9 +84,8 @@ describe('Note rename sync', () => {
       const noteC = await createFile(`Link to [[note-a]] from note C.`);
 
       const newUri = noteA.uri.resolve('../note-a.md');
-      // wait for the rename events to be propagated
-      await wait(1000);
-      await runCommand(UPDATE_GRAPH_COMMAND_NAME);
+      await waitForNotesIndexed(noteA, noteC);
+      (await getFoamFromVSCode()).graph.update();
 
       await renameFile(noteA.uri, newUri);
 
@@ -104,8 +116,8 @@ describe('Note rename sync', () => {
         'outside.md',
       ]);
 
-      await wait(1000);
-      await runCommand(UPDATE_GRAPH_COMMAND_NAME);
+      await waitForNotesIndexed(noteA, otherNote, outside);
+      (await getFoamFromVSCode()).graph.update();
 
       const folderAUri = noteA.uri.getDirectory();
       const folderBUri = folderAUri.getDirectory().joinPath('folderB');
@@ -134,8 +146,8 @@ describe('Note rename sync', () => {
         'outside.md',
       ]);
 
-      await wait(1000);
-      await runCommand(UPDATE_GRAPH_COMMAND_NAME);
+      await waitForNotesIndexed(noteA, outside);
+      (await getFoamFromVSCode()).graph.update();
 
       const folderAUri = noteA.uri.getDirectory();
       const folderBUri = folderAUri.getDirectory().joinPath('folderB');
@@ -149,6 +161,122 @@ describe('Note rename sync', () => {
 
       await deleteFile(outside.uri);
       await deleteFile(folderBUri);
+    });
+
+    it('should keep the moved notes in the workspace index under the new path', async () => {
+      const noteA = await createFile('Content of A', [
+        'dir-move-index',
+        'idx-folderA',
+        'indexed-note.md',
+      ]);
+
+      await waitForNotesIndexed(noteA);
+      (await getFoamFromVSCode()).graph.update();
+
+      const folderAUri = noteA.uri.getDirectory();
+      const folderBUri = folderAUri.getDirectory().joinPath('idx-folderB');
+      const movedNoteUri = folderBUri.joinPath('indexed-note.md');
+      const foam = await getFoamFromVSCode();
+
+      await renameFile(folderAUri, folderBUri);
+
+      // Asserted immediately, with no wait: the rename must leave the index
+      // consistent by itself. Waiting here would let the debounced watcher
+      // create events re-add the note and mask the bug.
+      expect(foam.workspace.find(movedNoteUri)).toBeTruthy();
+      expect(foam.workspace.find(noteA.uri)).toBeFalsy();
+
+      await deleteFile(folderBUri);
+    });
+
+    it('should index the rewritten links of notes inside the renamed folder', async () => {
+      // int-note-b's basename is ambiguous, so int-note-a links to it
+      // path-qualified — making int-note-a both a file the rename rewrites and
+      // a file the rename moves.
+      const noteB = await createFile('Content of B', [
+        'dir-internal',
+        'int-folderA',
+        'int-note-b.md',
+      ]);
+      const noteA = await createFile('Link to [[int-folderA/int-note-b]]', [
+        'dir-internal',
+        'int-folderA',
+        'int-note-a.md',
+      ]);
+      const conflict = await createFile('Conflicting note', [
+        'dir-internal',
+        'int-other',
+        'int-note-b.md',
+      ]);
+
+      await waitForNotesIndexed(noteA, noteB, conflict);
+      (await getFoamFromVSCode()).graph.update();
+
+      const folderAUri = noteA.uri.getDirectory();
+      const folderBUri = folderAUri.getDirectory().joinPath('int-folderB');
+      const movedNoteA = folderBUri.joinPath('int-note-a.md');
+      const movedNoteB = folderBUri.joinPath('int-note-b.md');
+      const foam = await getFoamFromVSCode();
+
+      await renameFile(folderAUri, folderBUri);
+
+      expect((await readFile(movedNoteA)).trim()).toEqual(
+        'Link to [[int-folderB/int-note-b]]'
+      );
+      // Asserted with no wait, as above: the index must match what was written
+      // to disk without the watcher having to re-read the file.
+      expect(
+        foam.graph.getBacklinks(movedNoteB).map(c => c.source.path)
+      ).toEqual([movedNoteA.path]);
+
+      await deleteFile(folderBUri);
+      await deleteFile(conflict.uri);
+    });
+
+    it('should still sync wikilinks when the same folder is moved twice', async () => {
+      // The first move must leave the notes indexed, otherwise the second move
+      // has nothing to compute renames from and silently updates no links.
+      const noteA = await createFile('Content of A', [
+        'dir-move-twice',
+        'twice-folderA',
+        'twice-note.md',
+      ]);
+      const conflict = await createFile('Conflicting note', [
+        'dir-move-twice',
+        'twice-other',
+        'twice-note.md',
+      ]);
+      const outside = await createFile('Link to [[twice-folderA/twice-note]]', [
+        'dir-move-twice',
+        'outside.md',
+      ]);
+
+      await waitForNotesIndexed(noteA, conflict, outside);
+      (await getFoamFromVSCode()).graph.update();
+
+      const folderAUri = noteA.uri.getDirectory();
+      const parentUri = folderAUri.getDirectory();
+      const folderBUri = parentUri.joinPath('twice-folderB');
+      await renameFile(folderAUri, folderBUri);
+
+      await waitForExpect(async () => {
+        expect((await readFile(outside.uri)).trim()).toEqual(
+          'Link to [[twice-folderB/twice-note]]'
+        );
+      }, 2000);
+
+      const folderCUri = parentUri.joinPath('twice-folderC');
+      await renameFile(folderBUri, folderCUri);
+
+      await waitForExpect(async () => {
+        expect((await readFile(outside.uri)).trim()).toEqual(
+          'Link to [[twice-folderC/twice-note]]'
+        );
+      }, 2000);
+
+      await deleteFile(outside.uri);
+      await deleteFile(folderCUri);
+      await deleteFile(conflict.uri);
     });
   });
 
@@ -174,9 +302,8 @@ describe('Note rename sync', () => {
       const { doc } = await showInEditor(noteB.uri);
 
       const newUri = noteA.uri.resolve('../note-a.md');
-      // wait for the rename events to be propagated
-      await wait(1000);
-      await runCommand(UPDATE_GRAPH_COMMAND_NAME);
+      await waitForNotesIndexed(noteA, noteB);
+      (await getFoamFromVSCode()).graph.update();
       await renameFile(noteA.uri, newUri);
 
       // Foam does not update markdown links; the link should remain unchanged
@@ -186,5 +313,96 @@ describe('Note rename sync', () => {
       await deleteFile(newUri);
       await deleteFile(noteB.uri);
     });
+  });
+});
+
+describe('Note rename sync with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  beforeAll(async () => {
+    await closeEditors();
+    await cleanWorkspace();
+  });
+  afterAll(closeEditors);
+
+  it('should keep the alias first when a linked note is renamed', async () => {
+    const note = await createFile('Content of the old note', [
+      'gollum-rename',
+      'old-note.md',
+    ]);
+    const linking = await createFile('Link to [[Alias|old-note]] here', [
+      'gollum-rename',
+      'linking-note.md',
+    ]);
+
+    await waitForNotesIndexed(note, linking);
+    (await getFoamFromVSCode()).graph.update();
+
+    const newUri = note.uri.getDirectory().joinPath('new-note.md');
+    await renameFile(note.uri, newUri);
+
+    await waitForExpect(async () => {
+      expect((await readFile(linking.uri)).trim()).toEqual(
+        'Link to [[Alias|new-note]] here'
+      );
+    }, 2000);
+
+    await deleteFile(newUri);
+    await deleteFile(linking.uri);
+  });
+
+  it('should update relative links when a folder is renamed', async () => {
+    const note = await createFile('Content of the note', [
+      'gollum-dir-rename',
+      'folderA',
+      'note.md',
+    ]);
+    const outside = await createFile('Link to [[folderA/note]]', [
+      'gollum-dir-rename',
+      'outside.md',
+    ]);
+
+    await waitForNotesIndexed(note, outside);
+    (await getFoamFromVSCode()).graph.update();
+
+    const folderAUri = note.uri.getDirectory();
+    const folderBUri = folderAUri.getDirectory().joinPath('folderB');
+    await renameFile(folderAUri, folderBUri);
+
+    await waitForExpect(async () => {
+      expect((await readFile(outside.uri)).trim()).toEqual(
+        'Link to [[folderB/note]]'
+      );
+    }, 2000);
+
+    await deleteFile(outside.uri);
+    await deleteFile(folderBUri);
+  });
+
+  it('should update links from the root when a folder is renamed', async () => {
+    const note = await createFile('Content of the note', [
+      'gollum-root-folderA',
+      'note.md',
+    ]);
+    const outside = await createFile('Link to [[/gollum-root-folderA/note]]', [
+      'gollum-root-rename',
+      'outside.md',
+    ]);
+
+    await waitForNotesIndexed(note, outside);
+    (await getFoamFromVSCode()).graph.update();
+
+    const folderAUri = note.uri.getDirectory();
+    const folderBUri = folderAUri.getDirectory().joinPath('gollum-root-folderB');
+    await renameFile(folderAUri, folderBUri);
+
+    await waitForExpect(async () => {
+      expect((await readFile(outside.uri)).trim()).toEqual(
+        'Link to [[/gollum-root-folderB/note]]'
+      );
+    }, 2000);
+
+    await deleteFile(outside.uri);
+    await deleteFile(folderBUri);
   });
 });

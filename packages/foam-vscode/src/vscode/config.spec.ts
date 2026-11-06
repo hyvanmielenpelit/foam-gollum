@@ -1,6 +1,10 @@
 /* @unit-ready */
 import { Config } from '@foam/core';
-import { withModifiedFoamConfiguration } from '../test/test-utils-vscode';
+import {
+  withModifiedConfiguration,
+  withModifiedFoamConfiguration,
+} from '../test/test-utils-vscode';
+import { VsCodeFoamConfig } from './config';
 
 describe('VsCodeFoamConfig — notes extensions', () => {
   it('defaults to .md', () => {
@@ -76,5 +80,84 @@ describe('VsCodeFoamConfig — files include', () => {
     await withModifiedFoamConfiguration('files.include', [], async () => {
       expect(Config.getFilesInclude()).toEqual([]);
     });
+  });
+});
+
+describe('VsCodeFoamConfig — files exclude', () => {
+  it('ignores VS Code files.watcherExclude', async () => {
+    // `files.watcherExclude` means "don't spend CPU watching this", not "this
+    // is not part of my workspace" — VS Code applies it to recursive watchers
+    // itself, so honouring it here only shrank the initial scan and silently
+    // dropped those notes from the index. Use `foam.files.exclude` to keep a
+    // folder out of Foam.
+    await withModifiedConfiguration(
+      'files.watcherExclude',
+      { '**/my-huge-tree/**': true },
+      async () => {
+        expect(Config.getFilesExclude()).not.toContain('**/my-huge-tree/**');
+      }
+    );
+  });
+
+  it('always excludes VCS and OS internals, whatever the user configures', async () => {
+    // `foam.files.exclude` is an array setting, so a user value replaces the
+    // default wholesale rather than adding to it. These patterns can never be
+    // knowledge base content, so they are not left to configuration.
+    await withModifiedFoamConfiguration(
+      'files.exclude',
+      ['**/only-this/**'],
+      async () => {
+        expect(Config.getFilesExclude()).toEqual(
+          expect.arrayContaining([
+            '**/.git/**',
+            '**/.hg/**',
+            '**/.svn/**',
+            '**/.DS_Store',
+            '**/Thumbs.db',
+          ])
+        );
+      }
+    );
+  });
+
+  it('excludes VS Code files.exclude keys', async () => {
+    await withModifiedConfiguration(
+      'files.exclude',
+      { '**/hidden-tree/**': true },
+      async () => {
+        expect(Config.getFilesExclude()).toContain('**/hidden-tree/**');
+      }
+    );
+  });
+
+  it('excludes foam.files.exclude patterns', async () => {
+    await withModifiedFoamConfiguration(
+      'files.exclude',
+      ['**/archive/**'],
+      async () => {
+        expect(Config.getFilesExclude()).toContain('**/archive/**');
+      }
+    );
+  });
+});
+
+describe('VsCodeFoamConfig — wikilinks', () => {
+  it('defaults to the Gollum syntax', async () => {
+    // An undefined value clears the workspace setting
+    await withModifiedFoamConfiguration('wikilinks.syntax', undefined, () => {
+      expect(new VsCodeFoamConfig().getWikilinksSyntax()).toEqual('gollum');
+    });
+  });
+
+  it('defaults to case-insensitive wikilinks', async () => {
+    await withModifiedFoamConfiguration(
+      'wikilinks.caseInsensitive',
+      undefined,
+      () => {
+        expect(new VsCodeFoamConfig().getWikilinksCaseInsensitive()).toBe(
+          true
+        );
+      }
+    );
   });
 });

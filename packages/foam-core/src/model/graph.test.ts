@@ -1,6 +1,8 @@
 import { createTestNote, createTestWorkspace } from '../../test/test-utils';
 import { FoamGraph } from './graph';
 import { URI } from './uri';
+import { Config, DefaultFoamConfig } from '../config';
+import { createMarkdownParser } from '../services/markdown-parser';
 
 describe('Graph', () => {
   it('should use wikilink slugs to connect nodes', () => {
@@ -666,6 +668,38 @@ describe('Updating graph on workspace state', () => {
       graph.contains(URI.placeholder('/path/to/another/page-b.md'))
     ).toBeFalsy();
     ws.dispose();
+    graph.dispose();
+  });
+});
+
+describe('Graph with Gollum syntax', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => true,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('leaves out a link that climbs above the wiki root', () => {
+    const workspace = createTestWorkspace([URI.file('/wiki')]);
+    const parser = createMarkdownParser();
+    const note = parser.parse(
+      URI.file('/wiki/sub/note.md'),
+      'Up [[../../..]] and [[../other]]'
+    );
+    workspace.set(note);
+    const graph = FoamGraph.fromWorkspace(workspace, true);
+
+    expect(graph.getLinks(note.uri).map(c => c.target.path)).toEqual([
+      '/wiki/other.md',
+    ]);
+    expect(() => workspace.delete(note.uri)).not.toThrow();
+    expect(graph.getAllConnections()).toEqual([]);
     graph.dispose();
   });
 });

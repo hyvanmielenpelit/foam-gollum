@@ -1,6 +1,7 @@
 /* @unit-ready */
+import * as vscode from 'vscode';
 import MarkdownIt from 'markdown-it';
-import { FoamWorkspace } from '@foam/core';
+import { Foam, FoamGraph, FoamWorkspace, URI } from '@foam/core';
 import { createMarkdownParser } from '@foam/core';
 import { createRenderContext } from '@foam/core';
 import {
@@ -9,12 +10,16 @@ import {
   MEDIAWIKI_SYNTAX,
   useFoamConfiguration,
   withModifiedFoamConfiguration,
+  GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import {
   default as markdownItWikilinkEmbed,
   CONFIG_EMBED_NOTE_TYPE,
 } from './wikilink-embed';
+import activate from './index';
 import { getFoamVsCodeConfig } from '../../config';
+import { fromVsCodeUri } from '../../utils/vsc-utils';
+import { createTestWorkspace } from '../../../test/test-utils';
 
 const parser = createMarkdownParser();
 const getEmbedNoteType = () =>
@@ -688,60 +693,6 @@ The actual target block in B ^target
     await deleteFile(noteB);
   });
 
-  it('uses the factory-supplied markdown-it for embedded content so Foam plugins apply inside embeds (issue #1642)', async () => {
-    // Embedded content must be rendered through the factory's markdown-it
-    // (which carries the Foam plugin pipeline), not by re-entering the
-    // outer instance. This test pins that contract: a custom rule
-    // installed only on factory-built instances must appear in the
-    // embed's output, and the outer instance (which lacks that rule)
-    // must not be used for the inner render.
-    const source = await createFile(
-      `Outer paragraph.
-
-A paragraph block ^target
-`,
-      ['issue-1642-plugins', 'source.md']
-    );
-
-    const localParser = createMarkdownParser([]);
-    const parsedSource = localParser.parse(source.uri, source.content);
-    const ws = new FoamWorkspace([source.uri.getDirectory()]).set(parsedSource);
-
-    await withModifiedFoamConfiguration(
-      CONFIG_EMBED_NOTE_TYPE,
-      'full-card',
-      () => {
-        // Outer instance has NO probe. The inner factory installs the probe
-        // on every fresh instance — simulating the production setup where
-        // index.ts re-runs the Foam plugin pipeline on each factory call.
-        const outerMd = MarkdownIt();
-        const createInnerMd = () => {
-          const inner = MarkdownIt({ html: true });
-          inner.renderer.rules.paragraph_open = () =>
-            '<p class="inner-probe">';
-          return inner;
-        };
-
-        markdownItWikilinkEmbed(outerMd, ws, localParser, {
-          getCurrentResource: () => parsedSource,
-          createInnerMd,
-          renderContext: createRenderContext(),
-          getEmbedNoteType,
-        });
-
-        const res = outerMd.render(`Outer paragraph. ![[source#^target]]`);
-
-        // The outer paragraph went through outerMd (no probe).
-        expect(res).not.toMatch(/<p class="inner-probe">Outer paragraph/);
-        // The embedded paragraph MUST go through the factory-built inner
-        // instance — the probe rule should mark "A paragraph block".
-        expect(res).toMatch(/<p class="inner-probe">A paragraph block/);
-      }
-    );
-
-    await deleteFile(source);
-  });
-
   it('emits the embed wrapper as raw HTML rather than escaped text (issue #1642)', async () => {
     // The card/inline formatters wrap embedded content in
     // `<div class="embed-container-note">...</div>`. When rendered through
@@ -787,6 +738,8 @@ Add wet ingredients ^wet-step
 });
 
 describe('Displaying included notes in preview with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   // Gollum links name a section by its anchor slug (`#section-2`), not by
   // its heading text.
   const noteWithSections = `
@@ -935,5 +888,309 @@ Content of section two.`,
     );
     expect(res).toContain('Content of section two');
     expect(res).not.toContain('Content of section one');
+  });
+});
+
+describe('Embedding notes by section and path in preview with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  // A Gollum embed path is relative to the embedding note's folder, and a
+  // leading slash makes it relative to the wiki root, the workspace folder.
+  const createWorkspace = (notes: { uri: URI; content: string }[]) => {
+    const ws = createTestWorkspace([
+      fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri),
+    ]);
+    for (const note of notes) {
+      ws.set(parser.parse(note.uri, note.content));
+    }
+    return ws;
+  };
+
+  it('embeds a section named by its slug as a card by default', async () => {
+    const note = await createFile(
+      `# Section 1
+This is the first section of the note
+
+# Section 2
+This is the second section of the note
+
+# Section 3
+This is the third section of the note`,
+      ['gollum-embed-paths', 'sections.md']
+    );
+    try {
+      const ws = createWorkspace([note]);
+      const md = MarkdownIt({ html: true });
+      markdownItWikilinkEmbed(md, ws, parser, {
+        renderContext: createRenderContext(),
+      });
+
+      const res = md.render(`![[sections#section-2]]`);
+
+      expect(res).toContain('<div class="embed-container-note">');
+      expect(res).toContain('<h1>Section 2</h1>');
+      expect(res).toContain('This is the second section of the note');
+      expect(res).not.toContain('This is the first section of the note');
+      expect(res).not.toContain('This is the third section of the note');
+    } finally {
+      await deleteFile(note);
+    }
+  });
+
+  it('embeds a note by a path relative to the folder of the embedding note', async () => {
+    const embedded = await createFile('Text of the note in sub', [
+      'gollum-embed-paths',
+      'sub',
+      'note.md',
+    ]);
+    const embedding = await createFile('![[../sub/note]]', [
+      'gollum-embed-paths',
+      'other',
+      'embedding.md',
+    ]);
+    try {
+      const ws = createWorkspace([embedded, embedding]);
+      const md = MarkdownIt({ html: true });
+      markdownItWikilinkEmbed(md, ws, parser, {
+        getCurrentResource: () => ws.find(embedding.uri),
+        renderContext: createRenderContext(),
+        getEmbedNoteType: () => 'full-inline',
+      });
+
+      const res = md.render(embedding.content);
+
+      expect(res).toContain('Text of the note in sub');
+      expect(res).not.toContain('![[');
+    } finally {
+      await deleteFile(embedded);
+      await deleteFile(embedding);
+    }
+  });
+
+  it('embeds a note by a relative path inside an embedded note from another folder', async () => {
+    const embedded = await createFile('Text of the nested note in sub', [
+      'gollum-embed-paths',
+      'sub',
+      'nested.md',
+    ]);
+    const embedding = await createFile('![[../sub/nested]]', [
+      'gollum-embed-paths',
+      'other',
+      'embedding-nested.md',
+    ]);
+    try {
+      const ws = createWorkspace([embedded, embedding]);
+      const md = MarkdownIt({ html: true });
+      markdownItWikilinkEmbed(md, ws, parser, {
+        renderContext: createRenderContext(),
+        getEmbedNoteType: () => 'full-inline',
+      });
+
+      const res = md.render(`![[/gollum-embed-paths/other/embedding-nested]]`);
+
+      expect(res).toContain('Text of the nested note in sub');
+      expect(res).not.toContain('![[');
+    } finally {
+      await deleteFile(embedded);
+      await deleteFile(embedding);
+    }
+  });
+
+  it('embeds a note by a path relative to the wiki root', async () => {
+    const note = await createFile('Text of the note in folder', [
+      'gollum-embed-paths',
+      'folder',
+      'note.md',
+    ]);
+    try {
+      const ws = createWorkspace([note]);
+      const md = MarkdownIt({ html: true });
+      markdownItWikilinkEmbed(md, ws, parser, {
+        renderContext: createRenderContext(),
+        getEmbedNoteType: () => 'full-inline',
+      });
+
+      const res = md.render(`![[/gollum-embed-paths/folder/note]]`);
+
+      expect(res).toContain('Text of the note in folder');
+      expect(res).not.toContain('![[');
+    } finally {
+      await deleteFile(note);
+    }
+  });
+});
+
+/**
+ * Extends `md` with Foam's preview plugin over a workspace holding `notes`,
+ * as VS Code does when it builds the preview's engine. Rules added to `md`
+ * afterwards stand in for extensions VS Code loads after Foam. Returns a
+ * disposer.
+ */
+async function extendAsPreview(
+  md: MarkdownIt,
+  notes: { uri: URI; content: string }[]
+): Promise<() => void> {
+  const workspace = new FoamWorkspace([notes[0].uri.getDirectory()]);
+  for (const note of notes) {
+    workspace.set(parser.parse(note.uri, note.content));
+  }
+  const graph = FoamGraph.fromWorkspace(workspace);
+  const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
+  const preview = await activate(
+    context,
+    Promise.resolve({ workspace, graph, services: { parser } } as Foam)
+  );
+  preview.extendMarkdownIt(md);
+  return () => {
+    context.subscriptions.forEach(d => d.dispose());
+    graph.dispose();
+  };
+}
+
+/** Mirrors the core rule VS Code's preview pushes last to sync scrolling. */
+const pushSourceMap = (md: MarkdownIt) =>
+  md.core.ruler.push('source_map_data_attribute', state => {
+    for (const token of state.tokens) {
+      if (token.map && token.type !== 'inline') {
+        token.attrSet('data-line', String(token.map[0]));
+        token.attrJoin('class', 'code-line');
+        token.attrJoin('dir', 'auto');
+      }
+    }
+  });
+
+const pushParagraphProbe = (md: MarkdownIt) =>
+  md.core.ruler.push('probe', state => {
+    for (const token of state.tokens) {
+      if (token.type === 'paragraph_open') {
+        token.attrJoin('class', 'probe');
+      }
+    }
+  });
+
+describe('Embedded notes in the VS Code preview', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+  it('applies markdown-it rules added after Foam inside embedded notes', async () => {
+    const note = await createFile('Text of the **embedded** note', [
+      'preview-engine',
+      'plugins.md',
+    ]);
+    const md = MarkdownIt({ html: true });
+    const dispose = await extendAsPreview(md, [note]);
+    pushParagraphProbe(md);
+    md.renderer.rules.strong_open = () => '<strong class="probe">';
+    try {
+      await withModifiedFoamConfiguration(
+        CONFIG_EMBED_NOTE_TYPE,
+        'full-inline',
+        () => {
+          expect(md.render('![[plugins]]')).toContain(
+            '<p class="probe">Text of the <strong class="probe">embedded</strong> note</p>'
+          );
+        }
+      );
+    } finally {
+      dispose();
+      await deleteFile(note);
+    }
+  });
+
+  it('drops the preview source map from embedded content, keeping other attributes', async () => {
+    const note = await createFile('Text of the embedded note', [
+      'preview-engine',
+      'source-map.md',
+    ]);
+    const md = MarkdownIt({ html: true });
+    const dispose = await extendAsPreview(md, [note]);
+    pushParagraphProbe(md);
+    pushSourceMap(md);
+    try {
+      await withModifiedFoamConfiguration(
+        CONFIG_EMBED_NOTE_TYPE,
+        'full-inline',
+        () => {
+          expect(md.render('Intro.\n\n![[source-map]]')).toBe(
+            '<p class="probe code-line" data-line="0" dir="auto">Intro.</p>\n' +
+              '<p class="probe code-line" data-line="2" dir="auto">' +
+              '<p class="probe" dir="auto">Text of the embedded note</p>\n' +
+              '</p>\n'
+          );
+        }
+      );
+    } finally {
+      dispose();
+      await deleteFile(note);
+    }
+  });
+
+  it('renders an embed inside an embedded note', async () => {
+    const noteA = await createFile('Text of A ![[note-b]]', [
+      'preview-engine',
+      'nested',
+      'note-a.md',
+    ]);
+    const noteB = await createFile('Text of B ![[note-c]]', [
+      'preview-engine',
+      'nested',
+      'note-b.md',
+    ]);
+    const noteC = await createFile('Text of C', [
+      'preview-engine',
+      'nested',
+      'note-c.md',
+    ]);
+    const md = MarkdownIt({ html: true });
+    const dispose = await extendAsPreview(md, [noteA, noteB, noteC]);
+    pushSourceMap(md);
+    try {
+      await withModifiedFoamConfiguration(
+        CONFIG_EMBED_NOTE_TYPE,
+        'full-inline',
+        () => {
+          const html = md.render('![[note-a]]');
+          expect(html).toContain('Text of A');
+          expect(html).toContain('Text of B');
+          expect(html).toContain('Text of C');
+          expect(html.match(/data-line=/g)).toHaveLength(1);
+        }
+      );
+    } finally {
+      dispose();
+      await deleteFile(noteA);
+      await deleteFile(noteB);
+      await deleteFile(noteC);
+    }
+  });
+
+  it('warns instead of recursing when embedded notes embed each other', async () => {
+    const noteA = await createFile('Text of A ![[note-b]]', [
+      'preview-engine',
+      'cycle',
+      'note-a.md',
+    ]);
+    const noteB = await createFile('Text of B ![[note-a]]', [
+      'preview-engine',
+      'cycle',
+      'note-b.md',
+    ]);
+    const md = MarkdownIt({ html: true });
+    const dispose = await extendAsPreview(md, [noteA, noteB]);
+    try {
+      await withModifiedFoamConfiguration(
+        CONFIG_EMBED_NOTE_TYPE,
+        'full-inline',
+        () => {
+          const html = md.render('![[note-a]]');
+          expect(html).toContain('Cyclic link detected for wikilink');
+          expect(html.match(/Text of A/g)).toHaveLength(1);
+          expect(html.match(/Text of B/g)).toHaveLength(1);
+        }
+      );
+    } finally {
+      dispose();
+      await deleteFile(noteA);
+      await deleteFile(noteB);
+    }
   });
 });

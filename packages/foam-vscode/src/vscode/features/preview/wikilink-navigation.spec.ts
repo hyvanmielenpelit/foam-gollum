@@ -6,6 +6,7 @@ import {
   getUriInWorkspace,
   MEDIAWIKI_SYNTAX,
   useFoamConfiguration,
+  GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import { markdownItWikilinkNavigation } from './wikilink-navigation';
 import { createVsCodeLinkResolver } from './link-resolvers';
@@ -193,6 +194,34 @@ describe('Link generation in preview', () => {
     });
   });
 
+  describe('wikilinks to directory index files (#1749)', () => {
+    const indexNote = createTestNote({
+      uri: './Directory/index.md',
+      root: getUriInWorkspace('just-a-ref.md'),
+      title: 'Directory index',
+    });
+    const dirWs = new FoamWorkspace().set(indexNote);
+
+    it('links [[Directory]] to Directory/index.md', () => {
+      const dirMd = MarkdownIt();
+      markdownItWikilinkNavigation(dirMd, dirWs, { linkResolver });
+      expect(dirMd.render(`[[Directory]]`)).toEqual(
+        `<p><a class="foam-note-link" title="Directory index" href="/Directory/index.md" data-href="/Directory/index.md">Directory index</a></p>\n`
+      );
+    });
+
+    it('renders [[Directory]] as a placeholder when directory mode is disabled', () => {
+      const dirMd = MarkdownIt();
+      markdownItWikilinkNavigation(dirMd, dirWs, {
+        linkResolver,
+        directoryMode: 'disabled',
+      });
+      expect(dirMd.render(`[[Directory]]`)).toEqual(
+        `<p><a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">Directory</a></p>\n`
+      );
+    });
+  });
+
   describe('attribute-boundary escaping (BUG-4)', () => {
     // Custom resolver that returns intentionally-unsafe values for every host
     // string. Without escaping at the seam, the `"` would close the
@@ -225,6 +254,8 @@ describe('Link generation in preview', () => {
 });
 
 describe('Link generation in preview with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   const noteA = createTestNote({
     uri: './path/to/note-a.md',
     root: getUriInWorkspace('just-a-ref.md'),
@@ -390,5 +421,55 @@ describe('Link generation in preview with Gollum syntax', () => {
         `<a class="foam-note-link" title="${noteA.title}" href="/path/to/note-a.md" data-href="/path/to/note-a.md">note-a</a>`
       );
     });
+  });
+});
+
+describe('Directory links in preview with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  it('renders [[Directory]] as a placeholder even when directory mode resolves index files', () => {
+    const indexNote = createTestNote({
+      uri: './Directory/index.md',
+      root: getUriInWorkspace('just-a-ref.md'),
+      title: 'Directory index',
+    });
+    const ws = new FoamWorkspace().set(indexNote);
+    const md = MarkdownIt();
+    markdownItWikilinkNavigation(md, ws, {
+      linkResolver: createVsCodeLinkResolver(),
+      directoryMode: 'resolve',
+    });
+
+    expect(md.render(`[[Directory]]`)).toEqual(
+      `<p><a class="foam-placeholder-link" title="Link to non-existing resource" href="javascript:void(0);">Directory</a></p>\n`
+    );
+  });
+});
+
+describe('Escaped wikilink aliases in tables in preview with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  it('renders the alias of an escaped-pipe wikilink in a table cell as a link to the page', () => {
+    const page = createTestNote({
+      uri: './path/to/page.md',
+      root: getUriInWorkspace('just-a-ref.md'),
+      title: 'Page title',
+    });
+    const ws = new FoamWorkspace().set(page);
+    const md = escapeWikilinkPipes(MarkdownIt());
+    markdownItWikilinkNavigation(md, ws, {
+      linkResolver: createVsCodeLinkResolver(),
+    });
+    markdownItRemoveLinkReferences(md, ws);
+
+    const result = md.render(`| Link | Other |
+| --- | --- |
+| [[Alias\\|page]] | test |`);
+
+    expect(result).toContain(
+      `<td><a class="foam-note-link" title="${page.title}" href="/path/to/page.md" data-href="/path/to/page.md">Alias</a></td>`
+    );
+    // The escaped pipe does not split the row into an extra cell
+    expect((result.match(/<td>/g) || []).length).toBe(2);
   });
 });

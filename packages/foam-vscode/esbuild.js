@@ -101,6 +101,18 @@ const config = {
           },
         },
         {
+          name: 'untrusted-write',
+          setup(build) {
+            build.onResolve({ filter: /untrusted-write/ }, args => {
+              return {
+                path: require.resolve(
+                  args.resolveDir + '/untrusted-write-web-extension.ts'
+                ),
+              };
+            });
+          },
+        },
+        {
           name: 'parse-entities-no-dom',
           setup(build) {
             // parse-entities maps ./decode-entity -> ./decode-entity.browser.js via
@@ -146,10 +158,7 @@ const config = {
   },
 };
 
-async function buildExtension() {
-  const targetConfig =
-    entry === 'extension' ? config.extension[platform] : config.cli;
-
+async function buildTarget(targetConfig) {
   const ctx = await esbuild.context({
     ...targetConfig,
     bundle: true,
@@ -169,6 +178,12 @@ async function buildExtension() {
     await ctx.rebuild();
     await ctx.dispose();
   }
+}
+
+async function buildExtension() {
+  const targetConfig =
+    entry === 'extension' ? config.extension[platform] : config.cli;
+  await buildTarget(targetConfig);
 }
 
 function copyGraphBundleForCli() {

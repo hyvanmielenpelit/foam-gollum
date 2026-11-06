@@ -45,6 +45,11 @@ export type LinkResolver = (input: {
 
 export interface WikilinkNavigationOptions {
   linkResolver: LinkResolver;
+  /**
+   * Whether `[[dir]]` falls back to the directory's index file, mirroring
+   * `foam.links.directory.mode`. Defaults to `resolve`.
+   */
+  directoryMode?: 'resolve' | 'disabled';
 }
 
 export const markdownItWikilinkNavigation = (
@@ -52,7 +57,7 @@ export const markdownItWikilinkNavigation = (
   workspace: FoamWorkspace,
   options: WikilinkNavigationOptions
 ) => {
-  const { linkResolver } = options;
+  const { linkResolver, directoryMode = 'resolve' } = options;
   return md.use(markdownItRegex, {
     name: 'connect-wikilinks',
     regex: /(?<!!)\[\[([^[\]]+?)\]\]/,
@@ -89,7 +94,13 @@ export const markdownItWikilinkNavigation = (
           return getResourceLink(fragmentTitle, linkFragment, label);
         }
 
-        const resource = workspace.find(target);
+        // A Gollum link names a page, never a folder
+        const resource =
+          workspace.find(target) ??
+          (directoryMode === 'resolve' &&
+          Config.getWikilinksSyntax() !== 'gollum'
+            ? workspace.listByDirectoryIdentifier(target)[0]
+            : null);
         if (isNone(resource)) {
           return getPlaceholderLink(label);
         }

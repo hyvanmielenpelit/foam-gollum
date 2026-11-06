@@ -1,12 +1,15 @@
 import {
   createMarkdownParser,
   getBlockFor,
+  ParserCache,
+  ParserCacheEntry,
   ParserPlugin,
 } from './markdown-parser';
 import { NoteLinkDefinition, Resource, ResourceLink } from '../model/note';
 import { Logger } from '../utils/log';
 import { URI } from '../model/uri';
 import { Range } from '../model/range';
+import { TaskStatus } from '../model/task';
 import { getRandomURI } from '../../test/test-utils';
 import { Position } from '../model/position';
 
@@ -249,7 +252,9 @@ I link to an [interesting topic][1] and an [[internal-note]]
       `);
 
       // external reference-style link
-      const externalLink = note.links.find(l => l.rawText === '[interesting topic][1]');
+      const externalLink = note.links.find(
+        l => l.rawText === '[interesting topic][1]'
+      );
       expect(externalLink).toBeDefined();
       expect(externalLink.type).toEqual('external');
       expect(ResourceLink.isResolvedReference(externalLink)).toBe(true);
@@ -516,6 +521,27 @@ tags: hello, world
       ]);
     });
 
+    it('can find tags on the continuation lines of a multi-line paragraph', () => {
+      const noteA = createNoteFromMarkdown(
+        `first line with #one\nsecond line with #two`
+      );
+      expect(noteA.tags).toEqual([
+        { label: 'one', range: Range.create(0, 16, 0, 20) },
+        { label: 'two', range: Range.create(1, 17, 1, 21) },
+      ]);
+    });
+
+    it('computes the range of a frontmatter tag that is a substring of another tag', () => {
+      const noteA = createNoteFromMarkdown(`---
+tags: [foobar, foo]
+---
+content`);
+      expect(noteA.tags.map(t => t.label).sort()).toEqual(['foo', 'foobar']);
+      const foo = noteA.tags.find(t => t.label === 'foo');
+      // must point at the standalone 'foo', not the prefix of 'foobar'
+      expect(foo.range).toEqual(Range.create(1, 15, 1, 18));
+    });
+
     it('will skip tags in codeblocks', () => {
       const noteA = createNoteFromMarkdown(`
 this is some #text that includes #tags we #care-about.
@@ -630,6 +656,131 @@ this is some text
     });
   });
 
+  describe('Tasks', () => {
+    const tasksOf = (...lines: string[]) =>
+      createNoteFromMarkdown(lines.join('\n')).tasks.map(task => [
+        task.range.start.line,
+        task.status,
+      ]);
+
+    it('finds bullet, numbered, quoted, nested and starred tasks', () => {
+      expect(
+        tasksOf(
+          '- [ ] bullet task',
+          '1. [ ] numbered task',
+          '> - [ ] quoted task',
+          '  - [x] nested done',
+          '* [X] star upper'
+        )
+      ).toEqual([
+        [0, TaskStatus.Open],
+        [1, TaskStatus.Open],
+        [2, TaskStatus.Open],
+        [3, TaskStatus.Done],
+        [4, TaskStatus.Done],
+      ]);
+    });
+
+    it('gives the range from the checkbox to the end of its line, and the text after it', () => {
+      const note = createNoteFromMarkdown(
+        '# Day\r\n> 1. [x]  Call [[Anna]] \r\n'
+      );
+
+      expect(note.tasks).toEqual([
+        {
+          range: Range.create(1, 5, 1, 24),
+          status: TaskStatus.Done,
+          text: ' Call [[Anna]] ',
+        },
+      ]);
+    });
+
+    it('takes the first paragraph of the item as the text, over every line it takes', () => {
+      const note = createNoteFromMarkdown('- [ ] first\n  second');
+
+      expect(note.tasks).toEqual([
+        {
+          range: Range.create(0, 2, 1, 8),
+          status: TaskStatus.Open,
+          text: 'first\n  second',
+        },
+      ]);
+    });
+
+    it('takes a lazy line into the text, each line break as \\n', () => {
+      const note = createNoteFromMarkdown('- [ ] call\r\nlazy line\r\n');
+
+      expect(note.tasks.map(task => [task.text, task.range])).toEqual([
+        ['call\nlazy line', Range.create(0, 2, 1, 9)],
+      ]);
+    });
+
+    it('leaves nested items and later paragraphs out of the text', () => {
+      const note = createNoteFromMarkdown(
+        '- [ ] a\n\n  second paragraph\n  - [ ] child'
+      );
+
+      expect(note.tasks.map(task => task.text)).toEqual(['a', 'child']);
+    });
+
+    it('takes a space, an x or a tab between the brackets, then a space or a tab, then text', () => {
+      expect(
+        tasksOf(
+          '- [\t] tab',
+          '- [x]\tx',
+          '- [x]x',
+          '- [y] y',
+          '- [ ]',
+          '- [ ]  '
+        )
+      ).toEqual([
+        [0, TaskStatus.Open],
+        [1, TaskStatus.Done],
+      ]);
+    });
+
+    it('needs a list marker followed by a space or a tab', () => {
+      expect(
+        tasksOf(
+          '-[ ] a',
+          '1.[ ] b',
+          '1) [ ] c',
+          '\\- [ ] d',
+          '+\t[ ] e',
+          '10. [ ] f'
+        )
+      ).toEqual([
+        [4, TaskStatus.Open],
+        [5, TaskStatus.Open],
+      ]);
+    });
+
+    it('finds no tasks in frontmatter or code', () => {
+      expect(
+        tasksOf(
+          '---',
+          'todo: "- [ ] not a task"',
+          '---',
+          '```',
+          '- [ ] not a task either',
+          '```',
+          '',
+          '    - [ ] indented code',
+          '',
+          '- [ ] a task'
+        )
+      ).toEqual([[9, TaskStatus.Open]]);
+    });
+
+    it('counts the innermost of items nested on one line', () => {
+      const note = createNoteFromMarkdown('- - [ ] nested');
+
+      expect(note.tasks.map(task => task.range)).toEqual([
+        Range.create(0, 4, 0, 14),
+      ]);
+    });
+  });
+
   describe('Sections', () => {
     it('should find sections within the note', () => {
       const note = createNoteFromMarkdown(`
@@ -688,6 +839,14 @@ This is the content of section with url`);
       expect(note.sections[4].level).toEqual(5);
       expect(note.sections[5].level).toEqual(6);
     });
+
+    it('records the range of the heading itself', () => {
+      const note = createNoteFromMarkdown(
+        '# ATX heading\n\nBody\n\nSetext heading\n==============\n\nTail'
+      );
+      expect(note.sections[0].headingRange).toEqual(Range.create(0, 0, 0, 13));
+      expect(note.sections[1].headingRange).toEqual(Range.create(4, 0, 5, 14));
+    });
   });
 
   describe('Parser plugins', () => {
@@ -719,6 +878,65 @@ and some content`
       expect(note2.properties.hasHeading).toBeTruthy();
     });
   });
+  describe('Parse observer', () => {
+    const createCache = (): ParserCache => {
+      const entries = new Map<string, ParserCacheEntry>();
+      return {
+        get: uri => entries.get(uri.toString()),
+        has: uri => entries.has(uri.toString()),
+        set: (uri, entry) => void entries.set(uri.toString(), entry),
+        del: uri => void entries.delete(uri.toString()),
+        clear: () => entries.clear(),
+      };
+    };
+
+    it('reports the size of every parsed note', () => {
+      const samples = [];
+      const parser = createMarkdownParser([], undefined, s => samples.push(s));
+      const content = '# Title\nsome content';
+
+      parser.parse(URI.file('/path/to/a.md'), content);
+
+      expect(samples).toHaveLength(1);
+      expect(samples[0].uri.path).toEqual('/path/to/a.md');
+      expect(samples[0].chars).toEqual(content.length);
+      expect(samples[0].cacheHit).toBeFalsy();
+    });
+
+    it('reports a single sample per parse when a cache is in use', () => {
+      const samples = [];
+      const parser = createMarkdownParser([], createCache(), s =>
+        samples.push(s)
+      );
+
+      parser.parse(URI.file('/path/to/a.md'), '# Title');
+
+      expect(samples).toHaveLength(1);
+    });
+
+    it('distinguishes a cache hit from a re-parse', () => {
+      const samples = [];
+      const uri = URI.file('/path/to/a.md');
+      const parser = createMarkdownParser([], createCache(), s =>
+        samples.push(s)
+      );
+
+      parser.parse(uri, '# Title');
+      parser.parse(uri, '# Title');
+      // changing the content invalidates the entry for that URI
+      parser.parse(uri, '# Another title');
+
+      expect(samples.map(s => s.cacheHit)).toEqual([false, true, false]);
+    });
+
+    it('is optional', () => {
+      const parser = createMarkdownParser([]);
+      expect(parser.parse(URI.file('/path/to/a.md'), '# Title').title).toEqual(
+        'Title'
+      );
+    });
+  });
+
   describe('Alias', () => {
     it('can find tags in comma separated string', () => {
       const note = parser.parse(
@@ -1225,5 +1443,16 @@ describe('block anchor extraction', () => {
       expect(b2).toBeDefined();
       expect(b2.type).toBe('table');
     });
+  });
+});
+
+describe('Frontmatter tags with quoted keys', () => {
+  it('parses tags when the tags key is quoted in frontmatter', () => {
+    const note = createNoteFromMarkdown(`---
+"tags": [alpha]
+---
+content`);
+    expect(note.tags.map(t => t.label)).toEqual(['alpha']);
+    expect(note.tags[0].range.start.line).toEqual(1);
   });
 });

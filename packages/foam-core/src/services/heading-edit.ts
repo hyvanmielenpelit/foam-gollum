@@ -1,7 +1,8 @@
 import { FoamGraph } from '../model/graph';
 import { FoamWorkspace } from '../model/workspace';
 import { URI } from '../model/uri';
-import { ResourceLink, NoteLinkDefinition } from '../model/note';
+import { ResourceLink, NoteLinkDefinition, Resource } from '../model/note';
+import { Config } from '../config';
 import { MarkdownLink } from './markdown-link';
 import { WorkspaceTextEdit } from './text-edit';
 
@@ -120,17 +121,20 @@ export abstract class HeadingEdit {
         if (blockId !== oldId) {
           continue;
         }
-        totalOccurrences++;
-        edits.push({
-          uri: connection.source,
-          edit: MarkdownLink.createUpdateLinkEdit(link, {
+        let edit: WorkspaceTextEdit['edit'];
+        try {
+          edit = MarkdownLink.createUpdateLinkEdit(link, {
             section: '^' + newId,
-          }),
-        });
+          });
+        } catch {
+          continue;
+        }
+        totalOccurrences++;
+        edits.push({ uri: connection.source, edit });
       }
     }
 
-    return { edits, totalOccurrences };
+    return { edits: WorkspaceTextEdit.dedupe(edits), totalOccurrences };
   }
 
   /**
@@ -153,6 +157,11 @@ export abstract class HeadingEdit {
     oldLabel: string,
     newLabel: string
   ): HeadingEditResult {
+    // A Gollum link names a section by its slug; the heading text is still read
+    const isGollum = Config.getWikilinksSyntax() === 'gollum';
+    const oldSlug = isGollum ? Resource.convertAnchor(oldLabel) : oldLabel;
+    const matchesOld = (s: string) => s === oldLabel || s === oldSlug;
+    const newSection = isGollum ? Resource.convertAnchor(newLabel) : newLabel;
     const backlinks = graph.getBacklinks(resourceUri);
     const edits: WorkspaceTextEdit[] = [];
     let totalOccurrences = 0;
@@ -170,7 +179,7 @@ export abstract class HeadingEdit {
       // `[ref]: note.md#OldLabel`), update the definition line URL rather than
       // the inline text, which doesn't contain the URL.
       if (link.type === 'link' && ResourceLink.isResolvedReference(link)) {
-        if (section !== oldLabel) {
+        if (!matchesOld(section)) {
           continue;
         }
         const def = link.definition as NoteLinkDefinition;
@@ -180,8 +189,8 @@ export abstract class HeadingEdit {
         const hashIdx = def.url.lastIndexOf('#');
         const newUrl =
           hashIdx >= 0
-            ? def.url.slice(0, hashIdx + 1) + newLabel
-            : def.url + '#' + newLabel;
+            ? def.url.slice(0, hashIdx + 1) + newSection
+            : def.url + '#' + newSection;
 
         totalOccurrences++;
         edits.push({
@@ -203,10 +212,10 @@ export abstract class HeadingEdit {
         // - If in both: update rawText and update definition URL + label
         //   (e.g. `[[note#OldLabel]]` + `[note#OldLabel]: note.md#OldLabel`)
         const def = link.definition as NoteLinkDefinition;
-        const rawTextMatchesSection = section === oldLabel;
+        const rawTextMatchesSection = matchesOld(section);
         const defHashIdx = def.url.lastIndexOf('#');
         const defSection = defHashIdx >= 0 ? def.url.slice(defHashIdx + 1) : '';
-        const defMatchesSection = defSection === oldLabel;
+        const defMatchesSection = matchesOld(defSection);
 
         if (!rawTextMatchesSection && !defMatchesSection) {
           continue;
@@ -216,21 +225,21 @@ export abstract class HeadingEdit {
 
         if (rawTextMatchesSection) {
           const textEdit = MarkdownLink.createUpdateLinkEdit(link, {
-            section: newLabel,
+            section: newSection,
           });
           edits.push({ uri: connection.source, edit: textEdit });
         }
 
         if (defMatchesSection && def.range) {
-          const newUrl = def.url.slice(0, defHashIdx + 1) + newLabel;
+          const newUrl = def.url.slice(0, defHashIdx + 1) + newSection;
           // If the definition label also encodes the section
           // (e.g. "note-a#OldLabel"), update the label portion too.
           const labelHashIdx = def.label.lastIndexOf('#');
           const labelSection =
             labelHashIdx >= 0 ? def.label.slice(labelHashIdx + 1) : '';
           const newDefLabel =
-            labelSection === oldLabel
-              ? def.label.slice(0, labelHashIdx + 1) + newLabel
+            matchesOld(labelSection)
+              ? def.label.slice(0, labelHashIdx + 1) + newSection
               : def.label;
 
           edits.push({
@@ -247,17 +256,22 @@ export abstract class HeadingEdit {
         }
       } else {
         // Wikilinks without resolved definitions and regular inline markdown links.
-        if (section !== oldLabel) {
+        if (!matchesOld(section)) {
+          continue;
+        }
+        let textEdit: WorkspaceTextEdit['edit'];
+        try {
+          textEdit = MarkdownLink.createUpdateLinkEdit(link, {
+            section: newSection,
+          });
+        } catch {
           continue;
         }
         totalOccurrences++;
-        const textEdit = MarkdownLink.createUpdateLinkEdit(link, {
-          section: newLabel,
-        });
         edits.push({ uri: connection.source, edit: textEdit });
       }
     }
 
-    return { edits, totalOccurrences };
+    return { edits: WorkspaceTextEdit.dedupe(edits), totalOccurrences };
   }
 }

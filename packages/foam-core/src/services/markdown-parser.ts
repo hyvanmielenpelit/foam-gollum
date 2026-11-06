@@ -15,8 +15,10 @@ import {
 } from '../model/note';
 import { Position } from '../model/position';
 import { Range } from '../model/range';
+import { TaskStatus } from '../model/task';
 import { extractHashtags, extractTagsFromProp, hash, isSome } from '../utils';
 import { Logger } from '../utils/log';
+import { getYAMLKey } from '../utils/md';
 import { URI } from '../model/uri';
 import { ICache } from '../utils/cache';
 
@@ -47,6 +49,19 @@ export interface ParserCacheEntry {
  */
 export type ParserCache = ICache<URI, ParserCacheEntry>;
 
+/**
+ * Called after every `parse`, with the cost of that parse.
+ *
+ * Used by `LoadProfiler` to attribute workspace load time. Reported from the
+ * outermost parser only, so a cache miss produces exactly one sample.
+ */
+export type ParseObserver = (sample: {
+  uri: URI;
+  chars: number;
+  ms: number;
+  cacheHit: boolean;
+}) => void;
+
 const parser = unified()
   .use(markdownParse, { gfm: true })
   .use(frontmatterPlugin, ['yaml'])
@@ -74,12 +89,14 @@ export function getLinkDefinitions(markdown: string): NoteLinkDefinition[] {
 
 export function createMarkdownParser(
   extraPlugins: ParserPlugin[] = [],
-  cache?: ParserCache
+  cache?: ParserCache,
+  onParse?: ParseObserver
 ): ResourceParser {
   const plugins = [
     titlePlugin,
     wikilinkPlugin,
     tagsPlugin,
+    tasksPlugin,
     aliasesPlugin,
     sectionsPlugin,
     blocksPlugin,
@@ -117,6 +134,7 @@ export function createMarkdownParser(
         aliases: [],
         links: [],
         footnotes: [],
+        tasks: [],
       };
 
       const localDefinitions: NoteLinkDefinition[] = [];
@@ -260,20 +278,53 @@ export function createMarkdownParser(
 
   const cachedParser: ResourceParser = {
     parse: (uri: URI, markdown: string): Resource => {
+      const start = performance.now();
       const actualChecksum = hash(markdown);
       if (cache.has(uri)) {
         const { checksum, resource } = cache.get(uri);
         if (actualChecksum === checksum) {
+          onParse?.({
+            uri,
+            chars: markdown.length,
+            ms: performance.now() - start,
+            cacheHit: true,
+          });
           return resource;
         }
       }
       const resource = foamParser.parse(uri, markdown);
       cache.set(uri, { checksum: actualChecksum, resource });
+      onParse?.({
+        uri,
+        chars: markdown.length,
+        ms: performance.now() - start,
+        cacheHit: false,
+      });
       return resource;
     },
   };
 
-  return isSome(cache) ? cachedParser : foamParser;
+  if (isSome(cache)) {
+    return cachedParser;
+  }
+  if (!onParse) {
+    return foamParser;
+  }
+  // `foamParser` stays uninstrumented so the cached parser above reports
+  // exactly one sample per parse rather than one per layer
+  return {
+    parse: (uri: URI, markdown: string): Resource => {
+      const start = performance.now();
+      const resource = foamParser.parse(uri, markdown);
+      onParse({
+        uri,
+        chars: markdown.length,
+        ms: performance.now() - start,
+        cacheHit: false,
+      });
+      return resource;
+    },
+  };
 }
 
 /**
@@ -292,10 +343,6 @@ const getTextFromChildren = (root: Node): string => {
   return text;
 };
 
-// Matches a top-level YAML key: starts at column 0 with a non-hyphen, non-space,
-// non-comment character, and contains a colon (e.g. "tags:", "date-created:").
-const YAML_KEY_LINE_RE = /^([^-\s#][^:]*?):\s*(.*)/;
-
 function getPropertiesInfoFromYAML(yamlText: string): {
   [key: string]: { key: string; value: string; text: string; line: number };
 } {
@@ -304,15 +351,14 @@ function getPropertiesInfoFromYAML(yamlText: string): {
     [key: string]: { key: string; value: string; text: string; line: number };
   } = {};
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const match = lines[lineIdx].match(YAML_KEY_LINE_RE);
-    if (!match) {
+    const key = getYAMLKey(lines[lineIdx]);
+    if (key === undefined) {
       continue;
     }
-    const key = match[1];
     let text = lines[lineIdx];
     let j = lineIdx + 1;
     // Collect continuation lines: everything that isn't the start of a new key
-    while (j < lines.length && !YAML_KEY_LINE_RE.test(lines[j])) {
+    while (j < lines.length && getYAMLKey(lines[j]) === undefined) {
       text += '\n' + lines[j];
       j++;
     }
@@ -322,6 +368,28 @@ function getPropertiesInfoFromYAML(yamlText: string): {
   return result;
 }
 
+/** Characters that can be part of a tag label (see HASHTAG_REGEX) */
+const TAG_LABEL_CHAR = /[\p{L}\p{Extended_Pictographic}\p{N}/_-]/u;
+
+/**
+ * Finds the column of `tag` in `line`, matching only occurrences that are not
+ * part of a longer tag-like word (so tag `foo` does not match inside `foobar`)
+ */
+const findTagColumnInLine = (line: string, tag: string): number => {
+  for (
+    let idx = line.indexOf(tag);
+    idx >= 0;
+    idx = line.indexOf(tag, idx + 1)
+  ) {
+    const before = idx > 0 ? line[idx - 1] : '';
+    const after = idx + tag.length < line.length ? line[idx + tag.length] : '';
+    if (!TAG_LABEL_CHAR.test(before) && !TAG_LABEL_CHAR.test(after)) {
+      return idx;
+    }
+  }
+  return -1;
+};
+
 const tagsPlugin: ParserPlugin = {
   name: 'tags',
   onDidFindProperties: (props, note, node) => {
@@ -329,14 +397,24 @@ const tagsPlugin: ParserPlugin = {
       const tagPropertyInfo = getPropertiesInfoFromYAML((node as any).value)[
         'tags'
       ];
+      // e.g. a quoted "tags": key is captured with its quotes and misses
+      // the plain lookup — skip the ranges rather than dropping all tags
+      if (!isSome(tagPropertyInfo)) {
+        return;
+      }
       const tagPropertyStartLine =
         node.position!.start.line + tagPropertyInfo.line;
       const tagPropertyLines = tagPropertyInfo.text.split('\n');
       const yamlTags = extractTagsFromProp(props.tags);
       for (const tag of yamlTags) {
-        const tagLine = tagPropertyLines.findIndex(l => l.includes(tag));
+        const tagLine = tagPropertyLines.findIndex(
+          l => findTagColumnInLine(l, tag) >= 0
+        );
+        if (tagLine < 0) {
+          continue;
+        }
         const line = tagPropertyStartLine + tagLine;
-        const charStart = tagPropertyLines[tagLine].indexOf(tag);
+        const charStart = findTagColumnInLine(tagPropertyLines[tagLine], tag);
         note.tags.push({
           label: tag,
           range: Range.createFromPosition(
@@ -349,10 +427,23 @@ const tagsPlugin: ParserPlugin = {
   },
   visit: (node, note) => {
     if (node.type === 'text') {
-      const tags = extractHashtags((node as any).value);
+      const text = (node as any).value as string;
+      const tags = extractHashtags(text);
       for (const tag of tags) {
-        const start = astPointToFoamPosition(node.position!.start);
-        start.character = start.character + tag.offset;
+        // The node's value can span multiple lines (soft breaks), so the
+        // tag's position is derived by counting newlines up to its offset
+        const nodeStart = astPointToFoamPosition(node.position!.start);
+        const preceding = text.slice(0, tag.offset);
+        const lastBreak = preceding.lastIndexOf('\n');
+        const lineBreaks =
+          lastBreak < 0 ? 0 : preceding.split('\n').length - 1;
+        const start: Position = {
+          line: nodeStart.line + lineBreaks,
+          character:
+            lastBreak < 0
+              ? nodeStart.character + tag.offset
+              : tag.offset - lastBreak - 1,
+        };
         const end: Position = {
           line: start.line,
           character: start.character + tag.label.length + 1,
@@ -366,7 +457,50 @@ const tagsPlugin: ParserPlugin = {
   },
 };
 
-let sectionStack: Array<{ label: string; level: number; start: Position }> = [];
+const tasksPlugin: ParserPlugin = {
+  name: 'tasks',
+  visit: (node, note, noteSource) => {
+    const item = node as any;
+    const content = item.children?.[0];
+    // A checkbox counts only with text after it on its own line
+    if (
+      node.type !== 'listItem' ||
+      typeof item.checked !== 'boolean' ||
+      content?.position.start.line !== node.position!.start.line
+    ) {
+      return;
+    }
+    // From the item's start to its text: the bullet, then the checkbox and
+    // the space or tab after it
+    const opening = noteSource.slice(
+      node.position!.start.offset,
+      content.position.start.offset
+    );
+    // The paragraph's source holds no `\r` after its last line
+    const text = noteSource
+      .slice(content.position.start.offset, content.position.end.offset)
+      .split('\r\n')
+      .join('\n');
+    const start = astPointToFoamPosition(content.position.start);
+    const end = astPointToFoamPosition(content.position.end);
+    note.tasks.push({
+      range: Range.create(
+        start.line,
+        start.character - (opening.length - opening.lastIndexOf('[')),
+        end.line,
+        end.character
+      ),
+      status: item.checked ? TaskStatus.Done : TaskStatus.Open,
+      text,
+    });
+  },
+};
+
+let sectionStack: Array<{
+  label: string;
+  level: number;
+  headingRange: Range;
+}> = [];
 const sectionsPlugin: ParserPlugin = {
   name: 'section',
   onWillVisitTree: () => {
@@ -381,7 +515,8 @@ const sectionsPlugin: ParserPlugin = {
       if (!label || !level) {
         return;
       }
-      const start = astPositionToFoamRange(node.position!).start;
+      const headingRange = astPositionToFoamRange(node.position!);
+      const start = headingRange.start;
 
       // Close all the sections that are not parents of the current section
       while (
@@ -392,12 +527,13 @@ const sectionsPlugin: ParserPlugin = {
         note.sections.push({
           label: section.label,
           level: section.level,
-          range: Range.createFromPosition(section.start, start),
+          range: Range.createFromPosition(section.headingRange.start, start),
+          headingRange: section.headingRange,
         });
       }
 
       // Add the new section to the stack
-      sectionStack.push({ label, level, start });
+      sectionStack.push({ label, level, headingRange });
     }
   },
   onDidVisitTree: (tree, note) => {
@@ -411,7 +547,8 @@ const sectionsPlugin: ParserPlugin = {
       note.sections.push({
         label: section.label,
         level: section.level,
-        range: { start: section.start, end },
+        range: { start: section.headingRange.start, end },
+        headingRange: section.headingRange,
       });
     }
     note.sections.sort((a, b) =>

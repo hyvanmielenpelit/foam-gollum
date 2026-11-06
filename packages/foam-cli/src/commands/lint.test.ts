@@ -10,17 +10,27 @@ setColorsEnabled(false);
 
 describe('buildRules', () => {
   it('returns both rules when no filter given', () => {
-    const rules = buildRules([]);
+    const rules = buildRules([], 'withoutExtensions');
     expect(rules.map(r => r.id)).toEqual(['missing-heading', 'stale-definitions']);
   });
 
   it('returns only missing-heading when filtered', () => {
-    const rules = buildRules(['missing-heading']);
+    const rules = buildRules(['missing-heading'], 'withoutExtensions');
     expect(rules.map(r => r.id)).toEqual(['missing-heading']);
   });
 
+  it('omits stale-definitions when link reference definitions are off (#1722)', () => {
+    const rules = buildRules([], 'off');
+    expect(rules.map(r => r.id)).toEqual(['missing-heading']);
+  });
+
+  it('omits stale-definitions when asked for explicitly but off (#1722)', () => {
+    const rules = buildRules(['stale-definitions'], 'off');
+    expect(rules).toEqual([]);
+  });
+
   it('returns only stale-definitions when filtered', () => {
-    const rules = buildRules(['stale-definitions']);
+    const rules = buildRules(['stale-definitions'], 'withoutExtensions');
     expect(rules.map(r => r.id)).toEqual(['stale-definitions']);
   });
 });
@@ -152,6 +162,29 @@ describe('runLintCommand', () => {
       expect(fs.readFileSync(path.join(rootDir, 'no-heading.md'), 'utf8')).toContain('# No Heading');
     }));
 
+  it('--fix refuses to change a note that is a symlink to a file outside the workspace', () =>
+    withTmpWorkspace({}, async ({ rootDir }) => {
+      // Named after the temp workspace, so a run that does escape can't leave
+      // a folder that a later run would trip over.
+      const outside = path.join(rootDir, '..', `${path.basename(rootDir)}-escaped`);
+      fs.mkdirSync(outside);
+      try {
+        fs.writeFileSync(path.join(outside, 'target.md'), 'Content without a heading.\n');
+        fs.symlinkSync(path.join(outside, 'target.md'), path.join(rootDir, 'no-heading.md'));
+
+        const logger = new TestLogger();
+        const code = await runLintCommand(['--fix', '--workspace', rootDir], logger);
+
+        expect(code).toBe(1);
+        expect(logger.errors.join('\n')).toContain('outside the workspace');
+        expect(fs.readFileSync(path.join(outside, 'target.md'), 'utf8')).toBe(
+          'Content without a heading.\n'
+        );
+      } finally {
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
+    }));
+
   it('--fix with no fixable issues reports nothing to fix', () =>
     withTmpWorkspace({ 'clean.md': '# Clean\n\nFine.\n' }, async ({ rootDir }) => {
       const logger = new TestLogger();
@@ -159,6 +192,72 @@ describe('runLintCommand', () => {
       expect(code).toBe(0);
       expect(logger.logs.join('')).toContain('No fixable');
     }));
+
+  it('does not report or fix stale-definitions when foam.edit.linkReferenceDefinitions is off (#1722)', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.edit.linkReferenceDefinitions': 'off' }),
+        'a.md': '# A\n\nSee [[b]].\n',
+        'b.md': '# B\n',
+      },
+      async ({ rootDir }) => {
+        const logger = new TestLogger();
+        const code = await runLintCommand(['--workspace', rootDir], logger);
+        expect(code).toBe(0);
+        expect(logger.logs.join('\n')).not.toContain('stale-definitions');
+
+        await runLintCommand(['--fix', '--workspace', rootDir], new TestLogger());
+        expect(fs.readFileSync(path.join(rootDir, 'a.md'), 'utf8')).toBe('# A\n\nSee [[b]].\n');
+      }
+    ));
+
+  it('errors when --rule stale-definitions is requested but foam.edit.linkReferenceDefinitions is off (#1722)', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.edit.linkReferenceDefinitions': 'off' }),
+        'a.md': '# A\n\nSee [[b]].\n',
+        'b.md': '# B\n',
+      },
+      async ({ rootDir }) => {
+        const logger = new TestLogger();
+        const code = await runLintCommand(['--rule', 'stale-definitions', '--fix', '--workspace', rootDir], logger);
+        expect(code).toBe(1);
+        expect(logger.errors[0]).toContain('foam.edit.linkReferenceDefinitions');
+        expect(fs.readFileSync(path.join(rootDir, 'a.md'), 'utf8')).toBe('# A\n\nSee [[b]].\n');
+      }
+    ));
+
+  it('errors without running the other rules when --rule names stale-definitions alongside a runnable rule but it is off (#1722)', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.edit.linkReferenceDefinitions': 'off' }),
+        'no-heading.md': 'Content without a heading.\n',
+      },
+      async ({ rootDir }) => {
+        const logger = new TestLogger();
+        const code = await runLintCommand(
+          ['--rule', 'missing-heading', '--rule', 'stale-definitions', '--workspace', rootDir],
+          logger
+        );
+        expect(code).toBe(1);
+        expect(logger.errors[0]).toContain('foam.edit.linkReferenceDefinitions');
+        expect(logger.logs.join('\n')).not.toContain('missing-heading');
+      }
+    ));
+
+  it('uses the configured foam.edit.linkReferenceDefinitions value when fixing (#1722)', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.edit.linkReferenceDefinitions': 'withExtensions' }),
+        'a.md': '# A\n\nSee [[b]].\n',
+        'b.md': '# B\n',
+      },
+      async ({ rootDir }) => {
+        const code = await runLintCommand(['--fix', '--workspace', rootDir], new TestLogger());
+        expect(code).toBe(0);
+        expect(fs.readFileSync(path.join(rootDir, 'a.md'), 'utf8')).toContain('[b]: b.md "B"');
+      }
+    ));
 
   it('--fix with --format json returns fixed count', () =>
     withTmpWorkspace({ 'no-heading.md': 'Content without a heading.\n' }, async ({ rootDir }) => {

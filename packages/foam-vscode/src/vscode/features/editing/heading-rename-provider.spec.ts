@@ -5,10 +5,14 @@ import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  deleteFile,
+  GOLLUM_SYNTAX,
   showInEditor,
+  useFoamConfiguration,
+  MEDIAWIKI_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import { createTestWorkspace } from '../../../test/test-utils';
-import { toVsCodeUri } from '../../utils/vsc-utils';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { HeadingRenameProvider } from './heading-rename-provider';
 
 const parser = createMarkdownParser([]);
@@ -20,6 +24,8 @@ const buildFoamLike = (ws: ReturnType<typeof createTestWorkspace>) => ({
 });
 
 describe('HeadingRenameProvider', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeEach(async () => {
     await cleanWorkspace();
     await closeEditors();
@@ -198,5 +204,35 @@ describe('HeadingRenameProvider', () => {
       expect(fileBEdits[0].newText).toContain('[ref1]: <note-a#New Heading>');
       expect(fileBEdits[0].newText).not.toContain('the reference');
     });
+  });
+});
+
+describe('HeadingRenameProvider with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  it('should update the section slug of links to the renamed heading', async () => {
+    await closeEditors();
+    const page = await createFile('# Section 2\n\nContent.\n', ['Page.md']);
+    const linking = await createFile('See [[Page#section-2]] for more.\n');
+    const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
+    const ws = createTestWorkspace([root])
+      .set(parser.parse(page.uri, page.content))
+      .set(parser.parse(linking.uri, linking.content));
+    const provider = new HeadingRenameProvider(buildFoamLike(ws) as any);
+
+    const { doc } = await showInEditor(page.uri);
+    const edits = await provider.provideRenameEdits(
+      doc,
+      new vscode.Position(0, 5),
+      'New Name',
+      new vscode.CancellationTokenSource().token
+    );
+
+    const linkingEdits = edits.get(toVsCodeUri(linking.uri)) ?? [];
+    expect(linkingEdits.map(e => e.newText)).toEqual(['[[Page#new-name]]']);
+
+    await closeEditors();
+    await deleteFile(page.uri);
+    await deleteFile(linking.uri);
   });
 });

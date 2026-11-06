@@ -64,6 +64,28 @@ describe('Foam URI', () => {
     });
   });
 
+  it('resolves a URI-like object that is not an instance of URI', () => {
+    const prototype = Object.create(Object.getPrototypeOf(URI.prototype));
+    Object.defineProperties(
+      prototype,
+      Object.getOwnPropertyDescriptors(URI.prototype)
+    );
+    const uriLike = Object.assign(
+      Object.create(prototype),
+      new URI({ scheme: 'file', path: 'relative/note.md' })
+    ) as URI;
+    expect(uriLike instanceof URI).toBeFalsy();
+
+    expect(URI.file('/my/file.md').resolve(uriLike)).toEqual(
+      URI.file('/my/relative/note.md')
+    );
+  });
+
+  it('uses the scheme of a URI-like object given as default scheme', () => {
+    const uriLike = { ...URI.file('/my/file.md') } as URI;
+    expect(URI.parse('/my/note.md', uriLike).scheme).toEqual('file');
+  });
+
   it('supports computing relative paths', () => {
     expect(URI.file('/my/file.md').resolve('../hello.md')).toEqual(
       URI.file('/hello.md')
@@ -110,6 +132,23 @@ describe('asAbsoluteUri', () => {
       );
     });
   });
+  it('resolves an empty path to the first folder instead of throwing', () => {
+    const workspaceFolder = URI.file('/workspace/folder');
+    expect(asAbsoluteUri('', [workspaceFolder]).path).toBe('/workspace/folder');
+  });
+  it('does not resolve a bare folder name to that folder itself', () => {
+    const workspaceFolder1 = URI.file('/absolute/path/folder1');
+    const workspaceFolder2 = URI.file('/absolute/path/folder2');
+    expect(
+      asAbsoluteUri('folder2', [workspaceFolder1, workspaceFolder2]).path
+    ).toBe('/absolute/path/folder1/folder2');
+  });
+  it('matches folder names only in a multi-root workspace', () => {
+    const workspaceFolder = URI.file('/absolute/path/folder');
+    expect(asAbsoluteUri('folder/file', [workspaceFolder]).path).toBe(
+      '/absolute/path/folder/folder/file'
+    );
+  });
   it('should use the first folder if no matching folder is found', () => {
     const uri = URI.file('folder3/file');
     const workspaceFolder1 = URI.file('/absolute/path/folder1');
@@ -128,6 +167,20 @@ describe('asAbsoluteUri', () => {
     ).toEqual(workspaceFolder2.joinPath('file'));
   });
 
+  it('should accept a URI-like object that is not an instance of URI', () => {
+    const uri = URI.file('/absolute/path');
+    const uriLike = { ...uri } as URI;
+    expect(asAbsoluteUri(uriLike, [URI.file('/base')])).toEqual(uri);
+  });
+
+  it('should resolve a relative URI-like object', () => {
+    const workspaceFolder = URI.file('/workspace/folder');
+    const uriLike = { ...URI.file('relative/path') } as URI;
+    expect(asAbsoluteUri(uriLike, [workspaceFolder])).toEqual(
+      workspaceFolder.joinPath('relative/path')
+    );
+  });
+
   it('should return absolute path as-is via forPath when path does not start from base folder', () => {
     // Documents the INTENTIONAL behavior after forceSubfolder removal:
     // An absolute path like '/journal/file.md' that does NOT start with the
@@ -137,5 +190,27 @@ describe('asAbsoluteUri', () => {
     ]);
     expect(result.path).toBe('/journal/file.md');
     expect(result.scheme).toBe('file');
+  });
+
+  describe('toJSON / fromJSON', () => {
+    it('round-trips all components through toJSON/fromJSON', () => {
+      const uri = URI.parse('https://user@host:1/a/b?x=1#frag', 'file');
+      const restored = URI.fromJSON(uri.toJSON());
+      expect(restored).toBeInstanceOf(URI);
+      expect(restored.isEqual(uri)).toBe(true);
+    });
+
+    it('round-trips a placeholder uri', () => {
+      const uri = URI.placeholder('ghost note');
+      const restored = URI.fromJSON(uri.toJSON());
+      expect(restored.scheme).toBe('placeholder');
+      expect(restored.isEqual(uri)).toBe(true);
+    });
+
+    it('is used automatically by JSON.stringify', () => {
+      const uri = URI.file('/a/b.md').with({ fragment: 'sec' });
+      const restored = URI.fromJSON(JSON.parse(JSON.stringify(uri)));
+      expect(restored.isEqual(uri)).toBe(true);
+    });
   });
 });

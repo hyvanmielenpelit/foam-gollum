@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'fs';
 import path from 'path';
-import { URI } from '@foam/core';
+import { Config, IFoamConfig, URI } from '@foam/core';
 
 export {
   InMemoryDataStore,
@@ -42,3 +42,29 @@ export const FOAM_EXTENSION_ID = (() => {
   );
   return `${manifest.publisher}.${manifest.name}`;
 })();
+
+/**
+ * Reads wikilinks with the given syntax in every test of the enclosing
+ * `describe` block, then restores the previous configuration. The other
+ * settings keep their current values.
+ */
+export const useWikilinkSyntax = (
+  syntax: 'mediawiki' | 'gollum',
+  caseInsensitive = syntax === 'gollum'
+) => {
+  // `Config` does not expose the installed configuration, which this wraps
+  const config = Config as unknown as { defaultConfig: IFoamConfig };
+  let previous: IFoamConfig;
+  beforeEach(() => {
+    previous = config.defaultConfig;
+    Config.setDefaultConfig(
+      Object.assign(Object.create(previous), {
+        getWikilinksSyntax: () => syntax,
+        getWikilinksCaseInsensitive: () => caseInsensitive,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(previous);
+  });
+};

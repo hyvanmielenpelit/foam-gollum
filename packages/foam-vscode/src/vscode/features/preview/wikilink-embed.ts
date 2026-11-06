@@ -8,9 +8,10 @@ import { Logger } from '@foam/core';
 import { Resource, ResourceParser, Block } from '@foam/core';
 import { MarkdownLink } from '@foam/core';
 import { URI } from '@foam/core';
-import { Position } from '@foam/core';
+import { Position, Range } from '@foam/core';
 import { TextEdit } from '@foam/core';
 import { isNone, isSome } from '@foam/core';
+import { stripFrontMatter, stripFrontMatterAndTitle } from '@foam/core';
 import { RenderContext } from '@foam/core';
 import { Config } from '@foam/core';
 
@@ -31,8 +32,8 @@ export interface WikilinkEmbedOptions {
   /** Fallback for resolving `![[#section]]` / `$current`, used when the
    * render context stack is empty (i.e. top-level render). */
   getCurrentResource?: (env?: any) => Resource | null;
-  /** Fresh markdown-it carrying the full Foam pipeline (issue #1642 — avoids
-   * re-entering the outer `md` while it's mid-render). */
+  /** Returns the instance that renders the embedded note; it is called
+   * mid-render, so it may be `md` itself. Defaults to `md`. */
   createInnerMd?: () => markdownit;
   renderContext: RenderContext;
   /**
@@ -89,6 +90,30 @@ export const markdownItWikilinkEmbed = (
         }
 
         let includedNote = workspace.find(wikilink);
+
+        // A Gollum path such as `../sub/note` is relative to the current note
+        if (
+          !includedNote &&
+          !wikilink.startsWith('#') &&
+          Config.getWikilinksSyntax() === 'gollum'
+        ) {
+          const currentResource = resolveCurrentNote();
+          const targetUri =
+            currentResource &&
+            workspace.resolveLink(currentResource, {
+              type: 'wikilink',
+              rawText: `[[${wikilink}]]`,
+              range: Range.create(0, 0),
+              isEmbed: true,
+            });
+          const target =
+            targetUri && !targetUri.isPlaceholder()
+              ? workspace.find(targetUri)
+              : null;
+          if (target) {
+            includedNote = { ...target, uri: targetUri };
+          }
+        }
 
         if (!includedNote && wikilink.startsWith('#')) {
           const currentResource = resolveCurrentNote();
@@ -198,13 +223,6 @@ function getNoteContent(
         getEmbedNoteType
       );
 
-      const extractor: EmbedNoteExtractor =
-        noteScope === 'full'
-          ? fullExtractor
-          : noteScope === 'content'
-          ? contentExtractor
-          : fullExtractor;
-
       const formatter: EmbedNoteFormatter =
         noteStyle === 'card'
           ? cardFormatter
@@ -212,7 +230,12 @@ function getNoteContent(
           ? inlineFormatter
           : cardFormatter;
 
-      content = extractor(includedNote, parser, workspace);
+      content = withLinksRelativeToWorkspaceRoot(
+        includedNote.uri,
+        extractNoteText(includedNote, noteScope === 'content'),
+        parser,
+        workspace
+      );
       toRender = formatter(content, md);
       break;
     }
@@ -250,8 +273,29 @@ export function withLinksRelativeToWorkspaceRoot(
   // Re-parse only to pick up link positions inside `noteText` — the URI is
   // just stamped onto `Resource.uri`, which we don't read.
   const note = parser.parse(noteUri, noteText);
+  const isGollum = Config.getWikilinksSyntax() === 'gollum';
   const edits = note.links
     .map(link => {
+      if (isGollum) {
+        // A Gollum path is relative to the embedded note's folder, so it is
+        // rewritten relative to the wiki root: `/folder/note`
+        if (link.type === 'external') {
+          return null;
+        }
+        const targetUri = workspace.resolveLink(note, link);
+        if (!targetUri || targetUri.isPlaceholder()) {
+          return null;
+        }
+        const rootPath = workspace.relativePath(targetUri);
+        const stripExtension =
+          link.type === 'wikilink' &&
+          rootPath.endsWith(workspace.defaultExtension);
+        return MarkdownLink.createUpdateLinkEdit(link, {
+          target: stripExtension
+            ? rootPath.slice(0, -workspace.defaultExtension.length)
+            : rootPath,
+        });
+      }
       const info = MarkdownLink.analyzeLink(link);
       const resource = workspace.find(info.target, noteUri);
       // embedded notes that aren't created are still collected
@@ -299,81 +343,36 @@ export function retrieveNoteConfig(
 }
 
 /**
- * A type of function that gets the desired content of the note
+ * Returns the part of the note the embed points at. Slicing happens on the
+ * source as read, so the parsed section and block ranges line up with it.
+ * A fragment that resolves to nothing falls back to the whole note, which is
+ * shown without its frontmatter.
  */
-export type EmbedNoteExtractor = (
-  note: Resource,
-  parser: ResourceParser,
-  workspace: FoamWorkspace
-) => string;
-
-function fullExtractor(
-  note: Resource,
-  parser: ResourceParser,
-  workspace: FoamWorkspace
-): string {
-  let noteText = readFileSync(note.uri.toFsPath()).toString();
-  if (note.uri.fragment.startsWith('^')) {
-    const blockId = note.uri.fragment.slice(1);
-    const block = Resource.findBlock(note, blockId);
+function extractNoteText(note: Resource, withoutTitle: boolean): string {
+  const noteText = readFileSync(note.uri.toFsPath()).toString();
+  const rows = noteText.split('\n');
+  const fragment = note.uri.fragment;
+  if (fragment.startsWith('^')) {
+    const block = Resource.findBlock(note, fragment.slice(1));
     if (isSome(block)) {
-      noteText = extractBlockContent(noteText, note, block);
+      return extractBlockContent(noteText, note, block);
     }
-  } else {
-    const section = Resource.findSection2(note, note.uri.fragment, Config.getWikilinksSyntax() === 'gollum');
+  } else if (fragment) {
+    const section = Resource.findSection2(
+      note,
+      fragment,
+      Config.getWikilinksSyntax() === 'gollum'
+    );
     if (isSome(section)) {
-      const rows = noteText.split('\n');
-      noteText = rows
-        .slice(section.range.start.line, section.range.end.line)
-        .join('\n');
+      const start = withoutTitle
+        ? section.headingRange.end.line + 1
+        : section.range.start.line;
+      return rows.slice(start, section.range.end.line).join('\n');
     }
   }
-  noteText = withLinksRelativeToWorkspaceRoot(
-    note.uri,
-    noteText,
-    parser,
-    workspace
-  );
-  return noteText;
-}
-
-function contentExtractor(
-  note: Resource,
-  parser: ResourceParser,
-  workspace: FoamWorkspace
-): string {
-  let noteText = readFileSync(note.uri.toFsPath()).toString();
-  if (note.uri.fragment.startsWith('^')) {
-    const blockId = note.uri.fragment.slice(1);
-    const block = Resource.findBlock(note, blockId);
-    if (isSome(block)) {
-      noteText = extractBlockContent(noteText, note, block);
-    }
-  } else {
-    let section = Resource.findSection2(note, note.uri.fragment, Config.getWikilinksSyntax() === 'gollum');
-    if (!note.uri.fragment) {
-      // if there's no fragment(section), the wikilink is linking to the entire note,
-      // in which case we need to remove the title. We could just use rows.shift()
-      // but should the note start with blank lines, it will only remove the first blank line
-      // leaving the title
-      // A better way is to find where the actual title starts by assuming it's at section[0]
-      // then we treat it as the same case as link to a section
-      section = note.sections.length ? note.sections[0] : null;
-    }
-    let rows = noteText.split('\n');
-    if (isSome(section)) {
-      rows = rows.slice(section.range.start.line, section.range.end.line);
-    }
-    rows.shift();
-    noteText = rows.join('\n');
-  }
-  noteText = withLinksRelativeToWorkspaceRoot(
-    note.uri,
-    noteText,
-    parser,
-    workspace
-  );
-  return noteText;
+  return withoutTitle
+    ? stripFrontMatterAndTitle(noteText, note.sections)
+    : stripFrontMatter(noteText);
 }
 
 /**
@@ -490,17 +489,20 @@ function generateImageStyles(params: ImageParameters, md: markdownit): string {
   // Build CSS styles for the image
   const styles: string[] = [];
 
-  if (width) {
-    styles.push(`width: ${addDefaultUnit(width)}`);
+  const cssWidth = toCssDimension(width);
+  const cssHeight = toCssDimension(height);
+
+  if (cssWidth) {
+    styles.push(`width: ${cssWidth}`);
 
     // If only width is specified, set height to auto to maintain aspect ratio
-    if (!height) {
+    if (!cssHeight) {
       styles.push('height: auto');
     }
   }
 
-  if (height) {
-    styles.push(`height: ${addDefaultUnit(height)}`);
+  if (cssHeight) {
+    styles.push(`height: ${cssHeight}`);
   }
 
   const styleAttr = styles.length > 0 ? ` style="${styles.join('; ')}"` : '';
@@ -519,12 +521,26 @@ function generateImageStyles(params: ImageParameters, md: markdownit): string {
   return imageHtml;
 }
 
-function addDefaultUnit(value: string): string {
-  // If no unit is specified and it's a pure number, add 'px'
-  if (/^\d+(\.\d+)?$/.test(value)) {
-    return value + 'px';
+/**
+ * Validates a size parameter and returns it as a CSS dimension, or
+ * `undefined` when it isn't one.
+ *
+ * These values are interpolated into a `style="..."` attribute, so anything
+ * that isn't a plain dimension is dropped rather than emitted: a value
+ * carrying a quote (`100" onload="alert(1)`) would otherwise close the
+ * attribute and inject an event handler, and a value carrying a `;` could
+ * append further declarations. The accepted forms mirror the width x height
+ * parser above.
+ */
+function toCssDimension(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
   }
-  return value;
+  if (!/^\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh)?$/i.test(value)) {
+    return undefined;
+  }
+  // If no unit is specified and it's a pure number, add 'px'
+  return /^\d+(?:\.\d+)?$/.test(value) ? value + 'px' : value;
 }
 
 function escapeHtml(text: string): string {

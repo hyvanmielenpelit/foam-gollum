@@ -1,11 +1,15 @@
 import path from 'node:path';
 
 import {
+  Config,
+  FoamError,
+  IFoamConfig,
   URI,
+  asAbsoluteUri,
   getDailyNoteTemplateCandidateUris,
   getTemplatesDir,
-  resolveDailyNote,
 } from '@foam/core';
+import { resolveDailyNote } from '@foam/core/scripting';
 import { loadWorkspaceFromDirectory } from '../support/filesystem';
 import {
   parseArgs,
@@ -27,13 +31,13 @@ Options:
   --date <YYYY-MM-DD>  Date (default: today)
   --create             Create the note if it doesn't exist
   --path-only          Print only the resolved path (for scripting)
+  --trust              Allow a JavaScript template (daily-note.js) to execute.
+                       Off by default — only opt in when you authored the
+                       templates in this workspace yourself.
   --workspace <dir>    Workspace root (default: FOAM_WORKSPACE env var, then cwd)
   --format <fmt>       text (default) or json
   --help               Show this help
 `;
-
-// Default path pattern when no template: journals/YYYY-MM-DD.md
-const DEFAULT_JOURNALS_DIR = 'journals';
 
 // ─── Domain ───────────────────────────────────────────────────────────────────
 
@@ -51,45 +55,45 @@ export function parseDateArg(dateStr: string | undefined): Date {
   return d;
 }
 
-export function defaultDailyNoteUri(date: Date, rootUri: URI): URI {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const y = date.getFullYear();
-  const m = pad(date.getMonth() + 1);
-  const d = pad(date.getDate());
-  const filename = `${y}-${m}-${d}.md`;
-  return rootUri.joinPath(DEFAULT_JOURNALS_DIR, filename);
+export interface DailyNote {
+  uri: URI;
+  /** What a new note would contain. */
+  content: string;
+  /** The daily-note template; `undefined` when the workspace has none. */
+  templateUri?: URI;
 }
 
 /**
- * Resolve the daily note URI using the template if one exists,
- * otherwise fall back to journals/YYYY-MM-DD.md.
+ * Resolve the daily note the way desktop Foam does: the template's
+ * `filepath` when it has one, otherwise `journal/YYYY-MM-DD.md`. Refuses while
+ * `foam.openDailyNote.*` settings Foam no longer reads would have placed it.
  */
-export async function resolveDailyNoteUri(
+export async function resolveDailyNoteFile(
   date: Date,
   rootUri: URI,
   foam: Awaited<ReturnType<typeof loadWorkspaceFromDirectory>>['foam'],
-  dataStore: Awaited<ReturnType<typeof loadWorkspaceFromDirectory>>['dataStore']
-): Promise<URI> {
-  const templatesDir = getTemplatesDir(rootUri);
-  const candidates = getDailyNoteTemplateCandidateUris(templatesDir);
-
-  const fallbackUri = defaultDailyNoteUri(date, rootUri);
-
-  for (const templateUri of candidates) {
-    const content = await dataStore.read(templateUri);
-    if (content === null) continue;
-
-    // Template exists — use it to derive the filepath
-    const result = await resolveDailyNote(date, templateUri, foam, async uri => {
-      const text = await dataStore.read(uri);
-      return text ?? '';
-    }, { fallbackFilepath: fallbackUri });
-
-    return foam.workspace.resolveUri(result.filepath.path);
+  dataStore: Awaited<ReturnType<typeof loadWorkspaceFromDirectory>>['dataStore'],
+  config: IFoamConfig,
+  isTrusted: boolean
+): Promise<DailyNote> {
+  let templateUri: URI | undefined;
+  for (const candidate of getDailyNoteTemplateCandidateUris(getTemplatesDir(rootUri))) {
+    if ((await dataStore.read(candidate)) !== null) {
+      templateUri = candidate;
+      break;
+    }
   }
 
-  // No template found — use default path
-  return fallbackUri;
+  const note = await resolveDailyNote(
+    date,
+    templateUri,
+    foam,
+    async uri => (await dataStore.read(uri)) ?? '',
+    config.getLegacyDailyNoteSettings(),
+    { locale: config.getDateLocale(), isTrusted }
+  );
+  const noteUri = asAbsoluteUri(note.filepath, foam.workspace.roots);
+  return { uri: noteUri, content: note.content, templateUri };
 }
 
 // ─── Command runner ───────────────────────────────────────────────────────────
@@ -110,12 +114,32 @@ export async function runDailyCommand(
   const dateStr = getString(parsed, 'date');
   const shouldCreate = getFlag(parsed, 'create');
   const pathOnly = getFlag(parsed, 'path-only');
+  const isTrusted = getFlag(parsed, 'trust');
 
   const date = parseDateArg(dateStr);
   const { rootDir, rootUri, foam, dataStore, workspace } =
     await loadWorkspaceFromDirectory(workspaceDir);
 
-  const noteUri = await resolveDailyNoteUri(date, rootUri, foam, dataStore);
+  let note: DailyNote;
+  try {
+    note = await resolveDailyNoteFile(
+      date,
+      rootUri,
+      foam,
+      dataStore,
+      Config,
+      isTrusted
+    );
+  } catch (err) {
+    if (err instanceof FoamError && err.code === 'untrusted_workspace') {
+      logger.error(
+        `${err.message}\n\nRe-run with --trust if you authored the template yourself.`
+      );
+      return 1;
+    }
+    throw err;
+  }
+  const noteUri = note.uri;
   const notePath = noteUri.toFsPath();
 
   let exists = await dataStore.exists(noteUri);
@@ -128,27 +152,19 @@ export async function runDailyCommand(
   // not the user's intent — `--create` against an existing note resolves
   // to `open` because nothing was written.
   let wroteFile = false;
-  let appliedTemplate: URI | undefined;
 
   if (shouldCreate && !exists) {
-    // Find the template to get content, then write
-    const templatesDir = getTemplatesDir(rootUri);
-    const candidates = getDailyNoteTemplateCandidateUris(templatesDir);
-    let content = `# ${formatDateTitle(date)}\n`;
-
-    for (const templateUri of candidates) {
-      const templateContent = await dataStore.read(templateUri);
-      if (templateContent === null) continue;
-      const result = await resolveDailyNote(date, templateUri, foam, async uri => {
-        const text = await dataStore.read(uri);
-        return text ?? '';
-      }, { fallbackFilepath: noteUri });
-      content = result.content;
-      appliedTemplate = templateUri;
-      break;
+    try {
+      await dataStore.write(noteUri, note.content);
+    } catch (err) {
+      // The note's path comes from the template's filepath, or the default.
+      if (err instanceof FoamError && err.code === 'invalid_input') {
+        throw new Error(
+          `${err.message}. Check the daily note template's filepath.`
+        );
+      }
+      throw err;
     }
-
-    await dataStore.write(noteUri, content);
     exists = true;
     wroteFile = true;
   }
@@ -163,7 +179,7 @@ export async function runDailyCommand(
 
   if (pathOnly) {
     logger.info(notePath);
-    return { exitCode: 0, telemetryProperties: buildTelemetryProperties(wroteFile, appliedTemplate) };
+    return { exitCode: 0, telemetryProperties: buildTelemetryProperties(wroteFile, note.templateUri) };
   }
 
   if (format === 'json') {
@@ -173,7 +189,7 @@ export async function runDailyCommand(
     logger.info(`${pathColor(relPath)}  ${status}`);
   }
 
-  return { exitCode: 0, telemetryProperties: buildTelemetryProperties(wroteFile, appliedTemplate) };
+  return { exitCode: 0, telemetryProperties: buildTelemetryProperties(wroteFile, note.templateUri) };
 }
 
 /**
@@ -201,11 +217,4 @@ function buildTelemetryProperties(
     props['template-format'] = fsPath.endsWith('.js') ? 'js' : 'md';
   }
   return props;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDateTitle(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }

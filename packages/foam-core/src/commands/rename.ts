@@ -12,6 +12,7 @@ import { FoamWorkspace } from '../model/workspace';
 import { URI } from '../model/uri';
 import { IDataStore } from '../services/datastore';
 import { FoamError } from '../common/errors';
+import { Config } from '../config';
 import { getDirectory, getExtension, joinPath } from '../utils/path';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
@@ -110,9 +111,13 @@ export async function renameNote(
   }
 
   const edits = computeWikilinkRenameEdits(workspace, graph, oldUri, newUri);
-  await applyEditsToFiles(edits, dataStore);
-
+  // Before any link is rewritten, so a refused move leaves every note as it was
   await dataStore.move(oldUri, newUri);
+  await applyEditsToFiles(
+    // The note's links to itself are now in the file at `newUri`
+    edits.map(e => (e.uri.isEqual(oldUri) ? { ...e, uri: newUri } : e)),
+    dataStore
+  );
 
   const oldId = workspace.getIdentifier(oldUri);
   workspace.delete(oldUri);
@@ -191,7 +196,12 @@ export async function renameSection(
   oldLabel: string,
   newLabel: string
 ): Promise<RenameSectionResult> {
-  const section = Resource.findSection(resource, oldLabel);
+  // A Gollum section may be named by its slug as well as by its heading text
+  const section =
+    Resource.findSection(resource, oldLabel) ??
+    (Config.getWikilinksSyntax() === 'gollum'
+      ? Resource.findSection2(resource, oldLabel, true)
+      : null);
   if (!section) {
     throw new FoamError(
       'invalid_input',
@@ -228,7 +238,7 @@ export async function renameSection(
     graph,
     workspace,
     resource.uri,
-    oldLabel,
+    section.label,
     newLabel
   );
 

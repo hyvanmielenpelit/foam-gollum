@@ -1,4 +1,3 @@
-import { isEmpty } from 'lodash';
 import {
   Disposable,
   EndOfLine,
@@ -21,9 +20,8 @@ import { fromVsCodeUri, toVsCodeUri } from '../utils/vsc-utils';
 import { asAbsoluteUri, FoamWorkspace, URI } from '@foam/core';
 import { getFoamVsCodeConfig } from '../config';
 import {
-  AlwaysIncludeMatcher,
-  FileListBasedMatcher,
   GenericDataStore,
+  GlobMatcher,
   IDataStore,
   IMatcher,
 } from '@foam/core';
@@ -33,6 +31,18 @@ interface SelectionInfo {
   selection: Selection;
   content: string;
 }
+
+/**
+ * Commands allowed to run from `command:` links inside Foam's hover tooltips.
+ *
+ * Tooltips are built from note content, so a blanket `isTrusted = true` would
+ * make *every* `command:` link clickable. Allow Foam's own tooltip links and
+ * block every other `command:` link.
+ */
+export const FOAM_TOOLTIP_TRUSTED_COMMANDS = [
+  'foam-vscode.open-resource',
+  'foam-vscode.create-note',
+];
 
 /**
  * Returns a MarkdownString of the note content
@@ -50,7 +60,7 @@ export function formatMarkdownTooltip(content: string): MarkdownString {
   const diffLines = totalLines - lines;
   const ellipsis = diffLines > 0 ? `\n\n[...] *(+ ${diffLines} lines)*` : '';
   const md = new MarkdownString(`${excerpt}${ellipsis}`);
-  md.isTrusted = true;
+  md.isTrusted = { enabledCommands: FOAM_TOOLTIP_TRUSTED_COMMANDS };
   return md;
 }
 
@@ -492,14 +502,16 @@ export async function createMatcherAndDataStore(
     moveFile,
     fileExists
   );
-  const matcher =
-    isEmpty(excludes) && includes.length === 1 && includes[0] === '**/*'
-      ? new AlwaysIncludeMatcher()
-      : await FileListBasedMatcher.createFromListFn(
-          listFiles,
-          includes,
-          excludes
-        );
+  // Matching is answered from the globs directly, so a file can be tested
+  // before it has ever been listed — which is what lets a just-moved file be
+  // re-indexed without waiting for a workspace rescan. See issue #1696.
+  const matcher = new GlobMatcher(
+    workspace.workspaceFolders.map(folder => ({
+      uri: fromVsCodeUri(folder.uri),
+      include: includePatterns.get(folder.name),
+      exclude: excludePatterns.get(folder.name),
+    }))
+  );
 
   return { matcher, dataStore, includePatterns, excludePatterns };
 }

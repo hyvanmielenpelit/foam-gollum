@@ -1,6 +1,7 @@
-import { URI } from './uri';
+import { URI, URIComponents } from './uri';
 import { Range } from './range';
 import { Position } from './position';
+import type { Task } from './task';
 
 export interface ResourceLink {
   type: 'wikilink' | 'link' | 'external';
@@ -53,8 +54,9 @@ export interface NoteLinkDefinition {
 
 export abstract class NoteLinkDefinition {
   static format(definition: NoteLinkDefinition) {
-    const url =
-      definition.url.indexOf(' ') > 0 ? `<${definition.url}>` : definition.url;
+    const url = definition.url.includes(' ')
+      ? `<${definition.url}>`
+      : definition.url;
     let text = `[${definition.label}]: ${url}`;
     if (definition.title) {
       text = `${text} "${definition.title}"`;
@@ -85,7 +87,10 @@ export interface Alias {
 export interface Section {
   label: string;
   level: number;
+  /** From the heading to the start of the next section at the same or a higher level */
   range: Range;
+  /** The heading alone — one line for ATX, two or more for setext */
+  headingRange: Range;
 }
 
 export type BlockType =
@@ -152,13 +157,28 @@ export interface Resource {
   aliases: Alias[];
   links: ResourceLink[];
   footnotes: Footnote[];
+  tasks: Task[];
 }
 
 export interface ResourceParser {
   parse: (uri: URI, text: string) => Resource;
 }
 
+/**
+ * The plain-data (JSON-safe) form of a {@link Resource}. Identical to Resource
+ * except `uri` is a {@link URIComponents} bag rather than a URI instance.
+ */
+export type ResourceJson = Omit<Resource, 'uri'> & { uri: URIComponents };
+
 export abstract class Resource {
+  public static toJSON(resource: Resource): ResourceJson {
+    return { ...resource, uri: resource.uri.toJSON() };
+  }
+
+  public static fromJSON(data: ResourceJson): Resource {
+    return { ...data, uri: URI.fromJSON(data.uri) };
+  }
+
   public static sortByTitle(a: Resource, b: Resource) {
     return a.title.localeCompare(b.title);
   }

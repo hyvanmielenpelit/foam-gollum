@@ -1,6 +1,6 @@
 {
   "name": "@foam/cli",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Foam CLI for publishing knowledge bases",
   "license": "MIT",
   "bin": {
@@ -15,6 +15,7 @@
     "test": "yarn test:unit && yarn test:e2e",
     "test:unit": "vitest run",
     "test:e2e": "yarn build && vitest run --config vitest.e2e.config.ts",
+    "bench": "echo 'No benchmarks for @foam/cli'",
     "lint": "oxlint src"
   },
   "devDependencies": {

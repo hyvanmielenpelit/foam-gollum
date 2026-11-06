@@ -1,5 +1,9 @@
 import { Disposable, workspace } from 'vscode';
-import { IFoamConfig } from '@foam/core';
+import {
+  ALWAYS_EXCLUDED,
+  IFoamConfig,
+  LegacyDailyNoteSettings,
+} from '@foam/core';
 import { expandAlternateGroups } from './utils/glob-expand';
 
 export class VsCodeFoamConfig implements IFoamConfig {
@@ -12,9 +16,8 @@ export class VsCodeFoamConfig implements IFoamConfig {
 
   getFilesExclude(): string[] {
     return [
-      '**/.foam/**',
+      ...ALWAYS_EXCLUDED,
       ...workspace.getConfiguration().get('foam.files.exclude', []),
-      ...workspace.getConfiguration().get('foam.files.ignore', []),
       ...Object.keys(workspace.getConfiguration().get('files.exclude', {})),
     ].flatMap(expandAlternateGroups);
   }
@@ -65,32 +68,25 @@ export class VsCodeFoamConfig implements IFoamConfig {
       .get('templates.folder', '.foam/templates');
   }
 
-  getDailyNoteDirectory(): string | null {
-    return (
-      workspace
-        .getConfiguration('foam')
-        .get<string | null>('openDailyNote.directory', null) ?? null
-    );
-  }
-
-  getDailyNoteFilenameFormat(): string {
-    return workspace
-      .getConfiguration('foam')
-      .get('openDailyNote.filenameFormat', 'isoDate');
-  }
-
-  getDailyNoteFileExtension(): string {
-    return workspace
-      .getConfiguration('foam')
-      .get('openDailyNote.fileExtension', 'md');
-  }
-
-  getDailyNoteTitleFormat(): string | null {
-    return (
-      workspace
-        .getConfiguration('foam')
-        .get<string | null>('openDailyNote.titleFormat', null) ?? null
-    );
+  getLegacyDailyNoteSettings(): LegacyDailyNoteSettings {
+    const config = workspace.getConfiguration('foam');
+    // Only what the user set: these settings are declared so VS Code can say
+    // they are no longer used, not to give them a default
+    const userValue = (key: string) => {
+      const value = config.inspect<string | null>(`openDailyNote.${key}`);
+      return (
+        value?.workspaceFolderValue ??
+        value?.workspaceValue ??
+        value?.globalValue ??
+        undefined
+      );
+    };
+    return {
+      directory: userValue('directory'),
+      filenameFormat: userValue('filenameFormat'),
+      fileExtension: userValue('fileExtension'),
+      titleFormat: userValue('titleFormat'),
+    };
   }
 
   getOpenDailyNoteOnStartup(): boolean {
@@ -106,10 +102,10 @@ export class VsCodeFoamConfig implements IFoamConfig {
   getDateSnippetsAfterCompletion(): 'noop' | 'createNote' | 'navigateToNote' {
     return workspace
       .getConfiguration('foam')
-      .get(
-        'dateSnippets.afterCompletion',
-        'createNote'
-      ) as 'noop' | 'createNote' | 'navigateToNote';
+      .get('dateSnippets.afterCompletion', 'createNote') as
+      | 'noop'
+      | 'createNote'
+      | 'navigateToNote';
   }
 
   getLinksDirectoryMode(): 'resolve' | 'disabled' {
@@ -119,24 +115,23 @@ export class VsCodeFoamConfig implements IFoamConfig {
   }
 
   getLinksSyncEnable(): boolean {
-    return workspace
-      .getConfiguration('foam')
-      .get('links.sync.enable', true);
+    return workspace.getConfiguration('foam').get('links.sync.enable', true);
   }
 
   getLinksHoverEnable(): boolean {
-    return workspace
-      .getConfiguration('foam')
-      .get('links.hover.enable', true);
+    return workspace.getConfiguration('foam').get('links.hover.enable', true);
   }
 
-  getEditLinkReferenceDefinitions(): 'withExtensions' | 'withoutExtensions' | 'off' {
+  getEditLinkReferenceDefinitions():
+    | 'withExtensions'
+    | 'withoutExtensions'
+    | 'off' {
     return workspace
       .getConfiguration('foam')
-      .get(
-        'edit.linkReferenceDefinitions',
-        'off'
-      ) as 'withExtensions' | 'withoutExtensions' | 'off';
+      .get('edit.linkReferenceDefinitions', 'off') as
+      | 'withExtensions'
+      | 'withoutExtensions'
+      | 'off';
   }
 
   getCompletionLabel(): 'path' | 'title' | 'identifier' {
@@ -148,10 +143,9 @@ export class VsCodeFoamConfig implements IFoamConfig {
   getCompletionUseAlias(): 'never' | 'whenPathDiffersFromTitle' {
     return workspace
       .getConfiguration('foam')
-      .get(
-        'completion.useAlias',
-        'never'
-      ) as 'never' | 'whenPathDiffersFromTitle';
+      .get('completion.useAlias', 'never') as
+      | 'never'
+      | 'whenPathDiffersFromTitle';
   }
 
   getCompletionLinkFormat(): 'wikilink' | 'link' {
@@ -160,19 +154,22 @@ export class VsCodeFoamConfig implements IFoamConfig {
       .get('completion.linkFormat', 'wikilink') as 'wikilink' | 'link';
   }
 
-  getPreviewEmbedNoteType(): 'full-inline' | 'full-card' | 'content-inline' | 'content-card' {
+  getPreviewEmbedNoteType():
+    | 'full-inline'
+    | 'full-card'
+    | 'content-inline'
+    | 'content-card' {
     return workspace
       .getConfiguration('foam')
-      .get(
-        'preview.embedNoteType',
-        'full-card'
-      ) as 'full-inline' | 'full-card' | 'content-inline' | 'content-card';
+      .get('preview.embedNoteType', 'full-card') as
+      | 'full-inline'
+      | 'full-card'
+      | 'content-inline'
+      | 'content-card';
   }
 
   getGraphOnStartup(): boolean {
-    return workspace
-      .getConfiguration('foam')
-      .get('graph.onStartup', false);
+    return workspace.getConfiguration('foam').get('graph.onStartup', false);
   }
 
   getGraphNavigateToPreview(): boolean {
@@ -182,9 +179,7 @@ export class VsCodeFoamConfig implements IFoamConfig {
   }
 
   getGraphTitleMaxLength(): number {
-    return workspace
-      .getConfiguration('foam')
-      .get('graph.titleMaxLength', 24);
+    return workspace.getConfiguration('foam').get('graph.titleMaxLength', 24);
   }
 
   getGraphStyle(): object {

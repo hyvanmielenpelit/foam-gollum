@@ -50,7 +50,7 @@ export interface RenderReportOptions {
   parser: ResourceParser;
   /** URIs of the notes to include, in document order. */
   noteUris: URI[];
-  /** Map from URI to the note's raw markdown text. */
+  /** Map from URI to the note's exported body (`ExportedNote.body`). */
   noteContent: Map<string, string>;
   /** Title shown at the top of the report. */
   title: string;
@@ -175,8 +175,8 @@ export async function renderReport(options: RenderReportOptions): Promise<string
     const resource = workspace.find(uri);
     if (!resource) continue;
     currentResource = resource;
-    const raw = noteContent.get(uri.toString()) ?? '';
-    const bodyHtml = md.render(stripTitleHeading(raw, resource));
+    const markdown = noteContent.get(uri.toString()) ?? '';
+    const bodyHtml = md.render(markdown);
     const previewHtml = bodyHtml;
     rendered.push({
       uri,
@@ -201,28 +201,6 @@ export async function renderReport(options: RenderReportOptions): Promise<string
     sectionsHtml,
     previewsHtml,
   });
-}
-
-/**
- * Removes a leading H1 that matches the resource title — the report renders
- * the title as the section header, so keeping it in the body would duplicate
- * it. Heuristic: only the very first non-blank line, only if it's `# Title`.
- */
-function stripTitleHeading(raw: string, resource: Resource): string {
-  const lines = raw.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length && lines[i].trim() === '') i++;
-  if (i >= lines.length) return raw;
-  const match = lines[i].match(/^#\s+(.+?)\s*$/);
-  if (match && match[1].trim() === resource.title.trim()) {
-    lines.splice(i, 1);
-    // Drop the immediately following blank line if any so spacing stays tight.
-    if (lines[i]?.trim() === '') {
-      lines.splice(i, 1);
-    }
-    return lines.join('\n');
-  }
-  return raw;
 }
 
 interface InlineAttachmentsArgs {
@@ -309,7 +287,8 @@ function collectAttachmentRefs(
     } catch {
       continue;
     }
-    if (targetUri.isPlaceholder()) continue;
+    // A Gollum link that climbs above the wiki root resolves to nothing
+    if (!targetUri || targetUri.isPlaceholder()) continue;
     const target = workspace.find(targetUri);
     if (!target || target.type === 'note') continue;
     const rawTarget = rawTargetFor(link);
@@ -476,14 +455,33 @@ const FAVICON_DATA_URI =
       '</svg>'
   );
 
+/**
+ * A fresh nonce per export, used to gate script execution in the report.
+ *
+ * The report is a standalone file meant to be shared, and note content is
+ * rendered with raw-HTML passthrough, so without this a `<script>` (or an
+ * inline `on*=` handler) written into a note would run in the browser of
+ * whoever opens the report. The CSP below allows only the report's own
+ * nonce'd script; the injected markup survives but is inert.
+ *
+ * Uses Web Crypto rather than `node:crypto` so the web build still bundles.
+ */
+function createNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function wrapDocument(args: WrapDocumentArgs): string {
   const { title, generatedAt, noteCount, tocHtml, sectionsHtml, previewsHtml } = args;
+  const nonce = createNonce();
   const timestamp = generatedAt.toISOString();
   const humanDate = generatedAt.toISOString().slice(0, 10);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}'; object-src 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeText(title)}</title>
 <meta name="generator" content="Foam">
@@ -544,7 +542,7 @@ ${previewsHtml}
   </svg>
   Published with <strong>Foam</strong>
 </a>
-<script>${REPORT_SCRIPT}</script>
+<script nonce="${nonce}">${REPORT_SCRIPT}</script>
 </body>
 </html>`;
 }

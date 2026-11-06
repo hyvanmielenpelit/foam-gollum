@@ -1,15 +1,25 @@
 /* @unit-ready */
-import { commands, window, workspace } from 'vscode';
+import { Selection, commands, window, workspace } from 'vscode';
 import { URI } from '@foam/core';
-import { asAbsoluteWorkspaceUri, readFile } from '../../services/editor';
+import {
+  asAbsoluteWorkspaceUri,
+  readFile,
+  writeFile,
+} from '../../services/editor';
 import {
   closeEditors,
   createFile,
   deleteFile,
   expectSameUri,
+  getActiveTabViewType,
   getUriInWorkspace,
   makeFoamMock,
   showInEditor,
+  withMarkdownEditorAssociation,
+  withModifiedFoamConfiguration,
+  withSecondRoot,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { fromVsCodeUri } from '../../utils/vsc-utils';
 import { CREATE_NOTE_COMMAND, createNote } from './create-note';
@@ -68,7 +78,7 @@ describe('create-note command', () => {
     const target = getUriInWorkspace();
     await commands.executeCommand('foam-vscode.create-note', {
       notePath: target,
-      text: 'hello ${FOAM_TITLE}',  
+      text: 'hello ${FOAM_TITLE}',
       variables: { FOAM_TITLE: 'world' },
     });
     expect(window.activeTextEditor.document.getText()).toEqual('hello world');
@@ -80,7 +90,7 @@ describe('create-note command', () => {
     const target = getUriInWorkspace();
     await commands.executeCommand('foam-vscode.create-note', {
       notePath: target,
-      text: 'hello ${FOAM_DATE_YEAR}',  
+      text: 'hello ${FOAM_DATE_YEAR}',
       date: '2021-10-01',
     });
     expect(window.activeTextEditor.document.getText()).toEqual('hello 2021');
@@ -231,6 +241,209 @@ describe('create-note command', () => {
     }
   });
 
+  describe('content resolution', () => {
+    it('resolves Foam variables and lets VS Code expand the snippet syntax', async () => {
+      const template = await createFile(
+        '# ${FOAM_TITLE}\n\n${1:foo} $2 ${TM_FILENAME_BASE}',
+        ['.foam', 'templates', 'snippet-syntax-template.md']
+      );
+      const target = getUriInWorkspace();
+      await commands.executeCommand('foam-vscode.create-note', {
+        notePath: target,
+        templatePath: template.uri.path,
+        title: 'world',
+      });
+      // Inserted with `insertSnippet`, so VS Code resolves the snippet syntax.
+      expect(window.activeTextEditor.document
+          .getText()
+          // The editor uses the platform's line endings
+          .replace(/\r\n/g, '\n')).toEqual(
+        `# world\n\nfoo  ${target.getName()}`
+      );
+      await deleteFile(target);
+      await deleteFile(template.uri);
+    });
+
+    it('expands the snippet in a text editor even when Markdown is associated with another editor (#1742)', async () => {
+      const template = await createFile(
+        '# ${FOAM_TITLE}\n\n${1:foo} $2 ${TM_FILENAME_BASE}',
+        ['.foam', 'templates', 'associated-editor-template.md']
+      );
+      const target = getUriInWorkspace();
+
+      await withMarkdownEditorAssociation(async () => {
+        await commands.executeCommand('foam-vscode.create-note', {
+          notePath: target,
+          templatePath: template.uri.path,
+          title: 'world',
+        });
+
+        // The template is inserted as a snippet, which needs a text editor.
+        expect(getActiveTabViewType()).toBeUndefined();
+        expect(window.activeTextEditor.document
+          .getText()
+          // The editor uses the platform's line endings
+          .replace(/\r\n/g, '\n')).toEqual(
+          `# world\n\nfoo  ${target.getName()}`
+        );
+      });
+
+      await deleteFile(target);
+      await deleteFile(template.uri);
+    });
+
+    it('fills FOAM_SELECTED_TEXT from the selection and replaces it with a link', async () => {
+      const source = await createFile('This is my first file: World');
+      const { editor } = await showInEditor(source.uri);
+      editor.selection = new Selection(0, 23, 0, 28);
+      const target = getUriInWorkspace();
+      await commands.executeCommand('foam-vscode.create-note', {
+        notePath: target,
+        text: 'Hello ${FOAM_SELECTED_TEXT}',
+      });
+      expect(window.activeTextEditor.document.getText()).toEqual('Hello World');
+      const { doc } = await showInEditor(source.uri);
+      expect(doc.getText()).toEqual(
+        `This is my first file: [[${target.getName()}]]`
+      );
+      await deleteFile(source.uri);
+      await deleteFile(target);
+    });
+
+    it('appends FOAM_SELECTED_TEXT given as a variable once', async () => {
+      const target = getUriInWorkspace();
+      await commands.executeCommand('foam-vscode.create-note', {
+        notePath: target,
+        text: 'Hello',
+        variables: { FOAM_SELECTED_TEXT: 'sel' },
+      });
+      expect(window.activeTextEditor.document
+          .getText()
+          // The editor uses the platform's line endings
+          .replace(/\r\n/g, '\n')).toEqual('Hello\nsel');
+      await deleteFile(target);
+    });
+
+    it('resolves Foam variables in the content returned by a JS template', async () => {
+      const template = await createFile(
+        `async function createNote() {
+  return { filepath: 'js-template-note.md', content: '# \${FOAM_TITLE}' };
+}`,
+        ['.foam', 'templates', 'js-content-template.js']
+      );
+      const result: Awaited<ReturnType<typeof createNote>> =
+        await commands.executeCommand('foam-vscode.create-note', {
+          templatePath: template.uri.path,
+          title: 'JS Title',
+        });
+      expect(result.uri.path).toMatch(/js-template-note.md$/);
+      expect(window.activeTextEditor.document.getText()).toEqual('# JS Title');
+      await deleteFile(result.uri);
+      await deleteFile(template.uri);
+    });
+  });
+
+  describe('note paths in a multi-root workspace', () => {
+    useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+    const createWithFilepath = async (
+      root: URI,
+      filepath: string,
+      newNotePath: 'root' | 'currentDir' = 'root'
+    ) => {
+      const template = root.joinPath('.foam', 'templates', 'global.md');
+      await writeFile(
+        template,
+        `---\nfoam_template:\n  filepath: '${filepath}'\n---\n# Global note`
+      );
+      let created: URI;
+      await withModifiedFoamConfiguration(
+        'files.newNotePath',
+        newNotePath,
+        async () => {
+          created = (
+            await createNote({ templatePath: template }, makeFoamMock())
+          ).uri;
+        }
+      );
+      return created;
+    };
+
+    it('creates the note in the root named after the leading slash of the filepath (#1711)', async () => {
+      await withSecondRoot(async root => {
+        const uri = await createWithFilepath(
+          root,
+          `/${root.getBasename()}/inbox/global-note.md`
+        );
+        expectSameUri(uri, root.joinPath('inbox', 'global-note.md'));
+      });
+    });
+
+    it('creates the note in the named root even when new notes go to the current directory', async () => {
+      await withSecondRoot(async root => {
+        const current = await createFile('# Current', [
+          'current-dir',
+          'current.md',
+        ]);
+        await showInEditor(current.uri);
+        try {
+          const uri = await createWithFilepath(
+            root,
+            `/${root.getBasename()}/inbox/global-note.md`,
+            'currentDir'
+          );
+          expectSameUri(uri, root.joinPath('inbox', 'global-note.md'));
+        } finally {
+          await closeEditors();
+          await deleteFile(current.uri);
+        }
+      });
+    });
+
+    it('still creates the note in the named root when the filepath has no leading slash', async () => {
+      await withSecondRoot(async root => {
+        const uri = await createWithFilepath(
+          root,
+          `${root.getBasename()}/inbox/global-note.md`
+        );
+        expectSameUri(uri, root.joinPath('inbox', 'global-note.md'));
+      });
+    });
+
+    it('creates the note for a leading-slash placeholder where the link points, not in the named root', async () => {
+      await withSecondRoot(async root => {
+        const name = root.getBasename();
+        const source = await createFile(`see [[/${name}/idea]]`);
+        const link = createMarkdownParser().parse(source.uri, source.content)
+          .links[0];
+        const command = CREATE_NOTE_COMMAND.forPlaceholder(
+          Location.forObjectWithRange(source.uri, link),
+          '.md',
+          { text: 'x' }
+        );
+        const expected = getUriInWorkspace(name, 'idea.md');
+        try {
+          const { uri } = await createNote(command.params, makeFoamMock());
+          expectSameUri(uri, expected);
+        } finally {
+          await closeEditors();
+          await deleteFile(expected);
+          await deleteFile(source.uri);
+        }
+      });
+    });
+
+    it('creates a note from a leading-slash notePath in the named root', async () => {
+      await withSecondRoot(async root => {
+        const { uri } = await createNote(
+          { notePath: `/${root.getBasename()}/from-note-path.md`, text: 'x' },
+          makeFoamMock()
+        );
+        expectSameUri(uri, root.joinPath('from-note-path.md'));
+      });
+    });
+  });
+
   it('creates a note with absolute path within the workspace', async () => {
     await commands.executeCommand('foam-vscode.create-note', {
       notePath: '/note-in-workspace.md',
@@ -272,6 +485,41 @@ describe('factories', () => {
       const doc = window.activeTextEditor.document;
       expect(doc.uri.path).toMatch(/my-placeholder.md$/);
       expect(doc.getText()).toMatch(/^# my-placeholder/);
+    });
+
+    // A `new-note.md` template with a `filepath` is how a workspace directs new
+    // notes into a subfolder — the documented alternative to a dedicated
+    // setting for it. See issues #106 and #1701.
+    it('honours the filepath of the default new-note template', async () => {
+      await closeEditors();
+      const template = await createFile(
+        `---
+foam_template:
+  filepath: 'knowledge-base/\${FOAM_TITLE}.md'
+---
+# \${FOAM_TITLE}`,
+        ['.foam', 'templates', 'new-note.md']
+      );
+      const link: ResourceLink = {
+        type: 'wikilink',
+        rawText: '[[subfolder-note]]',
+        range: Range.create(0, 0, 0, 0),
+        isEmbed: false,
+      };
+      try {
+        const command = CREATE_NOTE_COMMAND.forPlaceholder(
+          Location.forObjectWithRange(URI.file(''), link),
+          '.md'
+        );
+        const res: Awaited<ReturnType<typeof createNote>> =
+          await commands.executeCommand(command.name, command.params);
+
+        expect(res.didCreateFile).toBeTruthy();
+        expect(res.uri.path).toMatch(/knowledge-base\/subfolder-note\.md$/);
+        await deleteFile(res.uri);
+      } finally {
+        await deleteFile(template.uri);
+      }
     });
 
     it('replaces the original placeholder based on the new note identifier (#1327)', async () => {

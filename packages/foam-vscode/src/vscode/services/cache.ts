@@ -3,6 +3,7 @@ import { LRUCache } from 'lru-cache';
 import { ExtensionContext } from 'vscode';
 import { URI } from '@foam/core';
 import { ParserCache, ParserCacheEntry } from '@foam/core';
+import { Resource, ResourceJson } from '@foam/core';
 import { Logger } from '@foam/core';
 import { deleteFile, dirExists, readFile, writeFile } from './editor';
 import { fromVsCodeUri } from '../utils/vsc-utils';
@@ -33,12 +34,14 @@ import { fromVsCodeUri } from '../utils/vsc-utils';
  * discarded automatically on the next startup.
  */
 export default class VsCodeBasedParserCache implements ParserCache {
-  static CACHE_VERSION = 5;
+  // v6: tag range computation fixed (substring frontmatter matches,
+  // multi-line paragraph hashtags) — cached ranges must be recomputed
+  // v7: Section.headingRange added
+  // v8: Resource.tasks added
+  static CACHE_VERSION = 8;
   static CACHE_VERSION_KEY = 'foam-cache-version';
   static CACHE_DIR_NAME = 'parser-cache';
   static BUCKET_COUNT = 64;
-  /** workspaceState key used by earlier versions, migrated on load */
-  static LEGACY_STATE_KEY = 'foam-cache';
 
   private _cache: LRUCache<string, ParserCacheEntry>;
   private _cacheDir: URI | undefined;
@@ -99,52 +102,8 @@ export default class VsCodeBasedParserCache implements ParserCache {
       return;
     }
 
-    const imported = await this.importLegacyWorkspaceState();
-    if (!imported) {
-      await this.loadBuckets();
-    }
+    await this.loadBuckets();
     Logger.debug('Cache size: ' + this._cache.size);
-  }
-
-  /**
-   * Imports the cache blob that earlier versions kept in workspaceState,
-   * re-shards it to bucket files, and removes the old key — keeping the
-   * blob would defeat the purpose of file-based storage, as it gets
-   * serialized with the rest of the workspace state (see #1677).
-   * Returns whether any entries were imported.
-   */
-  private async importLegacyWorkspaceState(): Promise<boolean> {
-    const source = this.context.workspaceState.get<any[]>(
-      VsCodeBasedParserCache.LEGACY_STATE_KEY
-    );
-    if (source === undefined) {
-      return false;
-    }
-    let imported = false;
-    if (Array.isArray(source) && source.length > 0) {
-      try {
-        this._cache.load(source);
-        for (const key of this._cache.keys()) {
-          this._dirty.add(bucketOf(key));
-        }
-        // persist the re-sharded entries before the legacy blob is removed
-        // below, so a crash in between cannot lose the whole cache
-        await this.performSync();
-        imported = true;
-        Logger.info(
-          `Migrated parser cache from workspace state (${this._cache.size} entries)`
-        );
-      } catch (e) {
-        Logger.warn(
-          `Failed to migrate parser cache from workspace state: ${e}`
-        );
-      }
-    }
-    await this.context.workspaceState.update(
-      VsCodeBasedParserCache.LEGACY_STATE_KEY,
-      undefined
-    );
-    return imported;
   }
 
   private bucketUri(index: number): URI {
@@ -191,26 +150,14 @@ export default class VsCodeBasedParserCache implements ParserCache {
     if (this._cacheDir) {
       await deleteQuietly(this._cacheDir);
     }
-    await this.context.workspaceState.update(
-      VsCodeBasedParserCache.LEGACY_STATE_KEY,
-      undefined
-    );
   }
 
   get(uri: URI): ParserCacheEntry {
     const result = this._cache.get(uri.toString());
     if (result) {
-      // The cache returns a plain object, but we need an actual
-      // instance of URI in the resource (we check instanceof in the code),
-      // so to be sure we convert it here.
-      const { checksum, resource } = result;
-      const rehydrated = {
-        ...resource,
-        uri: new URI(resource.uri),
-      };
       return {
-        checksum,
-        resource: rehydrated,
+        checksum: result.checksum,
+        resource: Resource.fromJSON(result.resource as ResourceJson),
       };
     }
     return undefined;

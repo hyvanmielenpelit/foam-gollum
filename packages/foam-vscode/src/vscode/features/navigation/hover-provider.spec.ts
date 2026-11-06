@@ -10,6 +10,7 @@ import {
   MEDIAWIKI_SYNTAX,
   showInEditor,
   useFoamConfiguration,
+  GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import { toVsCodeUri } from '../../utils/vsc-utils';
 import { HoverProvider } from './hover-provider';
@@ -342,6 +343,8 @@ The content of file B`);
 });
 
 describe('Hover provider with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   // Gollum resolves a placeholder to the file it would create, so the hover
   // names that file.
   const noCancelToken: vscode.CancellationToken = {

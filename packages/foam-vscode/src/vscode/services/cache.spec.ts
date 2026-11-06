@@ -101,6 +101,9 @@ describe('VsCodeBasedParserCache', () => {
       expect(reloaded.has(uri)).toBe(true);
       expect(reloaded.get(uri).checksum).toEqual(entry.checksum);
       expect(reloaded.get(uri).resource.title).toEqual(entry.resource.title);
+      const reloadedUri = reloaded.get(uri).resource.uri;
+      expect(reloadedUri).toBeInstanceOf(URI);
+      expect(reloadedUri.isEqual(uri)).toBe(true);
     });
   });
 
@@ -211,57 +214,6 @@ describe('VsCodeBasedParserCache', () => {
       expect(loadedCount).toBeLessThan(notes.length);
       // the corrupted bucket is discarded so it doesn't fail every startup
       expect(fs.existsSync(corrupted)).toBe(false);
-    });
-  });
-
-  it('migrates the legacy workspaceState cache and removes the old key', async () => {
-    await withTmpStorageDir(async storageDir => {
-      const context = createContext(storageDir);
-      const { uri, entry } = createEntry('legacy-note');
-      await context.workspaceState.update(
-        VsCodeBasedParserCache.CACHE_VERSION_KEY,
-        VsCodeBasedParserCache.CACHE_VERSION
-      );
-      await context.workspaceState.update(
-        VsCodeBasedParserCache.LEGACY_STATE_KEY,
-        [[uri.toString(), { value: entry }]]
-      );
-
-      const cache = await VsCodeBasedParserCache.create(context);
-      expect(cache.has(uri)).toBe(true);
-      expect(cache.get(uri).checksum).toEqual(entry.checksum);
-      expect(
-        context.workspaceState.get(VsCodeBasedParserCache.LEGACY_STATE_KEY)
-      ).toBeUndefined();
-
-      // the migrated entries are re-persisted in the sharded layout
-      await cache.flush();
-      const reloaded = await VsCodeBasedParserCache.create(context);
-      expect(reloaded.has(uri)).toBe(true);
-    });
-  });
-
-  it('persists migrated legacy entries before removing the old key', async () => {
-    await withTmpStorageDir(async storageDir => {
-      const context = createContext(storageDir);
-      const { uri, entry } = createEntry('legacy-note');
-      await context.workspaceState.update(
-        VsCodeBasedParserCache.CACHE_VERSION_KEY,
-        VsCodeBasedParserCache.CACHE_VERSION
-      );
-      await context.workspaceState.update(
-        VsCodeBasedParserCache.LEGACY_STATE_KEY,
-        [[uri.toString(), { value: entry }]]
-      );
-
-      await VsCodeBasedParserCache.create(context);
-
-      // the sharded files must exist as soon as create() resolves: the legacy
-      // blob is already gone, so a crash before a later debounced sync would
-      // otherwise lose the whole cache
-      expect(fs.existsSync(bucketDirOf(storageDir))).toBe(true);
-      const reloaded = await VsCodeBasedParserCache.create(context);
-      expect(reloaded.has(uri)).toBe(true);
     });
   });
 

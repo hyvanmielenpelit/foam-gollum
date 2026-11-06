@@ -1,9 +1,21 @@
 /* @unit-ready */
-import { getTemplatesDir, getTemplates } from './template-service';
+import { QuickPickItem, window, workspace } from 'vscode';
+import { URI } from '@foam/core';
+import {
+  askUserForTemplate,
+  getDailyNoteTemplateUri,
+  getDefaultTemplateUri,
+  getTemplatesDir,
+  getTemplates,
+} from './template-service';
+import { writeFile } from './editor';
+import { fromVsCodeUri, toVsCodeUri } from '../utils/vsc-utils';
 import {
   createFile,
   deleteFile,
+  foldersSearchedFor,
   withModifiedFoamConfiguration,
+  withSecondRoot,
 } from '../../test/test-utils-vscode';
 
 describe('getTemplatesDir', () => {
@@ -12,25 +24,181 @@ describe('getTemplatesDir', () => {
     expect(dir.path).toContain('.foam/templates');
   });
 
-  it('should return the custom templates directory when foam.templates.folder is set', async () => {
-    await withModifiedFoamConfiguration('templates.folder', 'custom/templates', async () => {
-      const dir = getTemplatesDir();
-      expect(dir.path).toContain('custom/templates');
-      expect(dir.path).not.toContain('.foam/templates');
+  it('stays in the first workspace root, where new templates are created, when there are several', async () => {
+    const firstRootDir = getTemplatesDir();
+    await withSecondRoot(async () => {
+      expect(getTemplatesDir().toFsPath()).toEqual(firstRootDir.toFsPath());
     });
+  });
+
+  it('should return the custom templates directory when foam.templates.folder is set', async () => {
+    await withModifiedFoamConfiguration(
+      'templates.folder',
+      'custom/templates',
+      async () => {
+        const dir = getTemplatesDir();
+        expect(dir.path).toContain('custom/templates');
+        expect(dir.path).not.toContain('.foam/templates');
+      }
+    );
   });
 });
 
 describe('getTemplates', () => {
   it('should find templates in a custom folder when foam.templates.folder is set', async () => {
-    await withModifiedFoamConfiguration('templates.folder', 'custom-tpl', async () => {
-      const template = await createFile('# Custom template', ['custom-tpl', 'my-template.md']);
+    await withModifiedFoamConfiguration(
+      'templates.folder',
+      'custom-tpl',
+      async () => {
+        const template = await createFile('# Custom template', [
+          'custom-tpl',
+          'my-template.md',
+        ]);
+        try {
+          const templates = await getTemplates();
+          const paths = templates.map(t => t.path);
+          expect(paths.some(p => p.includes('custom-tpl/my-template.md'))).toBe(
+            true
+          );
+        } finally {
+          await deleteFile(template.uri);
+        }
+      }
+    );
+  });
+
+  it('lists only the files directly in the templates folder, as `foam list templates` does', async () => {
+    await withModifiedFoamConfiguration(
+      'templates.folder',
+      'nested-tpl',
+      async () => {
+        const direct = await createFile('# Direct', ['nested-tpl', 'top.md']);
+        const nested = await createFile('# Nested', [
+          'nested-tpl',
+          'archive',
+          'old.md',
+        ]);
+        try {
+          const paths = (await getTemplates()).map(t => t.path);
+          expect(paths).toContain(direct.uri.path);
+          expect(paths).not.toContain(nested.uri.path);
+        } finally {
+          await deleteFile(direct.uri);
+          await deleteFile(nested.uri);
+        }
+      }
+    );
+  });
+
+  it('searches only inside the templates folder of each root, not the whole workspace (#1747)', async () => {
+    await withSecondRoot(async root => {
+      const firstRoot = fromVsCodeUri(workspace.workspaceFolders[0].uri);
+      const folders = await foldersSearchedFor('*.{md,js}', getTemplates);
+      expect(folders).toEqual(
+        [firstRoot, root].map(
+          r => toVsCodeUri(r.joinPath('.foam', 'templates')).fsPath
+        )
+      );
+    });
+  });
+});
+
+describe('default templates in a multi-root workspace', () => {
+  // A templates folder no other test uses, so the first root surely has none.
+  const folder = 'multi-root-templates';
+
+  it('uses the new-note template of a later root when the first root has none (#1711)', async () => {
+    await withModifiedFoamConfiguration('templates.folder', folder, () =>
+      withSecondRoot(async root => {
+        const template = root.joinPath(folder, 'new-note.md');
+        await writeFile(template, '# Later root');
+        expect((await getDefaultTemplateUri())?.toFsPath()).toEqual(
+          template.toFsPath()
+        );
+      })
+    );
+  });
+
+  it('uses the daily-note template of a later root when the first root has none (#1711)', async () => {
+    await withModifiedFoamConfiguration('templates.folder', folder, () =>
+      withSecondRoot(async root => {
+        const template = root.joinPath(folder, 'daily-note.md');
+        await writeFile(template, '# Later root');
+        expect((await getDailyNoteTemplateUri())?.toFsPath()).toEqual(
+          template.toFsPath()
+        );
+      })
+    );
+  });
+
+  it("prefers the first root's new-note template over a later root's", async () => {
+    await withModifiedFoamConfiguration('templates.folder', folder, () =>
+      withSecondRoot(async root => {
+        await writeFile(root.joinPath(folder, 'new-note.md'), '# Later root');
+        const first = await createFile('# First root', [folder, 'new-note.md']);
+        try {
+          expect((await getDefaultTemplateUri())?.toFsPath()).toEqual(
+            first.uri.toFsPath()
+          );
+        } finally {
+          await deleteFile(first.uri);
+        }
+      })
+    );
+  });
+});
+
+describe('askUserForTemplate', () => {
+  it('shows the folder of a template only when another folder has one with the same label', async () => {
+    await withSecondRoot(async root => {
+      const firstFolder = workspace.workspaceFolders[0].name;
+      const inFirst = await createFile('# First', [
+        '.foam',
+        'templates',
+        'meeting.md',
+      ]);
+      const unique = await createFile('# Unique', [
+        '.foam',
+        'templates',
+        'unique.md',
+      ]);
+      const inSecond = root.joinPath('.foam', 'templates', 'meeting.md');
+      await writeFile(inSecond, '# Second');
+      const pick = vi
+        .spyOn(window, 'showQuickPick')
+        .mockImplementationOnce((async () => undefined) as any);
       try {
-        const templates = await getTemplates();
-        const paths = templates.map(t => t.path);
-        expect(paths.some(p => p.includes('custom-tpl/my-template.md'))).toBe(true);
+        await askUserForTemplate();
+        const items = pick.mock.calls[0][0] as (QuickPickItem & {
+          templateUri: URI;
+        })[];
+        const itemFor = (uri: URI) =>
+          items.find(item => item.templateUri.toFsPath() === uri.toFsPath());
+        expect(itemFor(inFirst.uri).description).toEqual(firstFolder);
+        expect(itemFor(inSecond).description).toEqual('notes');
+        expect(itemFor(unique.uri).description).toBeUndefined();
       } finally {
-        await deleteFile(template.uri);
+        pick.mockRestore();
+        await deleteFile(inFirst.uri);
+        await deleteFile(unique.uri);
+      }
+    });
+  });
+
+  it('returns the template the user picked from another workspace root (#1711)', async () => {
+    await withSecondRoot(async root => {
+      const template = root.joinPath('.foam', 'templates', 'other-root.md');
+      await writeFile(template, '# Other root');
+      const pick = vi
+        .spyOn(window, 'showQuickPick')
+        .mockImplementationOnce(
+          (async (items: QuickPickItem[]) => items[0]) as any
+        );
+      try {
+        const picked = (await askUserForTemplate()) as URI;
+        expect(picked.toFsPath()).toEqual(template.toFsPath());
+      } finally {
+        pick.mockRestore();
       }
     });
   });

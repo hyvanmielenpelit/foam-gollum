@@ -113,6 +113,7 @@ export const createTestNote = (params: {
         label,
         level: 1,
         range: Range.create(0, 0, 1, 0),
+        headingRange: Range.create(0, 0, 0, 0),
       })) ?? [],
     blocks: [],
     tags:
@@ -156,6 +157,7 @@ export const createTestNote = (params: {
         })
       : [],
     footnotes: [],
+    tasks: [],
   };
 };
 

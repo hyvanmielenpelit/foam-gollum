@@ -3,6 +3,8 @@ import {
   createTestWorkspace,
 } from '../../test/test-utils';
 import { FoamGraph } from '../model/graph';
+import { URI } from '../model/uri';
+import { Config, DefaultFoamConfig } from '../config';
 import { HeadingEdit } from './heading-edit';
 
 describe('HeadingEdit', () => {
@@ -278,6 +280,41 @@ Content.
       expect(edit.edit.newText).not.toContain('see more');
     });
 
+    it('should emit a single definition edit when several reference links share one definition', () => {
+      const ws = createTestWorkspace();
+      const noteA = createNoteFromMarkdown(
+        '/note-a.md',
+        `# OldSection
+
+Content.
+`
+      );
+      const noteB = createNoteFromMarkdown(
+        '/note-b.md',
+        `[first][ref1] and [second][ref1]
+
+[ref1]: note-a#OldSection
+`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'OldSection',
+        'NewSection'
+      );
+
+      // Both links resolve through the definition, but the definition line
+      // must be rewritten exactly once — a duplicate edit corrupts the file
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].edit.newText).toBe('[ref1]: note-a#NewSection');
+      // Both links are covered by the rename
+      expect(result.totalOccurrences).toBe(2);
+    });
+
     it('should not update links that reference a different section', () => {
       const ws = createTestWorkspace();
       const noteA = createNoteFromMarkdown(
@@ -480,6 +517,169 @@ Content.
         noteA.uri,
         'Some Section',
         'New Section'
+      );
+
+      expect(result.totalOccurrences).toBe(0);
+      expect(result.edits).toHaveLength(0);
+    });
+  });
+
+  describe('createRenameSectionEdits with Gollum syntax', () => {
+    const wikiRoot = URI.file('/wiki');
+    const page = `# Section 1
+
+## Section 2
+
+Content.
+`;
+
+    beforeEach(() => {
+      Config.setDefaultConfig(
+        Object.assign(new DefaultFoamConfig(), {
+          getWikilinksSyntax: () => 'gollum' as const,
+          getWikilinksCaseInsensitive: () => true,
+        })
+      );
+    });
+    afterEach(() => {
+      Config.setDefaultConfig(new DefaultFoamConfig());
+    });
+
+    it('should update a wikilink naming the section by its slug', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown('/wiki/Page.md', page);
+      const noteB = createNoteFromMarkdown(
+        '/wiki/Src.md',
+        `See [[Page#section-2]] for details.`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
+      );
+
+      expect(result.totalOccurrences).toBe(1);
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].uri.path).toBe('/wiki/Src.md');
+      expect(result.edits[0].edit.newText).toBe('[[Page#new-name]]');
+    });
+
+    it('should update a wikilink naming the section by its heading text', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown('/wiki/Page.md', page);
+      const noteB = createNoteFromMarkdown(
+        '/wiki/Src.md',
+        `See [[Page#Section 2]] for details.`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
+      );
+
+      expect(result.totalOccurrences).toBe(1);
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].edit.newText).toBe('[[Page#new-name]]');
+    });
+
+    it('should update a section link within the same page', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown(
+        '/wiki/Page.md',
+        `${page}\nJump to [[#section-2]].\n`
+      );
+      ws.set(noteA);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
+      );
+
+      expect(result.totalOccurrences).toBe(1);
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].uri.path).toBe('/wiki/Page.md');
+      expect(result.edits[0].edit.newText).toBe('[[#new-name]]');
+    });
+
+    it('should update a direct markdown link naming the section by its slug', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown('/wiki/Page.md', page);
+      const noteB = createNoteFromMarkdown(
+        '/wiki/Src.md',
+        `[text](Page.md#section-2)`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
+      );
+
+      expect(result.totalOccurrences).toBe(1);
+      expect(result.edits).toHaveLength(1);
+      expect(result.edits[0].uri.path).toBe('/wiki/Src.md');
+      expect(result.edits[0].edit.newText).toBe('[text](Page.md#new-name)');
+    });
+
+    it('should keep the alias and the / or ../ prefix of the target', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown('/wiki/dir/Page.md', page);
+      const noteB = createNoteFromMarkdown(
+        '/wiki/other/Src.md',
+        `[[Alias|/dir/Page#section-2]] and [[Alias|../dir/Page#section-2]]`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
+      );
+
+      expect(result.totalOccurrences).toBe(2);
+      expect(result.edits.map(e => e.edit.newText).sort()).toEqual([
+        '[[Alias|../dir/Page#new-name]]',
+        '[[Alias|/dir/Page#new-name]]',
+      ]);
+    });
+
+    it('should not update a link to another section', () => {
+      const ws = createTestWorkspace([wikiRoot]);
+      const noteA = createNoteFromMarkdown('/wiki/Page.md', page);
+      const noteB = createNoteFromMarkdown(
+        '/wiki/Src.md',
+        `See [[Page#section-1]] for details.`
+      );
+      ws.set(noteA).set(noteB);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const result = HeadingEdit.createRenameSectionEdits(
+        graph,
+        ws,
+        noteA.uri,
+        'Section 2',
+        'New Name'
       );
 
       expect(result.totalOccurrences).toBe(0);

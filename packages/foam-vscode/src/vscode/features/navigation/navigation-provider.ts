@@ -20,21 +20,29 @@ import { commandAsURI } from '../../utils/commands';
 import { Location } from '@foam/core';
 import { fileExists, getFoamDocSelectors } from '../../services/editor';
 import { FoamTags } from '@foam/core';
+import { monitorFoamVsCodeConfig } from '../../config';
+
+export const CONFIG_FOOTNOTES_ENABLE = 'footnotes.enable';
 
 export default async function activate(
   context: vscode.ExtensionContext,
   foamPromise: Promise<Foam>
 ) {
+  const isFootnotesEnabled = monitorFoamVsCodeConfig<boolean>(
+    CONFIG_FOOTNOTES_ENABLE
+  );
   const foam = await foamPromise;
 
   const navigationProvider = new NavigationProvider(
     foam.workspace,
     foam.graph,
     foam.services.parser,
-    foam.tags
+    foam.tags,
+    isFootnotesEnabled
   );
 
   context.subscriptions.push(
+    isFootnotesEnabled,
     vscode.languages.registerDefinitionProvider(
       getFoamDocSelectors(),
       navigationProvider
@@ -77,7 +85,8 @@ export class NavigationProvider
     private workspace: FoamWorkspace,
     private graph: FoamGraph,
     private parser: ResourceParser,
-    private tags: FoamTags
+    private tags: FoamTags,
+    private isFootnotesEnabled: () => boolean = () => true
   ) {}
 
   /**
@@ -106,6 +115,10 @@ export class NavigationProvider
     );
     if (targetLink) {
       const uri = this.workspace.resolveLink(resource, targetLink);
+      // A Gollum link that climbs above the wiki root resolves to nothing
+      if (!uri) {
+        return [];
+      }
       return this.graph
         .getBacklinks(uri)
         .map(
@@ -152,6 +165,9 @@ export class NavigationProvider
       Range.containsPosition(link.range, position)
     );
     if (!targetLink) {
+      if (!this.isFootnotesEnabled()) {
+        return;
+      }
       const footnote = Footnote.findByPosition(resource, position);
       if (footnote?.definitionRange) {
         return [
@@ -177,7 +193,8 @@ export class NavigationProvider
       return;
     }
     const uri = this.workspace.resolveLink(resource, targetLink);
-    if (targetLink.type === 'external') {
+    // A Gollum link that climbs above the wiki root resolves to nothing
+    if (targetLink.type === 'external' || !uri) {
       return;
     }
     if (uri.isPlaceholder()) {
@@ -250,12 +267,13 @@ export class NavigationProvider
     const documentUri = fromVsCodeUri(document.uri);
     const resource = this.parser.parse(documentUri, document.getText());
 
-    const targets: { link: ResourceLink; target: URI }[] = resource.links.map(
-      link => ({
+    const targets: { link: ResourceLink; target: URI }[] = resource.links
+      .map(link => ({
         link,
         target: this.workspace.resolveLink(resource, link),
-      })
-    );
+      }))
+      // A Gollum link that climbs above the wiki root resolves to nothing
+      .filter(o => o.target);
 
     const placeholders = targets.filter(o => o.target.isPlaceholder()); // links to resources are managed by the definition provider
 
@@ -263,36 +281,90 @@ export class NavigationProvider
     // built-in Markdown provider intercepts cmd+click and navigates to the definition
     // line ([ref]: url) instead of the target file. We override this by emitting an
     // explicit DocumentLink pointing directly at the resolved target.
+    const isAttachment = (target: URI) => {
+      const resource = this.workspace.get(target);
+      return resource?.type === 'attachment' || resource?.type === 'image';
+    };
+
+    // The clickable range mirrors the built-in Markdown extension's styling:
+    // for wikilinks the content without the surrounding brackets, for full
+    // reference links ([text][ref]) the reference label, and for collapsed
+    // ([text][]) and shortcut ([text]) reference links the text itself.
+    const linkRange = (link: ResourceLink) => {
+      if (link.type === 'wikilink') {
+        return new vscode.Range(
+          link.range.start.line,
+          link.range.start.character + 2,
+          link.range.end.line,
+          link.range.end.character - 2
+        );
+      }
+      if (ResourceLink.isReferenceStyleLink(link)) {
+        const fullForm = /^\[.*\]\[(.+)\]$/.exec(link.rawText);
+        if (fullForm) {
+          // the reference label sits right before the closing bracket
+          return new vscode.Range(
+            link.range.end.line,
+            link.range.end.character - 1 - fullForm[1].length,
+            link.range.end.line,
+            link.range.end.character - 1
+          );
+        }
+        const textForm = /^\[(.*?)\](\[\])?$/.exec(link.rawText);
+        if (textForm) {
+          return new vscode.Range(
+            link.range.start.line,
+            link.range.start.character + 1,
+            link.range.start.line,
+            link.range.start.character + 1 + textForm[1].length
+          );
+        }
+      }
+      return toVsCodeRange(link.range);
+    };
+
     const resolvedReferenceLinks: vscode.DocumentLink[] = targets
       .filter(
         o =>
           ResourceLink.isResolvedReference(o.link) &&
-          !o.target.isPlaceholder()
+          !o.target.isPlaceholder() &&
+          !isAttachment(o.target)
       )
       .map(o => {
         const dl = new vscode.DocumentLink(
-          toVsCodeRange(o.link.range),
+          linkRange(o.link),
           toVsCodeUri(o.target.asPlain())
         );
         dl.tooltip = o.target.getBasename();
         return dl;
       });
 
-    // Resolved links to attachments (PDFs, docs, etc.) and images are surfaced as
-    // DocumentLinks.
+    // Wikilinks and reference-style links to attachments (PDFs, docs, etc.)
+    // and images are surfaced as DocumentLinks that invoke the `vscode.open`
+    // command (the same mechanism used by the built-in Markdown extension) 
+    // resolves the editor correctly at every settings scope.
+    // Direct markdown links ([text](file.pdf)) are handled by the built-in Markdown 
+    // extension
     // See: https://github.com/foambubble/foam/issues/1675
     const attachmentLinks: vscode.DocumentLink[] = targets
       .filter(o => {
         if (o.target.isPlaceholder()) return false;
         if (o.link.type === 'external') return false;
-        if (ResourceLink.isResolvedReference(o.link)) return false;
-        const resource = this.workspace.get(o.target);
-        return resource?.type === 'attachment' || resource?.type === 'image';
+        if (
+          o.link.type === 'link' &&
+          !ResourceLink.isResolvedReference(o.link)
+        ) {
+          return false;
+        }
+        return isAttachment(o.target);
       })
       .map(o => {
         const dl = new vscode.DocumentLink(
-          toVsCodeRange(o.link.range),
-          toVsCodeUri(o.target.asPlain())
+          linkRange(o.link),
+          commandAsURI({
+            name: 'vscode.open',
+            params: [toVsCodeUri(o.target.asPlain())],
+          })
         );
         dl.tooltip = o.target.getBasename();
         return dl;
@@ -366,6 +438,9 @@ export class NavigationProvider
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Hover> {
+    if (!this.isFootnotesEnabled()) {
+      return;
+    }
     const resource = this.parser.parse(
       fromVsCodeUri(document.uri),
       document.getText()

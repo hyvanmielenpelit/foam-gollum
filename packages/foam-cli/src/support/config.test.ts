@@ -28,11 +28,16 @@ describe('readFoamConfig', () => {
     try {
       const cfg = readFoamConfig(dir);
       expect(cfg.getFilesInclude()).toEqual(['**/*']);
-      expect(cfg.getFilesExclude()).toEqual([]);
+      expect(cfg.getFilesExclude()).toEqual(
+        expect.arrayContaining([
+          '**/node_modules/**/*',
+          '**/dist/**/*',
+          '**/.venv/**/*',
+        ])
+      );
       expect(cfg.getDefaultNoteExtension()).toBe('.md');
       expect(cfg.getNotesExtensions()).toEqual(['.md']);
-      expect(cfg.getDailyNoteDirectory()).toBeNull();
-      expect(cfg.getDailyNoteTitleFormat()).toBeNull();
+      expect(cfg.getLegacyDailyNoteSettings()).toEqual({});
       expect(cfg.getTemplatesFolder()).toBe('.foam/templates');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -55,7 +60,7 @@ describe('readFoamConfig', () => {
           'utf8'
         );
         const cfg = readFoamConfig(dir);
-        expect(cfg.getDailyNoteDirectory()).toBe('journals');
+        expect(cfg.getLegacyDailyNoteSettings().directory).toBe('journals');
         expect(cfg.getDefaultNoteExtension()).toBe('.mdx');
       }
     );
@@ -108,12 +113,6 @@ describe('readFoamConfig', () => {
     });
   });
 
-  it('merges foam.files.ignore (deprecated) into filesExclude', () => {
-    withTmpConfig({ 'foam.files.ignore': ['old/**'] }, dir => {
-      expect(readFoamConfig(dir).getFilesExclude()).toContain('old/**');
-    });
-  });
-
   it('merges keys of files.exclude into filesExclude', () => {
     withTmpConfig(
       { 'files.exclude': { 'build/**': true, '.DS_Store': false } },
@@ -134,16 +133,17 @@ describe('readFoamConfig', () => {
     });
   });
 
-  it('reads daily note settings', () => {
+  it('reads the openDailyNote settings Foam no longer uses', () => {
     withTmpConfig(
       {
         'foam.openDailyNote.directory': 'journals',
         'foam.openDailyNote.filenameFormat': 'YYYY-MM-DD',
       },
       dir => {
-        const cfg = readFoamConfig(dir);
-        expect(cfg.getDailyNoteDirectory()).toBe('journals');
-        expect(cfg.getDailyNoteFilenameFormat()).toBe('YYYY-MM-DD');
+        expect(readFoamConfig(dir).getLegacyDailyNoteSettings()).toEqual({
+          directory: 'journals',
+          filenameFormat: 'YYYY-MM-DD',
+        });
       }
     );
   });

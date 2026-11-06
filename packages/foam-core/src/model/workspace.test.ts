@@ -2,6 +2,7 @@ import { FoamWorkspace } from './workspace';
 import { Logger } from '../utils/log';
 import { URI } from './uri';
 import { createTestNote, createTestWorkspace } from '../../test/test-utils';
+import { Config, DefaultFoamConfig } from '../config';
 
 Logger.setLevel('error');
 
@@ -93,6 +94,27 @@ describe('Workspace resources', () => {
     const ws = createTestWorkspace().set(noteA);
 
     expect(ws.find('/a/path/to/file.md').uri.path).toEqual(noteA.uri.path);
+  });
+});
+
+describe('URI-like objects', () => {
+  it('should find a resource by a URI-like object that is not an instance of URI', () => {
+    const ws = createTestWorkspace();
+    const note = createTestNote({ uri: '/path/to/page-a.md' });
+    ws.set(note);
+
+    const uriLike = { ...note.uri } as URI;
+    expect(uriLike instanceof URI).toBeFalsy();
+    expect(ws.find(uriLike)?.uri.path).toEqual('/path/to/page-a.md');
+  });
+
+  it('should not treat a URI-like object as an identifier string', () => {
+    const ws = createTestWorkspace();
+    const note = createTestNote({ uri: '/path/to/page-a.md' });
+    ws.set(note);
+
+    const uriLike = { ...note.uri } as URI;
+    expect(() => ws.find(uriLike)).not.toThrow();
   });
 });
 
@@ -219,6 +241,57 @@ describe('Identifier computation', () => {
     // since they differ by case, they are not considered conflicting
     expect(workspace.getIdentifier(noteUppercase.uri)).toEqual('Note');
     expect(workspace.getIdentifier(noteLowercase.uri)).toEqual('note');
+  });
+
+  describe('getIdentifiers', () => {
+    it('computes the same identifier as getIdentifier for each URI, in order', () => {
+      const workspace = new FoamWorkspace([], '.md');
+      [
+        '/path/to/page-a.md',
+        '/another/way/for/page-a.md',
+        '/another/path/for/page-a.md',
+        '/a/Note.md',
+        '/b/note.md',
+        '/x/a/README.md',
+        '/a/README.md',
+        '/y/README.md',
+        '/notes/report.pdf.md',
+        '/unique.md',
+      ].forEach(uri => workspace.set(createTestNote({ uri })));
+      workspace.set(
+        createTestNote({ uri: '/docs/report.pdf', type: 'attachment' })
+      );
+      const uris = [
+        ...workspace.list().map(r => r.uri),
+        URI.file('/elsewhere/to/page-a.md'),
+        URI.file('/m/missing.md'),
+        URI.file('/n/missing.md'),
+        URI.file('/path/to/page-a.md').with({ fragment: 'section name' }),
+        URI.file('/a/README.md'),
+      ];
+
+      expect(workspace.getIdentifiers(uris)).toEqual(
+        uris.map(uri => workspace.getIdentifier(uri))
+      );
+    });
+
+    it('computes the same identifier as getIdentifier for many notes sharing a basename', () => {
+      const workspace = new FoamWorkspace([], '.md');
+      const segments = ['a', 'b', 'A'];
+      let dirs = [''];
+      for (let depth = 0; depth < 3; depth++) {
+        dirs = dirs.flatMap(dir => segments.map(s => `${dir}/${s}`));
+        dirs.forEach(dir => {
+          workspace.set(createTestNote({ uri: `${dir}/README.md` }));
+          workspace.set(createTestNote({ uri: `${dir}/readme.md` }));
+        });
+      }
+      const uris = workspace.list().map(r => r.uri);
+
+      expect(workspace.getIdentifiers(uris)).toEqual(
+        uris.map(uri => workspace.getIdentifier(uri))
+      );
+    });
   });
 });
 
@@ -361,6 +434,66 @@ describe('resolveUri', () => {
       const result = ws.resolveUri('/C:/workspace/journal/file.md');
       expect(result.path).toBe('/C:/workspace/journal/file.md');
     });
+  });
+});
+
+describe('resolveNoteUri', () => {
+  const project = URI.file('/work/my-project');
+  const notes = URI.file('/home/me/notes');
+
+  it('resolves a leading-slash path into the root named by its first segment (#1711)', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveNoteUri('/notes/inbox/idea.md').path).toBe(
+      '/home/me/notes/inbox/idea.md'
+    );
+  });
+
+  it('matches the first root by name too', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveNoteUri('/my-project/idea.md').path).toBe(
+      '/work/my-project/idea.md'
+    );
+  });
+
+  it('resolves a leading-slash path that names no root from the first root', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveNoteUri('/journal/idea.md').path).toBe(
+      '/work/my-project/journal/idea.md'
+    );
+  });
+
+  it('keeps a path that is already under a root as is', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveNoteUri('/home/me/notes/idea.md').path).toBe(
+      '/home/me/notes/idea.md'
+    );
+  });
+
+  it("matches the root's own name in a single-root workspace too, so the same template works either way", () => {
+    const ws = new FoamWorkspace([notes]);
+    expect(ws.resolveNoteUri('/notes/idea.md').path).toBe(
+      '/home/me/notes/idea.md'
+    );
+  });
+
+  it('prefers the named root over a same-named subfolder of the first root', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    // `/work/my-project/notes/` may exist: the root named `notes` still wins
+    expect(ws.resolveNoteUri('/notes/idea.md').path).toBe(
+      '/home/me/notes/idea.md'
+    );
+  });
+
+  it('does not turn a bare folder name into the root folder itself', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveNoteUri('/notes').path).toBe('/work/my-project/notes');
+  });
+
+  it('leaves resolveUri, used for links, unchanged', () => {
+    const ws = new FoamWorkspace([project, notes]);
+    expect(ws.resolveUri('/notes/inbox/idea.md').path).toBe(
+      '/work/my-project/notes/inbox/idea.md'
+    );
   });
 });
 
@@ -518,5 +651,220 @@ describe('Directory index', () => {
       expect(ws.getDirectoryIdentifier(readme.uri)).toBeNull();
       expect(ws.getDirectoryIdentifier(index.uri)).toBe('bar');
     });
+  });
+});
+
+describe('Workspace lifecycle', () => {
+  it('disposes registered providers when the workspace is disposed', () => {
+    const ws = new FoamWorkspace();
+    let disposed = false;
+    ws.registerProvider({
+      supports: () => false,
+      readAsMarkdown: async () => null,
+      fetch: async () => null,
+      resolveLink: () => {
+        throw new Error('not used');
+      },
+      dispose: () => {
+        disposed = true;
+      },
+    });
+
+    ws.dispose();
+
+    expect(disposed).toBe(true);
+  });
+});
+
+describe('Case-variant filenames in the same directory (case-sensitive filesystems)', () => {
+  it('stores files differing only by case as distinct resources', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/Note.md' }));
+    ws.set(createTestNote({ uri: '/a/note.md' }));
+
+    expect(
+      ws
+        .list()
+        .map(r => r.uri.path)
+        .sort()
+    ).toEqual(['/a/Note.md', '/a/note.md']);
+  });
+
+  it('fires onDidAdd, not onDidUpdate, when adding a case-variant sibling', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/note.md' }));
+
+    let added = 0;
+    let updated = 0;
+    ws.onDidAdd(() => added++);
+    ws.onDidUpdate(() => updated++);
+
+    ws.set(createTestNote({ uri: '/a/Note.md' }));
+
+    expect(added).toEqual(1);
+    expect(updated).toEqual(0);
+  });
+
+  it('finds each case variant by its exact URI', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/Note.md', title: 'Upper' }));
+    ws.set(createTestNote({ uri: '/a/note.md', title: 'Lower' }));
+
+    expect(ws.find(URI.file('/a/Note.md')).title).toEqual('Upper');
+    expect(ws.find(URI.file('/a/note.md')).title).toEqual('Lower');
+  });
+
+  it('deletes only the exact-case match when variants coexist', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/Note.md' }));
+    ws.set(createTestNote({ uri: '/a/note.md' }));
+
+    const deleted = ws.delete(URI.file('/a/note.md'));
+
+    expect(deleted.uri.path).toEqual('/a/note.md');
+    expect(ws.list().map(r => r.uri.path)).toEqual(['/a/Note.md']);
+  });
+
+  it('still finds a resource via a case-insensitive reference when unambiguous', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/page.md' }));
+
+    expect(ws.find(URI.file('/a/PAGE.md')).uri.path).toEqual('/a/page.md');
+  });
+
+  it('lists both case variants under the shared identifier', () => {
+    const ws = createTestWorkspace();
+    ws.set(createTestNote({ uri: '/a/Note.md' }));
+    ws.set(createTestNote({ uri: '/a/note.md' }));
+
+    // The exact-case filter then narrows to the exact basename
+    expect(ws.listByIdentifier('note').map(r => r.uri.path)).toEqual([
+      '/a/note.md',
+    ]);
+    expect(ws.listByIdentifier('Note').map(r => r.uri.path)).toEqual([
+      '/a/Note.md',
+    ]);
+  });
+});
+
+describe('find2 with Gollum syntax', () => {
+  const useGollum = (caseInsensitive: boolean) =>
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => caseInsensitive,
+      })
+    );
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('finds a note by its full path, with or without the extension', () => {
+    useGollum(true);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/dir/Page.md' }));
+
+    expect(ws.find2('/wiki/dir/Page').uri.path).toEqual('/wiki/dir/Page.md');
+    expect(ws.find2('/wiki/dir/Page.md').uri.path).toEqual(
+      '/wiki/dir/Page.md'
+    );
+    expect(ws.find2('/wiki/Page')).toBeNull();
+  });
+
+  it('ignores case when the configuration is case-insensitive', () => {
+    useGollum(true);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/dir/Page.md' }));
+
+    expect(ws.find2('/wiki/dir/page').uri.path).toEqual('/wiki/dir/Page.md');
+    expect(ws.find2('/wiki/DIR/PAGE.md').uri.path).toEqual(
+      '/wiki/dir/Page.md'
+    );
+  });
+
+  it('matches only the exact case when the configuration is case-sensitive', () => {
+    useGollum(false);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/dir/Page.md' }));
+
+    expect(ws.find2('/wiki/dir/Page').uri.path).toEqual('/wiki/dir/Page.md');
+    expect(ws.find2('/wiki/dir/page')).toBeNull();
+    expect(ws.find2('/wiki/DIR/Page')).toBeNull();
+  });
+
+  it('prefers the exact-case match among case variants', () => {
+    useGollum(true);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/Page.md' }));
+    ws.set(createTestNote({ uri: '/wiki/page.md' }));
+
+    expect(ws.find2('/wiki/Page').uri.path).toEqual('/wiki/Page.md');
+    expect(ws.find2('/wiki/page').uri.path).toEqual('/wiki/page.md');
+  });
+
+  it('returns the same case variant whatever order the notes were added in', () => {
+    useGollum(true);
+    const upperFirst = createTestWorkspace([URI.file('/wiki')]);
+    upperFirst.set(createTestNote({ uri: '/wiki/Page.md' }));
+    upperFirst.set(createTestNote({ uri: '/wiki/page.md' }));
+    const lowerFirst = createTestWorkspace([URI.file('/wiki')]);
+    lowerFirst.set(createTestNote({ uri: '/wiki/page.md' }));
+    lowerFirst.set(createTestNote({ uri: '/wiki/Page.md' }));
+
+    // Without an exact-case match, the first path in code-point order wins
+    expect(upperFirst.find2('/wiki/PAGE').uri.path).toEqual('/wiki/Page.md');
+    expect(lowerFirst.find2('/wiki/PAGE').uri.path).toEqual('/wiki/Page.md');
+  });
+
+  it('finds no case variant without an exact-case match when case-sensitive', () => {
+    useGollum(false);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/Page.md' }));
+    ws.set(createTestNote({ uri: '/wiki/page.md' }));
+
+    expect(ws.find2('/wiki/page').uri.path).toEqual('/wiki/page.md');
+    expect(ws.find2('/wiki/PAGE')).toBeNull();
+  });
+});
+
+describe('listByIdentifier with Gollum syntax', () => {
+  const useGollum = (caseInsensitive: boolean) =>
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => caseInsensitive,
+      })
+    );
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('lists only exact-case basename matches when case-sensitive', () => {
+    useGollum(false);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/a/Note.md' }));
+    ws.set(createTestNote({ uri: '/wiki/b/note.md' }));
+
+    expect(ws.listByIdentifier('Note').map(r => r.uri.path)).toEqual([
+      '/wiki/a/Note.md',
+    ]);
+    expect(ws.listByIdentifier('note').map(r => r.uri.path)).toEqual([
+      '/wiki/b/note.md',
+    ]);
+    expect(ws.listByIdentifier('NOTE')).toEqual([]);
+  });
+
+  it('lists every case variant when case-insensitive', () => {
+    useGollum(true);
+    const ws = createTestWorkspace([URI.file('/wiki')]);
+    ws.set(createTestNote({ uri: '/wiki/a/Note.md' }));
+    ws.set(createTestNote({ uri: '/wiki/b/note.md' }));
+
+    expect(
+      ws
+        .listByIdentifier('NOTE')
+        .map(r => r.uri.path)
+        .sort()
+    ).toEqual(['/wiki/a/Note.md', '/wiki/b/note.md']);
   });
 });

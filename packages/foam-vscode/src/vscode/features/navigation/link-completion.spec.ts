@@ -3,19 +3,28 @@
 import * as vscode from 'vscode';
 import { createMarkdownParser } from '@foam/core';
 import { FoamGraph, FoamWorkspace, URI } from '@foam/core';
-import { createTestNote, createTestWorkspace } from '../../../test/test-utils';
+import {
+  createTestNote,
+  createTestWorkspace,
+  InMemoryDataStore,
+} from '../../../test/test-utils';
 import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  deleteFile,
+  getFoamFromVSCode,
   getUriInWorkspace,
+  GOLLUM_SYNTAX,
   MEDIAWIKI_SYNTAX,
   showInEditor,
   useFoamConfiguration,
+  waitForNoteInFoamWorkspace,
   withModifiedFoamConfiguration,
 } from '../../../test/test-utils-vscode';
-import { fromVsCodeUri } from '../../utils/vsc-utils';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import {
+  cursorMoveBack,
   WikilinkCompletionProvider,
   SectionCompletionProvider,
 } from './link-completion';
@@ -121,6 +130,22 @@ describe('Link Completion', () => {
     }
   });
 
+  it('replaces everything typed since the [[ that opens the link', async () => {
+    const text = '[[a [[b';
+    const { uri } = await createFile(text);
+    const { doc } = await showInEditor(uri);
+    const provider = new WikilinkCompletionProvider(ws, graph);
+
+    const links = await provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, text.length)
+    );
+
+    expect(links.items[0].range).toEqual(
+      new vscode.Range(0, 2, 0, text.length)
+    );
+  });
+
   it('should support label setting', async () => {
     const { uri: noteUri, content } = await createFile(`# My Note Title`);
     const workspace = createTestWorkspace();
@@ -173,6 +198,54 @@ describe('Link Completion', () => {
         ]);
       }
     );
+  });
+
+  it('lets a filter that matches from the start find a note in a folder by its name', async () => {
+    const { uri: noteUri, content } = await createFile(`# Folder Note`, [
+      'folder',
+      'folder-note.md',
+    ]);
+    const workspace = createTestWorkspace();
+    workspace.set(parser.parse(noteUri, content));
+    const provider = new WikilinkCompletionProvider(
+      workspace,
+      FoamGraph.fromWorkspace(workspace)
+    );
+    const { uri } = await createFile('[[folder-n');
+    const { doc } = await showInEditor(uri);
+    const position = new vscode.Position(0, '[[folder-n'.length);
+    // Keeps an item when what was typed is a prefix of its filter text
+    const matchesFromStart = (item: vscode.CompletionItem, typed: string) =>
+      (item.filterText ?? String(item.label))
+        .toLowerCase()
+        .startsWith(typed.toLowerCase());
+
+    await withModifiedFoamConfiguration(
+      'completion.label',
+      'path',
+      async () => {
+        const [item] = (await provider.provideCompletionItems(doc, position))
+          .items;
+
+        expect(item.label).toEqual('folder/folder-note.md');
+        expect(matchesFromStart(item, 'folder-n')).toBe(true);
+        expect(item.filterText).toContain('folder/folder-note.md');
+      }
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.label',
+      'title',
+      async () => {
+        const [item] = (await provider.provideCompletionItems(doc, position))
+          .items;
+
+        expect(matchesFromStart(item, 'Folder N')).toBe(true);
+      }
+    );
+
+    await deleteFile(noteUri);
+    await deleteFile(uri);
   });
 
   it('should support alias setting', async () => {
@@ -237,6 +310,22 @@ describe('Link Completion', () => {
         new Set(['Section One', 'Section Two'])
       );
     }
+  });
+
+  it('replaces the section typed since the # that follows the target', async () => {
+    const text = 'See [[file-name#Sec';
+    const { uri } = await createFile(text);
+    const { doc } = await showInEditor(uri);
+    const provider = new SectionCompletionProvider(ws);
+
+    const links = await provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, text.length)
+    );
+
+    expect(links.items[0].range).toEqual(
+      new vscode.Range(0, 'See [[file-name#'.length, 0, text.length)
+    );
   });
 
   it('should return sections within the note', async () => {
@@ -648,6 +737,8 @@ alias: test-alias
 });
 
 describe('Link Completion with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   // Gollum completions insert the note's path from the workspace root, without
   // the extension, with a leading slash when either note is in a sub-folder.
   const parser = createMarkdownParser([]);
@@ -791,6 +882,215 @@ describe('Link Completion with Gollum syntax', () => {
     });
   });
 
+  it('should replace only the target after a typed alias', async () => {
+    const provider = new WikilinkCompletionProvider(ws, graph);
+    const text = 'See [[My alias|fi';
+
+    const links = await completeAt(provider, text);
+
+    expect(links.items.length).toBeGreaterThan(0);
+    for (const item of links.items) {
+      expect(item.range).toEqual(
+        new vscode.Range(0, 'See [[My alias|'.length, 0, text.length)
+      );
+    }
+  });
+
+  it('should not repeat the title after a typed alias', async () => {
+    const { noteUri, provider } = await providerForNote(`# My Note Title`);
+
+    await withModifiedFoamConfiguration(
+      'completion.useAlias',
+      'whenPathDiffersFromTitle',
+      async () => {
+        const links = await completeAt(provider, '[[My alias|');
+        expect(links.items.map(i => i.insertText)).toEqual([noteUri.getName()]);
+      }
+    );
+  });
+
+  it('should put a note alias before the path, and insert only the path after a typed alias', async () => {
+    const { provider } = await providerForNote(
+      '---\nalias: alias-a\n---\n# Aliased Note',
+      ['gollum-aliased-note.md']
+    );
+    const aliasItem = async (text: string) => {
+      const links = await completeAt(provider, text);
+      return links.items.find(i => i.label === 'alias-a');
+    };
+
+    expect((await aliasItem('[[')).insertText).toBe(
+      'alias-a|gollum-aliased-note'
+    );
+    expect((await aliasItem('[[Typed alias|')).insertText).toBe(
+      'gollum-aliased-note'
+    );
+  });
+
+  it('should not return completions after the pipe of a file link', async () => {
+    const provider = new WikilinkCompletionProvider(ws, graph);
+
+    expect(await completeAt(provider, '[[image.png|')).toBeNull();
+  });
+
+  it('should let a filter find a note in a folder by its identifier', async () => {
+    const { provider } = await providerForNote(`# Folder Note`, [
+      'gollum-folder',
+      'gollum-folder-note.md',
+    ]);
+
+    const [item] = (await completeAt(provider, '[[gollum-folder-n')).items;
+
+    expect(item.label).toBe('/gollum-folder/gollum-folder-note');
+    expect(item.filterText).toBe(
+      'gollum-folder-note /gollum-folder/gollum-folder-note'
+    );
+  });
+
+  describe('Section completion', () => {
+    const sectionsAt = async (workspace: FoamWorkspace, text: string) => {
+      const { uri } = await createFile(text);
+      const { doc } = await showInEditor(uri);
+      return new SectionCompletionProvider(workspace).provideCompletionItems(
+        doc,
+        new vscode.Position(0, text.length)
+      );
+    };
+
+    it('should insert the slug of a section', async () => {
+      const workspace = createTestWorkspace();
+      workspace.set(
+        createTestNote({ root, uri: 'Page.md', sections: ['Section 2'] })
+      );
+
+      const links = await sectionsAt(workspace, '[[Page#');
+
+      expect(links.items.map(i => i.label)).toEqual(['Section 2']);
+      expect(links.items.map(i => i.insertText)).toEqual(['section-2']);
+    });
+
+    it('should return the sections of the target after a typed alias', async () => {
+      const workspace = createTestWorkspace();
+      workspace.set(
+        createTestNote({ root, uri: 'Page.md', sections: ['Section 2'] })
+      );
+      const text = '[[a|Page#';
+
+      const links = await sectionsAt(workspace, text);
+
+      expect(links.items.map(i => i.insertText)).toEqual(['section-2']);
+      expect(links.items[0].range).toEqual(
+        new vscode.Range(0, text.length, 0, text.length)
+      );
+    });
+
+    it('should return the sections of a target relative to the root', async () => {
+      const workspace = createTestWorkspace();
+      workspace.set(
+        createTestNote({ root, uri: 'dir/Page.md', sections: ['Section 2'] })
+      );
+
+      const links = await sectionsAt(workspace, '[[/dir/Page#');
+
+      expect(links.items.map(i => i.insertText)).toEqual(['section-2']);
+    });
+
+    it('should return the sections of the current note after a typed alias', async () => {
+      const { uri, content } = await createFile(
+        '# Section 1\n\n# Section 2\n\n[[a|#'
+      );
+      const workspace = createTestWorkspace();
+      workspace.set(parser.parse(uri, content));
+      const { doc } = await showInEditor(uri);
+
+      const links = await new SectionCompletionProvider(
+        workspace
+      ).provideCompletionItems(doc, new vscode.Position(4, 5));
+
+      expect(new Set(links.items.map(i => i.insertText))).toEqual(
+        new Set(['section-1', 'section-2'])
+      );
+    });
+  });
+
+  describe('Cursor move after a completion', () => {
+    const completion = { line: 0, character: 6 };
+
+    it('should move two characters left after an auto-closed ]]', () => {
+      expect(
+        cursorMoveBack({
+          isGollum: true,
+          completion,
+          selection: { line: 0, character: 8 },
+          lineText: '[[note]]',
+        })
+      ).toBe(2);
+    });
+
+    it('should move two characters left after a commit character', () => {
+      for (const lineText of ['[[note#]]', '[[note|]]']) {
+        expect(
+          cursorMoveBack({
+            isGollum: true,
+            completion,
+            selection: { line: 0, character: 7 },
+            lineText,
+          })
+        ).toBe(2);
+      }
+    });
+
+    it('should move two characters left when no ]] follows the link', () => {
+      expect(
+        cursorMoveBack({
+          isGollum: true,
+          completion,
+          selection: { line: 0, character: 8 },
+          lineText: '[[note and more',
+        })
+      ).toBe(2);
+    });
+
+    it('should move one character left at the start of the next line', () => {
+      expect(
+        cursorMoveBack({
+          isGollum: true,
+          completion,
+          selection: { line: 1, character: 0 },
+          lineText: '',
+        })
+      ).toBe(1);
+    });
+
+    it('should not move when the selection stays at the completion', () => {
+      expect(
+        cursorMoveBack({
+          isGollum: true,
+          completion,
+          selection: { line: 0, character: 6 },
+          lineText: '[[note]]',
+        })
+      ).toBe(0);
+    });
+
+    it('should not move the cursor when no text editor is open', async () => {
+      await getFoamFromVSCode();
+      await closeEditors();
+      const executeCommand = vi.spyOn(vscode.commands, 'executeCommand');
+      try {
+        await vscode.commands.executeCommand(
+          'foam-vscode.completion-move-cursor'
+        );
+
+        const commands = executeCommand.mock.calls.map(([command]) => command);
+        expect(vscode.window.activeTextEditor).toBeUndefined();
+        expect(commands).not.toContain('cursorMove');
+      } finally {
+        executeCommand.mockRestore();
+      }
+    });
+  });
+
   describe('Directory index completion', () => {
     it('should insert the path of an index note whatever the directory mode', async () => {
       const workspace = createTestWorkspace();
@@ -826,5 +1126,406 @@ describe('Link Completion with Gollum syntax', () => {
         );
       });
     });
+  });
+});
+
+describe('Link Completion targets and cursor', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+  it('should not return completions after the pipe', async () => {
+    await closeEditors();
+    const root = getUriInWorkspace('just-a-ref.md');
+    const workspace = createTestWorkspace();
+    workspace.set(createTestNote({ root, uri: 'target.md' }));
+    const provider = new WikilinkCompletionProvider(
+      workspace,
+      FoamGraph.fromWorkspace(workspace)
+    );
+    const text = '[[target|al';
+    const { uri } = await createFile(text);
+    const { doc } = await showInEditor(uri);
+
+    const links = await provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, text.length)
+    );
+
+    expect(links).toBeNull();
+    await deleteFile(uri);
+  });
+
+  it('should show the workspace-relative path as the detail', async () => {
+    await closeEditors();
+    // createTestNote resolves its uri as a sibling of root (see #806)
+    const root = getUriInWorkspace('just-a-ref.md');
+    const workspace = createTestWorkspace();
+    workspace.set(createTestNote({ root, uri: 'path/to/file.md' }));
+    const provider = new WikilinkCompletionProvider(
+      workspace,
+      FoamGraph.fromWorkspace(workspace)
+    );
+    const { uri } = await createFile('[[');
+    const { doc } = await showInEditor(uri);
+
+    const links = await provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, 2)
+    );
+
+    expect(links.items.map(i => i.detail)).toEqual(['path/to/file.md']);
+    await deleteFile(uri);
+  });
+
+  it('should move the cursor two characters left after a commit character', () => {
+    for (const lineText of ['[[note#]]', '[[note|]]']) {
+      expect(
+        cursorMoveBack({
+          isGollum: false,
+          completion: { line: 0, character: 6 },
+          selection: { line: 0, character: 7 },
+          lineText,
+        })
+      ).toBe(2);
+    }
+  });
+
+  it('should not move the cursor back after the closing ]]', () => {
+    expect(
+      cursorMoveBack({
+        isGollum: false,
+        completion: { line: 0, character: 6 },
+        selection: { line: 0, character: 8 },
+        lineText: '[[note]]',
+      })
+    ).toBe(0);
+    expect(
+      cursorMoveBack({
+        isGollum: false,
+        completion: { line: 0, character: 6 },
+        selection: { line: 1, character: 0 },
+        lineText: '',
+      })
+    ).toBe(0);
+  });
+});
+
+describe('Completion item preview resolution', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+  class CountingDataStore extends InMemoryDataStore {
+    public readCount = 0;
+
+    async read(uri: URI): Promise<string | null> {
+      this.readCount++;
+      return super.read(uri);
+    }
+  }
+
+  it('reads the note content only once when resolving the same item repeatedly', async () => {
+    const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
+    const { uri } = await createFile('[[');
+    const { doc } = await showInEditor(uri);
+
+    const dataStore = new CountingDataStore();
+    const workspace = createTestWorkspace([root], dataStore);
+    const target = createTestNote({ root, uri: 'target-note.md' });
+    dataStore.set(target.uri, '# Target note content');
+    workspace.set(target);
+    const graph = FoamGraph.fromWorkspace(workspace);
+    const provider = new WikilinkCompletionProvider(workspace, graph);
+
+    const links = await provider.provideCompletionItems(
+      doc,
+      new vscode.Position(0, 2)
+    );
+    const item = links.items.find(i => i.insertText === 'target-note');
+    expect(item).not.toBeUndefined();
+
+    // VS Code calls resolveCompletionItem every time an item is highlighted,
+    // which happens repeatedly while the user types
+    await provider.resolveCompletionItem(item);
+    await provider.resolveCompletionItem(item);
+    await provider.resolveCompletionItem(item);
+
+    expect(dataStore.readCount).toEqual(1);
+  });
+});
+
+// Inserts the item through a WorkspaceEdit and then runs its command, as
+// editors that are not text editors do.
+const accept = async (
+  item: vscode.CompletionItem,
+  doc: vscode.TextDocument
+) => {
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(doc.uri, item.range as vscode.Range, String(item.insertText));
+  await vscode.workspace.applyEdit(edit);
+  await vscode.commands.executeCommand(
+    item.command.command,
+    ...(item.command.arguments ?? [])
+  );
+};
+
+const completeAt = async (
+  doc: vscode.TextDocument,
+  position: vscode.Position,
+  insertText: string
+) => {
+  const foam = await getFoamFromVSCode();
+  const provider = new WikilinkCompletionProvider(foam.workspace, foam.graph);
+  const links = await provider.provideCompletionItems(doc, position);
+  return links.items.find(i => i.insertText === insertText);
+};
+
+describe('Accepting a completion when no text editor is open', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+  it('completes a note link without failing', async () => {
+    await closeEditors();
+    const target = await createFile('# Completion Target', [
+      'completion-target-no-editor.md',
+    ]);
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.useAlias',
+      'never',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'completion-target-no-editor'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+    expect(doc.getText()).toBe('See [[completion-target-no-editor]] here');
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+});
+
+describe('Accepting a completion with linkFormat set to link', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
+  it('converts a note completion to a markdown link when no text editor is open', async () => {
+    await closeEditors();
+    const target = await createFile('# Completion Target', [
+      'completion-target.md',
+    ]);
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.linkFormat',
+      'link',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'completion-target'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+    expect(doc.getText()).toBe(
+      'See [Completion Target](completion-target.md) here'
+    );
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+
+  it('converts an alias completion to a markdown link when no text editor is open', async () => {
+    await closeEditors();
+    const target = await createFile(
+      '---\nalias: Nickname\n---\n# Aliased Target',
+      ['aliased-target.md']
+    );
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.linkFormat',
+      'link',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'aliased-target|Nickname'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(doc.getText()).toBe('See [Nickname](aliased-target.md) here');
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+
+  it('converts the link and puts the cursor after it in a text editor', async () => {
+    await closeEditors();
+    const target = await createFile('# Completion Target', [
+      'completion-target-in-editor.md',
+    ]);
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const { doc, editor } = await showInEditor(source.uri);
+
+    await withModifiedFoamConfiguration(
+      'completion.linkFormat',
+      'link',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'completion-target-in-editor'
+        );
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+          doc.uri,
+          item.range as vscode.Range,
+          String(item.insertText)
+        );
+        await vscode.workspace.applyEdit(edit);
+        // A text editor leaves the cursor at the end of the inserted text
+        const afterInsert = 'See [[completion-target-in-editor'.length;
+        editor.selection = new vscode.Selection(0, afterInsert, 0, afterInsert);
+        await vscode.commands.executeCommand(
+          item.command.command,
+          ...(item.command.arguments ?? [])
+        );
+      }
+    );
+
+    const converted = 'See [Completion Target](completion-target-in-editor.md)';
+    expect(doc.getText()).toBe(`${converted} here`);
+    expect(editor.selection.active).toEqual(
+      new vscode.Position(0, converted.length)
+    );
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+});
+
+describe('Accepting a completion when no text editor is open with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  it('completes a note link without failing', async () => {
+    await closeEditors();
+    const target = await createFile('# Completion Target', [
+      'gollum-completion-target-no-editor.md',
+    ]);
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.useAlias',
+      'never',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'gollum-completion-target-no-editor'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+    expect(doc.getText()).toBe(
+      'See [[gollum-completion-target-no-editor]] here'
+    );
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+});
+
+describe('Accepting a completion with linkFormat set to link with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  it('converts a note completion to a markdown link when no text editor is open', async () => {
+    await closeEditors();
+    const target = await createFile('# Completion Target', [
+      'gollum-completion-target.md',
+    ]);
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.linkFormat',
+      'link',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'gollum-completion-target'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+    expect(doc.getText()).toBe(
+      'See [Completion Target](gollum-completion-target.md) here'
+    );
+
+    await deleteFile(target);
+    await deleteFile(source);
+  });
+
+  it('converts an alias completion to a markdown link when no text editor is open', async () => {
+    await closeEditors();
+    const target = await createFile(
+      '---\nalias: Nickname\n---\n# Aliased Target',
+      ['gollum-aliased-target.md']
+    );
+    const source = await createFile('See [[]] here');
+    await waitForNoteInFoamWorkspace(target.uri);
+    const doc = await vscode.workspace.openTextDocument(
+      toVsCodeUri(source.uri)
+    );
+
+    await withModifiedFoamConfiguration(
+      'completion.linkFormat',
+      'link',
+      async () => {
+        const item = await completeAt(
+          doc,
+          new vscode.Position(0, 'See [['.length),
+          'Nickname|gollum-aliased-target'
+        );
+        await accept(item, doc);
+      }
+    );
+
+    expect(doc.getText()).toBe('See [Nickname](gollum-aliased-target.md) here');
+
+    await deleteFile(target);
+    await deleteFile(source);
   });
 });

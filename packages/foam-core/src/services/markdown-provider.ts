@@ -6,15 +6,15 @@ import {
 } from '../model/note';
 import { isNone, isSome } from '../utils';
 import { Logger } from '../utils/log';
-import { URI } from '../model/uri';
+import { URI, percentDecode } from '../model/uri';
 import { FoamWorkspace } from '../model/workspace';
 import { IDisposable } from '../common/lifecycle';
 import { ResourceProvider } from '../model/provider';
 import { MarkdownLink } from './markdown-link';
 import { IDataStore } from './datastore';
 import { uniqBy } from 'lodash';
-import * as path from 'path';
 import { Config } from '../config';
+import { isPathWithin, joinPath } from '../utils/path';
 
 export class MarkdownResourceProvider implements ResourceProvider {
   private disposables: IDisposable[] = [];
@@ -54,7 +54,7 @@ export class MarkdownResourceProvider implements ResourceProvider {
               content = rows
                 .slice(range.start.line, range.end.line)
                 .join('\n')
-                .replace(/\s\^[a-zA-Z0-9-]+$/m, '');
+                .replace(/\s\^[a-zA-Z0-9-]+$/gm, '');
             } else {
               // Fallback: just the heading line
               content = rows[block.range.start.line].replace(
@@ -71,7 +71,11 @@ export class MarkdownResourceProvider implements ResourceProvider {
           }
         }
       } else {
-        const section = Resource.findSection2(resource, uri.fragment, Config.getWikilinksSyntax() === 'gollum');
+        const section = Resource.findSection2(
+          resource,
+          uri.fragment,
+          Config.getWikilinksSyntax() === 'gollum'
+        );
         if (isSome(section)) {
           content = rows
             .slice(section.range.start.line, section.range.end.line)
@@ -102,143 +106,89 @@ export class MarkdownResourceProvider implements ResourceProvider {
           : link.rawText;
       return URI.parse(url, 'external');
     }
-    const analyzed = MarkdownLink.analyzeLink(link);
-    const target = analyzed.target;
-    const section = analyzed.section;
-    const blockId = analyzed.blockId;
-    const isRoot = (analyzed as any).isRoot;
-    const parentCount = (analyzed as any).parentCount;
-
-    const wikiLinkSyntax = Config.getWikilinksSyntax();
-
+    // Gollum links are paths, never directory identifiers
+    if (Config.getWikilinksSyntax() === 'gollum') {
+      return this.resolveGollumLink(workspace, resource, link);
+    }
+    const { target, section, blockId } = MarkdownLink.analyzeLink(link);
     switch (link.type) {
       case 'wikilink': {
-        if (wikiLinkSyntax === 'gollum') {
-          let subdir = '';
-          const retValue = getResourceSubDir(resource.uri.path, parentCount ?? 0, workspace.roots);
-          let workspaceRootPath = '';
-          if (retValue) {
-            subdir = retValue.subdir;
-            workspaceRootPath = retValue.workspaceRootPath;
-            if (retValue.parentOverCount) {
-              return undefined;
-            }
-          }
-
-          if (ResourceLink.isResolvedReference(link)) {
-            const definedUri = resource.uri.resolve(link.definition.url);
-            targetUri =
-              workspace.find(definedUri, resource.uri)?.uri ??
-              URI.placeholder(definedUri.path);
-            if (definedUri.fragment) {
-              targetUri = targetUri.with({ fragment: definedUri.fragment });
-            }
-          } else {
-            const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspaceRootPath, workspace);
-            targetUri =
-              target === ''
-                ? resource.uri
-                : workspace.find2(filePath)?.uri ??
-                  URI.placeholder(filePath);
-            if (blockId) {
-              targetUri = targetUri.with({ fragment: `^${blockId}` });
-            } else if (section) {
-              targetUri = targetUri.with({ fragment: section });
-            }
+        if (ResourceLink.isResolvedReference(link)) {
+          const definedUri = resource.uri.resolve(link.definition.url);
+          targetUri =
+            workspace.find(definedUri, resource.uri)?.uri ??
+            URI.placeholder(definedUri.path);
+          if (definedUri.fragment) {
+            targetUri = targetUri.with({ fragment: definedUri.fragment });
           }
         } else {
-          if (ResourceLink.isResolvedReference(link)) {
-            const definedUri = resource.uri.resolve(link.definition.url);
-            targetUri =
-              workspace.find(definedUri, resource.uri)?.uri ??
-              URI.placeholder(definedUri.path);
-            if (definedUri.fragment) {
-              targetUri = targetUri.with({ fragment: definedUri.fragment });
-            }
-          } else {
-            targetUri =
-              target === ''
-                ? resource.uri
-                : workspace.find(target, resource.uri)?.uri ??
-                  this._resolveDirectoryByIdentifier(workspace, target)?.uri ??
-                  URI.placeholder(target);
-            if (blockId) {
-              targetUri = targetUri.with({ fragment: `^${blockId}` });
-            } else if (section) {
-              targetUri = targetUri.with({ fragment: section });
-            }
+          targetUri =
+            target === ''
+              ? resource.uri
+              : workspace.find(target, resource.uri)?.uri ??
+                this._resolveDirectoryByIdentifier(workspace, target)?.uri ??
+                URI.placeholder(target);
+          if (blockId) {
+            targetUri = targetUri.with({ fragment: `^${blockId}` });
+          } else if (section) {
+            targetUri = targetUri.with({ fragment: section });
           }
         }
         break;
       }
       case 'link': {
-        if (wikiLinkSyntax === 'gollum') {
-          let subdir = '';
-          const retValue = getResourceSubDir(resource.uri.path, parentCount ?? 0, workspace.roots);
-          let workspaceRootPath = '';
-          if (retValue) {
-            subdir = retValue.subdir;
-            workspaceRootPath = retValue.workspaceRootPath;
-            if (retValue.parentOverCount) {
-              return undefined;
-            }
-          }
+        if (ResourceLink.isUnresolvedReference(link)) {
+          // Reference-style link with unresolved reference - treat as placeholder
+          targetUri = URI.placeholder(link.definition);
+          break;
+        }
 
-          if (ResourceLink.isUnresolvedReference(link)) {
-            targetUri = URI.placeholder(link.definition);
-            break;
-          }
+        // Handle reference-style links first; strip trailing slash (directory links)
+        const targetPath = (
+          ResourceLink.isResolvedReference(link) ? link.definition.url : target
+        ).replace(/\/$/, '');
 
-          const filePath = this.getFilePathForTarget(target, subdir, isRoot ?? false, workspaceRootPath, workspace);
-          targetUri = workspace.find2(filePath)?.uri ?? URI.placeholder(filePath);
+        let path: string;
 
-          if (section && !targetUri.isPlaceholder()) {
-            targetUri = targetUri.with({ fragment: section });
-          }
-        } else {
-          if (ResourceLink.isUnresolvedReference(link)) {
-            // Reference-style link with unresolved reference - treat as placeholder
-            targetUri = URI.placeholder(link.definition);
-            break;
-          }
-
-          // Handle reference-style links first; strip trailing slash (directory links)
-          const targetPath = (
-            ResourceLink.isResolvedReference(link) ? link.definition.url : target
-          ).replace(/\/$/, '');
-
-          let pathStr: string;
-
-          if (targetPath.startsWith('/')) {
-            const resolvedUri = workspace.resolveUri(targetPath, resource.uri);
-            targetUri =
-              workspace.find(targetPath, resource.uri)?.uri ??
+        if (targetPath.startsWith('/')) {
+          // Link targets are URLs, so `/My%20Note.md` points to `My Note.md`.
+          // The literal target comes second, for file names containing `%`.
+          // Decoding `%23` would give `find` a `#`, which it splits off as a
+          // section (`/C%23.md` would open `C.md`), so those targets are only
+          // looked up literally.
+          const decodedPath = targetPath.includes('%23')
+            ? targetPath
+            : percentDecode(targetPath);
+          const resolvedUri = workspace.resolveUri(targetPath, resource.uri);
+          for (const candidate of new Set([decodedPath, targetPath])) {
+            targetUri ??=
+              workspace.find(candidate, resource.uri)?.uri ??
               workspace.roots
                 .map(root =>
-                  this._resolveAsDirectory(workspace, root.joinPath(targetPath))
+                  this._resolveAsDirectory(workspace, root.joinPath(candidate))
                 )
-                .find(Boolean)?.uri ??
-              URI.placeholder(resolvedUri.path);
-          } else {
-            // Handle relative paths and non-root paths
-            pathStr =
-              targetPath.startsWith('./') || targetPath.startsWith('../')
-                ? targetPath
-                : './' + targetPath;
-            // Use getDirectory().joinPath() rather than URI.resolve() to avoid
-            // inheriting the parent's .md extension on files with no extension
-            // (e.g. dotfiles like .editorconfig, where posix.extname returns '').
-            // See: https://github.com/foambubble/foam/issues/1379
-            const directResolvedUri = resource.uri.getDirectory().joinPath(pathStr);
-            targetUri =
-              workspace.find(pathStr, resource.uri)?.uri ??
-              this._resolveAsDirectory(workspace, directResolvedUri)?.uri ??
-              URI.placeholder(directResolvedUri.path);
+                .find(Boolean)?.uri;
           }
+          targetUri ??= URI.placeholder(resolvedUri.path);
+        } else {
+          // Handle relative paths and non-root paths
+          path =
+            targetPath.startsWith('./') || targetPath.startsWith('../')
+              ? targetPath
+              : './' + targetPath;
+          // Use getDirectory().joinPath() rather than URI.resolve() to avoid
+          // inheriting the parent's .md extension on files with no extension
+          // (e.g. dotfiles like .editorconfig, where posix.extname returns '').
+          // See: https://github.com/foambubble/foam/issues/1379
+          const directResolvedUri = resource.uri.getDirectory().joinPath(path);
+          targetUri =
+            workspace.find(path, resource.uri)?.uri ??
+            this._resolveAsDirectory(workspace, directResolvedUri)?.uri ??
+            URI.placeholder(directResolvedUri.path);
+        }
 
-          if (section && !targetUri.isPlaceholder()) {
-            targetUri = targetUri.with({ fragment: section });
-          }
+        if (section && !targetUri.isPlaceholder()) {
+          targetUri = targetUri.with({ fragment: section });
         }
         break;
       }
@@ -246,16 +196,92 @@ export class MarkdownResourceProvider implements ResourceProvider {
     return targetUri;
   }
 
-  getFilePathForTarget(target: string, subdir: string, isRoot: boolean, workspaceRootPath: string, workspace: FoamWorkspace) {
-    let filePath: string;
-    if (isRoot) {
-      filePath = path.join(workspaceRootPath, target).replace(/\\/g, "/");
-    } else {
-      const resourceSubDir = (subdir ?? '').length > 0 ? subdir : '';
-      filePath = path.join(workspaceRootPath, resourceSubDir, target).replace(/\\/g, "/");
+  /**
+   * Resolves a Gollum link: a path relative to the linking note's folder, or
+   * to the wiki root when it starts with `/`. Returns `undefined` when `../`
+   * climbs above the root.
+   */
+  private resolveGollumLink(
+    workspace: FoamWorkspace,
+    resource: Resource,
+    link: ResourceLink
+  ): URI | undefined {
+    const { target, section, blockId, isRoot, parentCount } =
+      MarkdownLink.analyzeLink(link);
+    const location = getResourceSubDir(
+      resource.uri.path,
+      parentCount ?? 0,
+      workspace.roots
+    );
+    if (location?.parentOverCount) {
+      return undefined;
     }
+    const subdir = location?.subdir ?? '';
+    const workspaceRootPath = location?.workspaceRootPath ?? '';
+    const filePathFor = (t: string) =>
+      this.getFilePathForTarget(
+        t,
+        subdir,
+        isRoot ?? false,
+        workspaceRootPath,
+        workspace
+      );
+
+    let targetUri: URI;
+    if (link.type === 'wikilink') {
+      if (ResourceLink.isResolvedReference(link)) {
+        const definedUri = resource.uri.resolve(link.definition.url);
+        targetUri =
+          workspace.find(definedUri, resource.uri)?.uri ??
+          URI.placeholder(definedUri.path);
+        if (definedUri.fragment) {
+          targetUri = targetUri.with({ fragment: definedUri.fragment });
+        }
+        return targetUri;
+      }
+      const filePath = filePathFor(target);
+      targetUri =
+        target === ''
+          ? resource.uri
+          : workspace.find2(filePath)?.uri ?? URI.placeholder(filePath);
+      if (blockId) {
+        targetUri = targetUri.with({ fragment: `^${blockId}` });
+      } else if (section) {
+        targetUri = targetUri.with({ fragment: section });
+      }
+      return targetUri;
+    }
+
+    if (ResourceLink.isUnresolvedReference(link)) {
+      return URI.placeholder(link.definition);
+    }
+    // A link target is a URL, so `My%20Page.md` points to `My Page.md`; the
+    // literal target is tried second. `%23` stays encoded, see `resolveLink`.
+    const decodedTarget = target.includes('%23')
+      ? target
+      : percentDecode(target);
+    for (const candidate of new Set([decodedTarget, target])) {
+      targetUri ??= workspace.find2(filePathFor(candidate))?.uri;
+    }
+    targetUri ??= URI.placeholder(filePathFor(decodedTarget));
+    if (section && !targetUri.isPlaceholder()) {
+      targetUri = targetUri.with({ fragment: section });
+    }
+    return targetUri;
+  }
+
+  getFilePathForTarget(
+    target: string,
+    subdir: string,
+    isRoot: boolean,
+    workspaceRootPath: string,
+    workspace: FoamWorkspace
+  ) {
+    let filePath = isRoot
+      ? joinPath(workspaceRootPath, target)
+      : joinPath(workspaceRootPath, subdir ?? '', target);
     const validExtension = this.getValidExtension(filePath);
-    if(validExtension === '') {
+    if (validExtension === '') {
       filePath += workspace.defaultExtension;
     }
     return filePath;
@@ -291,37 +317,47 @@ export class MarkdownResourceProvider implements ResourceProvider {
   }
 }
 
-export function getResourceSubDir(filePath: string, parentCount: number, workspaceRoots: URI[]) {
-  // Find workspace root for this file
-  let workspaceRootPath = '';
-  for (const root of workspaceRoots) {
-    if (filePath.startsWith(root.path)) {
-      workspaceRootPath = root.path;
-      break;
-    }
-  }
-  if (!workspaceRootPath) {
+/**
+ * Finds the workspace root that holds `filePath`, and the file's folder
+ * relative to it (with a trailing `/`) after climbing `parentCount` folders.
+ * `parentOverCount` is set when that climbs above the root. Returns
+ * `undefined` when no root holds the file.
+ */
+export function getResourceSubDir(
+  filePath: string,
+  parentCount: number,
+  workspaceRoots: URI[]
+) {
+  // A root may end in `/`, as the filesystem root `/` does
+  const root = workspaceRoots.find(r =>
+    isPathWithin(filePath, r.path.replace(/\/$/, ''))
+  );
+  if (!root) {
     return undefined;
   }
+  const workspaceRootPath = root.path;
 
-  const relativePath = filePath.substring(workspaceRootPath.length).replace(/^\//, '').replace(/\\/g, '/');
+  const relativePath = filePath
+    .substring(workspaceRootPath.length)
+    .replace(/^\//, '')
+    .replace(/\\/g, '/');
   let dir: string = relativePath;
-  let dirLastIndexOfSlash = dir.lastIndexOf('/');
+  const dirLastIndexOfSlash = dir.lastIndexOf('/');
   if (dirLastIndexOfSlash >= 0) {
     dir = dir.substring(0, dirLastIndexOfSlash);
   } else {
     dir = '';
   }
 
-  let count: number = 0;
-  let parentOverCount: boolean = false;
+  let count = 0;
+  let parentOverCount = false;
   while (count < parentCount) {
     count++;
     if (dir === '') {
       parentOverCount = true;
       break;
     }
-    let lastIndexOfSlash = dir.lastIndexOf('/');
+    const lastIndexOfSlash = dir.lastIndexOf('/');
     if (lastIndexOfSlash < 0) {
       dir = '';
       if (parentCount > count) {
@@ -336,10 +372,10 @@ export function getResourceSubDir(filePath: string, parentCount: number, workspa
     dir += '/';
   }
 
-  return { 
-    subdir: dir, 
+  return {
+    subdir: dir,
     parentOverCount: parentOverCount,
-    workspaceRootPath: workspaceRootPath
+    workspaceRootPath: workspaceRootPath,
   };
 }
 
@@ -349,6 +385,9 @@ export function createMarkdownReferences(
   includeExtension: boolean
 ): NoteLinkDefinition[] {
   const resource = source instanceof URI ? workspace.find(source) : source;
+  if (!resource) {
+    return [];
+  }
 
   const definitions = resource.links
     .filter(link => ResourceLink.isReferenceStyleLink(link))
@@ -363,6 +402,10 @@ export function createMarkdownReferences(
       }
 
       const targetUri = workspace.resolveLink(resource, link);
+      // A Gollum link that climbs above the wiki root resolves to nothing
+      if (!targetUri) {
+        return null;
+      }
       const target = workspace.find(targetUri);
       if (isNone(target)) {
         Logger.warn(
@@ -422,7 +465,6 @@ export function createMarkdownReferences(
         title: target.title,
       };
     })
-    .filter(isSome)
-    .sort();
+    .filter(isSome);
   return uniqBy(definitions, def => NoteLinkDefinition.format(def));
 }

@@ -12,12 +12,16 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 dayjs.extend(isoWeek);
 dayjs.extend(advancedFormat);
 
+/** The format `$FOAM_DATE_FORMAT` uses when given no format of its own. */
+export const DEFAULT_FOAM_DATE_FORMAT = 'YYYY-MM-DDTHH:mm:ssZ';
+
 const knownFoamVariables = new Set([
   'FOAM_TITLE',
   'FOAM_TITLE_SAFE',
   'FOAM_SLUG',
   'FOAM_SELECTED_TEXT',
   'FOAM_CURRENT_DIR',
+  'FOAM_PREVIOUS_DAILY_NOTE',
   'FOAM_DATE_FORMAT',
   'FOAM_DATE_YEAR',
   'FOAM_DATE_YEAR_SHORT',
@@ -58,13 +62,18 @@ export class Resolver implements VariableResolver {
    * @param foamTitle convenience shorthand for givenValues.set('FOAM_TITLE', ...)
    * @param locale locale string for date formatting, defaults to 'default'
    * @param variableProvider environment-specific provider for interactive variables
+   * @param previousDailyNote returns the identifier of the most recent daily
+   * note before the given date. Only the daily-note creation flows pass it;
+   * elsewhere `FOAM_PREVIOUS_DAILY_NOTE` stays unresolved, so a template's
+   * `${FOAM_PREVIOUS_DAILY_NOTE:fallback}` default applies.
    */
   constructor(
     private givenValues: Map<string, string>,
     public foamDate: Date,
     foamTitle?: string,
     private locale: string = 'default',
-    private variableProvider?: VariableProvider
+    private variableProvider?: VariableProvider,
+    private previousDailyNote?: (before: Date) => string | undefined
   ) {
     if (foamTitle) {
       this.givenValues.set('FOAM_TITLE', foamTitle);
@@ -128,9 +137,15 @@ export class Resolver implements VariableResolver {
 
   async resolve(variable: Variable): Promise<string | undefined> {
     const name = variable.name;
+    // What FOAM_DATE_FORMAT resolves to depends on its format, so each format
+    // is cached on its own
+    const key =
+      name === 'FOAM_DATE_FORMAT'
+        ? `${name}:${variable.children.map(c => c.toString()).join('')}`
+        : name;
     if (this.givenValues.has(name)) {
-      this.promises.set(name, Promise.resolve(this.givenValues.get(name)));
-    } else if (!this.promises.has(name)) {
+      this.promises.set(key, Promise.resolve(this.givenValues.get(name)));
+    } else if (!this.promises.has(key)) {
       let value: Promise<string | undefined> = Promise.resolve(undefined);
       switch (name) {
         case 'FOAM_TITLE':
@@ -158,10 +173,13 @@ export class Resolver implements VariableResolver {
               : undefined
           );
           break;
+        case 'FOAM_PREVIOUS_DAILY_NOTE':
+          value = Promise.resolve(this.previousDailyNote?.(this.foamDate));
+          break;
         case 'FOAM_DATE_FORMAT': {
           const fmt =
             variable.children.map(c => c.toString()).join('') ||
-            'YYYY-MM-DDTHH:mm:ssZ';
+            DEFAULT_FOAM_DATE_FORMAT;
           value = Promise.resolve(dayjs(this.foamDate).format(fmt));
           break;
         }
@@ -250,9 +268,9 @@ export class Resolver implements VariableResolver {
           value = Promise.resolve(undefined);
           break;
       }
-      this.promises.set(name, value);
+      this.promises.set(key, value);
     }
-    return this.promises.get(name);
+    return this.promises.get(key);
   }
 }
 

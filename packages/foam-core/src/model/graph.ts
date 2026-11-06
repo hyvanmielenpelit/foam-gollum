@@ -1,5 +1,4 @@
-import { debounce } from 'lodash';
-import { ResourceLink } from './note';
+import { Resource, ResourceLink } from './note';
 import { URI } from './uri';
 import { FoamWorkspace } from './workspace';
 import { IDisposable } from '../common/lifecycle';
@@ -80,25 +79,31 @@ export class FoamGraph implements IDisposable {
    */
   public static fromWorkspace(
     workspace: FoamWorkspace,
-    keepMonitoring = false,
-    debounceFor = 0
+    keepMonitoring = false
   ): FoamGraph {
     const graph = new FoamGraph(workspace);
     graph.update();
     if (keepMonitoring) {
-      const updateGraph =
-        debounceFor > 0
-          ? debounce(graph.update.bind(graph), 500)
-          : graph.update.bind(graph);
+      // Incremental handlers, not a full rebuild — see onResource* below. Each
+      // touches only the affected connections, then fires onDidUpdate. They are
+      // NOT debounced: debouncing coalesces events, but incremental updates need
+      // every event (each carries a distinct diff to apply).
       graph.disposables.push(
-        workspace.onDidAdd(updateGraph),
-        workspace.onDidUpdate(updateGraph),
-        workspace.onDidDelete(updateGraph)
+        workspace.onDidAdd(resource => graph.onResourceAdded(resource)),
+        workspace.onDidUpdate(({ old, new: updated }) =>
+          graph.onResourceUpdated(old, updated)
+        ),
+        workspace.onDidDelete(resource => graph.onResourceDeleted(resource))
       );
     }
     return graph;
   }
 
+  /**
+   * Full rebuild of the graph from the workspace. Used for the initial build and
+   * available as a fallback; steady-state changes go through the incremental
+   * onResource* handlers.
+   */
   public update() {
     const start = Date.now();
     this.backlinks.clear();
@@ -106,28 +111,193 @@ export class FoamGraph implements IDisposable {
     this.placeholders.clear();
 
     for (const resource of this.workspace.resources()) {
-      for (const link of resource.links) {
-        try {
-          const targetUri = this.workspace.resolveLink(resource, link);
-          if (link.type === 'external') {
-            continue;
-          }
-          this.connect(resource.uri, targetUri, link);
-        } catch (e) {
-          Logger.error(
-            `Error while resolving link ${
-              link.rawText
-            } in ${resource.uri.toFsPath()}, skipping.`,
-            link,
-            e
-          );
-        }
-      }
+      this.connectResource(resource);
     }
 
     const end = Date.now();
     Logger.debug(`Graph updated in ${end - start}ms`);
     this.onDidUpdateEmitter.fire();
+  }
+
+  /**
+   * A note's content changed. Its OUTGOING links may have changed, but incoming
+   * backlinks are unaffected (the note existed before and after, so how other
+   * notes resolve to it does not change). Reconnect just this note's links.
+   */
+  private onResourceUpdated(old: Resource, updated: Resource) {
+    this.disconnectResource(old.uri);
+    this.connectResource(updated);
+    this.onDidUpdateEmitter.fire();
+  }
+
+  /**
+   * A new note appeared. Connect its outgoing links, then handle the fan-out:
+   * notes that were linking to a PLACEHOLDER which this note now fills must be
+   * recomputed (their link resolves to the real note instead), and notes whose
+   * link resolved to another REAL note the new one now out-competes must be
+   * recomputed too. We can't cheaply invert resolution, so we re-resolve the
+   * sources of each existing placeholder and of each competing target, and
+   * reconnect those whose target changed.
+   */
+  private onResourceAdded(resource: Resource) {
+    this.reconnectAffectedPlaceholderSources();
+    this.reconnectCompetingTargetSources(resource);
+    this.connectResource(resource);
+    this.onDidUpdateEmitter.fire();
+  }
+
+  /**
+   * A note was removed. Drop its outgoing links, then handle the fan-out: notes
+   * that linked TO this note now resolve to a placeholder, so recompute them.
+   * Those sources are exactly the (now stale) backlinks to the deleted note.
+   */
+  private onResourceDeleted(resource: Resource) {
+    const affectedSources = this.sourcesLinkingTo(resource.uri);
+    this.disconnectResource(resource.uri);
+    this.reconnectSources(affectedSources);
+    this.onDidUpdateEmitter.fire();
+  }
+
+  /** Distinct source URIs whose links currently point at `target.path`. */
+  private sourcesLinkingTo(target: URI): URI[] {
+    const seen = new Map<string, URI>();
+    for (const c of this.backlinks.get(target.path) ?? []) {
+      seen.set(c.source.path, c.source);
+    }
+    return Array.from(seen.values());
+  }
+
+  /**
+   * Reconnects the outgoing links of every source that currently links to a
+   * placeholder. Used on note-add: filling a placeholder changes how its
+   * referrers resolve. Bounded by the number of placeholder backlinks, not the
+   * workspace size. Reconnecting is idempotent, so re-resolving unaffected
+   * sources is harmless.
+   */
+  private reconnectAffectedPlaceholderSources() {
+    const affected = new Map<string, URI>();
+    for (const placeholder of this.placeholders.values()) {
+      for (const source of this.sourcesLinkingTo(placeholder)) {
+        affected.set(source.path, source);
+      }
+    }
+    this.reconnectSources(Array.from(affected.values()));
+  }
+
+  /**
+   * Adding a resource can also change how links to EXISTING notes resolve:
+   * identifier ambiguity is broken deterministically (path order,
+   * directory-index priority), so the new resource may win a resolution that
+   * another note used to own (e.g. `[[page]]` re-pointing to a
+   * shorter-path `page.md`, or a new `index.md` taking over a directory
+   * link from `README.md`). Re-resolve the sources of every target the new
+   * resource competes with. Bounded by the backlinks of same-identifier
+   * resources (plus, for directory-index files only, a scan of backlink
+   * targets), not by workspace size; reconnecting is idempotent.
+   */
+  private reconnectCompetingTargetSources(resource: Resource) {
+    const affected = new Map<string, URI>();
+    const collect = (target: URI) => {
+      for (const source of this.sourcesLinkingTo(target)) {
+        affected.set(source.path, source);
+      }
+    };
+
+    // Targets sharing the new resource's basename identifier
+    for (const competitor of this.workspace.listByIdentifier(
+      resource.uri.getBasename()
+    )) {
+      if (!competitor.uri.isEqual(resource.uri)) {
+        collect(competitor.uri);
+      }
+    }
+
+    // A new directory-index file competes for `[[dir-name]]`-style links
+    // with index files of any name inside directories with the same name
+    if (this.workspace.isDirectoryIndexFile(resource.uri)) {
+      const dirName = resource.uri.getDirectory().getBasename().toLowerCase();
+      for (const connections of this.backlinks.values()) {
+        const target = connections[0]?.target;
+        if (!target || target.isPlaceholder() || target.isEqual(resource.uri)) {
+          continue;
+        }
+        const segments = target.path.toLowerCase().split('/');
+        const basename = segments[segments.length - 1] ?? '';
+        const parentDir = segments[segments.length - 2] ?? '';
+        const isIndexCandidate = FoamWorkspace.DIRECTORY_INDEX_NAMES.some(
+          name => basename.startsWith(name + '.')
+        );
+        if (parentDir === dirName && isIndexCandidate) {
+          collect(target);
+        }
+      }
+    }
+
+    this.reconnectSources(Array.from(affected.values()));
+  }
+
+  /** Disconnects and re-resolves the outgoing links of each given source. */
+  private reconnectSources(sources: URI[]) {
+    for (const source of sources) {
+      const resource = this.workspace.find(source);
+      if (resource) {
+        this.disconnectResource(resource.uri);
+        this.connectResource(resource);
+      }
+    }
+  }
+
+  /** Resolves and connects all of a resource's (non-external) links. */
+  private connectResource(resource: Resource) {
+    for (const link of resource.links) {
+      try {
+        if (link.type === 'external') {
+          continue;
+        }
+        const targetUri = this.workspace.resolveLink(resource, link);
+        // A Gollum link that climbs above the wiki root resolves to nothing
+        if (!targetUri) {
+          continue;
+        }
+        this.connect(resource.uri, targetUri, link);
+      } catch (e) {
+        Logger.error(
+          `Error while resolving link ${
+            link.rawText
+          } in ${resource.uri.toFsPath()}, skipping.`,
+          link,
+          e
+        );
+      }
+    }
+  }
+
+  /**
+   * Removes all connections originating from `source`: deletes its `links`
+   * entry, filters it out of each affected target's `backlinks`, and drops any
+   * placeholder left with no remaining backlinks.
+   */
+  private disconnectResource(source: URI) {
+    const outgoing = this.links.get(source.path) ?? [];
+    for (const connection of outgoing) {
+      const targetPath = connection.target.path;
+      const targetBacklinks = this.backlinks.get(targetPath);
+      if (targetBacklinks) {
+        const remaining = targetBacklinks.filter(
+          c => c.source.path !== source.path
+        );
+        if (remaining.length > 0) {
+          this.backlinks.set(targetPath, remaining);
+        } else {
+          this.backlinks.delete(targetPath);
+          // A placeholder with no backlinks is no longer referenced.
+          if (connection.target.isPlaceholder()) {
+            this.placeholders.delete(uriToPlaceholderId(connection.target));
+          }
+        }
+      }
+    }
+    this.links.delete(source.path);
   }
 
   private connect(source: URI, target: URI, link: ResourceLink) {

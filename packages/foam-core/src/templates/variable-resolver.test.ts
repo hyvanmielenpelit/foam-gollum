@@ -51,6 +51,53 @@ describe('variable-resolver, text substitution', () => {
     const resolver = new Resolver(givenValues, new Date());
     expect(await resolver.resolveText(input)).toEqual(expected);
   });
+
+  it('should substitute a Foam variable once when its placeholder is mirrored', async () => {
+    const input = `\${1:$FOAM_TITLE} :: $1 :: $1`;
+    const expected = `\${1:Invalid "Characters"} :: $1 :: $1`;
+
+    const givenValues = new Map<string, string>();
+    givenValues.set('FOAM_TITLE', 'Invalid "Characters"');
+    const resolver = new Resolver(givenValues, new Date());
+
+    expect(await resolver.resolveText(input)).toEqual(expected);
+  });
+
+  it('should substitute variables in source order when a mirror precedes its default', async () => {
+    const input = `$1 :: $FOAM_SLUG :: \${1:$FOAM_TITLE}`;
+    const expected = `$1 :: my-note :: \${1:My Note}`;
+
+    const givenValues = new Map<string, string>();
+    givenValues.set('FOAM_TITLE', 'My Note');
+    const resolver = new Resolver(givenValues, new Date());
+
+    expect(await resolver.resolveText(input)).toEqual(expected);
+  });
+
+  it('should substitute every variable of a mirrored placeholder default only once', async () => {
+    const input = `\${1:$FOAM_TITLE - $FOAM_SLUG} :: $1`;
+    const expected = `\${1:My Note - my-note} :: $1`;
+
+    const givenValues = new Map<string, string>();
+    givenValues.set('FOAM_TITLE', 'My Note');
+    const resolver = new Resolver(givenValues, new Date());
+
+    expect(await resolver.resolveText(input)).toEqual(expected);
+  });
+
+  it('should not substitute a nested variable separately from the variable enclosing it', async () => {
+    // An unresolved variable falls back to its default, so the nested
+    // FOAM_DATE_YEAR is already part of what replaces the outer source span.
+    const input = `\${FOAM_TITLE:$FOAM_DATE_YEAR} :: $FOAM_DATE_YEAR`;
+    const expected = `2020 :: 2020`;
+
+    const resolver = new Resolver(
+      new Map<string, string>(),
+      new Date(2020, 0, 1)
+    );
+
+    expect(await resolver.resolveText(input)).toEqual(expected);
+  });
 });
 
 describe('variable-resolver, variable resolution', () => {
@@ -345,6 +392,14 @@ describe('FOAM_DATE_FORMAT', () => {
     const result = await resolver.resolveText('${FOAM_DATE_FORMAT:HH:mm:ss}');
     expect(result).toBe('01:02:03');
   });
+
+  it('resolves each occurrence with its own format', async () => {
+    const resolver = new Resolver(new Map(), targetDate);
+    const result = await resolver.resolveText(
+      '${FOAM_DATE_FORMAT:DD-MM-YYYY} ${FOAM_DATE_FORMAT:YYYY} $FOAM_DATE_FORMAT'
+    );
+    expect(result).toMatch(/^15-10-2021 2021 2021-10-15T01:02:03/);
+  });
 });
 
 describe('variable-resolver, resolveText', () => {
@@ -385,5 +440,63 @@ describe('variable-resolver, resolveText', () => {
     const expected = input;
     const resolver = new Resolver(new Map(), new Date());
     expect(await resolver.resolveText(input)).toEqual(expected);
+  });
+});
+
+describe('variable-resolver, FOAM_PREVIOUS_DAILY_NOTE', () => {
+  const resolverWithLookup = (
+    lookup: (before: Date) => string | undefined,
+    foamDate = new Date(2026, 8, 16)
+  ) =>
+    new Resolver(new Map(), foamDate, undefined, 'default', undefined, lookup);
+
+  it('resolves to the identifier alone, adding no link syntax (AC-5)', async () => {
+    const resolver = resolverWithLookup(() => '2026-09-14');
+
+    expect(
+      await resolver.resolveText('Previous: [[$FOAM_PREVIOUS_DAILY_NOTE]]')
+    ).toEqual('Previous: [[2026-09-14]]');
+  });
+
+  it('uses the template fallback when there is no previous daily note (AC-2)', async () => {
+    const resolver = resolverWithLookup(() => undefined);
+
+    expect(
+      await resolver.resolveText('${FOAM_PREVIOUS_DAILY_NOTE:no previous note}')
+    ).toEqual('no previous note');
+  });
+
+  it('expands to nothing when there is no previous note and no fallback (AC-3)', async () => {
+    const resolver = resolverWithLookup(() => undefined);
+
+    expect(
+      await resolver.resolveText('Previous: $FOAM_PREVIOUS_DAILY_NOTE.')
+    ).toEqual('Previous: .');
+  });
+
+  it('looks back from the Foam date, not from today (AC-4)', async () => {
+    const foamDate = new Date(2026, 8, 16);
+    const lookup = vi.fn().mockReturnValue('2026-09-14');
+    const resolver = resolverWithLookup(lookup, foamDate);
+
+    await resolver.resolveText('$FOAM_PREVIOUS_DAILY_NOTE');
+
+    expect(lookup).toHaveBeenCalledWith(foamDate);
+  });
+
+  it('is not looked up when the template does not use it (AC-6)', async () => {
+    const lookup = vi.fn();
+    const resolver = resolverWithLookup(lookup);
+
+    expect(await resolver.resolveText('# ${FOAM_DATE_YEAR}')).toEqual('# 2026');
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('stays unresolved outside the daily note flows, so a fallback applies', async () => {
+    const resolver = new Resolver(new Map(), new Date());
+
+    expect(
+      await resolver.resolveText('${FOAM_PREVIOUS_DAILY_NOTE:no previous note}')
+    ).toEqual('no previous note');
   });
 });

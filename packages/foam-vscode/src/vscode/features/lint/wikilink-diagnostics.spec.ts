@@ -9,6 +9,7 @@ import {
   MEDIAWIKI_SYNTAX,
   showInEditor,
   useFoamConfiguration,
+  GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { updateDiagnostics, IdentifierResolver } from './wikilink-diagnostics';
@@ -418,6 +419,8 @@ describe('Duplicate block ID diagnostics', () => {
 });
 
 describe('Wikilink diagnostics with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   // Gollum links are paths, resolved through the workspace's resource
   // provider, and name a section by its anchor (`#section-1`).
   beforeEach(async () => {

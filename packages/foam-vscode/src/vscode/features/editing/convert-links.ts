@@ -4,6 +4,7 @@ import { Range } from '@foam/core';
 import { Logger } from '@foam/core';
 import { fromVsCodeUri, toVsCodeRange } from '../../utils/vsc-utils';
 import { MarkdownLink } from '@foam/core';
+import { Config } from '@foam/core';
 import { getTelemetry } from '../../services/telemetry';
 
 export const CONVERT_WIKILINK_TO_MDLINK = {
@@ -23,10 +24,13 @@ export default async function activate(
   const foam = await foamPromise;
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CONVERT_WIKILINK_TO_MDLINK.command, () => {
-      getTelemetry()?.trackCommand(CONVERT_WIKILINK_TO_MDLINK.command);
-      return convertWikilinkToMarkdown(foam);
-    }),
+    vscode.commands.registerCommand(
+      CONVERT_WIKILINK_TO_MDLINK.command,
+      (uri?: vscode.Uri, position?: vscode.Position) => {
+        getTelemetry()?.trackCommand(CONVERT_WIKILINK_TO_MDLINK.command);
+        return convertWikilinkToMarkdown(foam, uri, position);
+      }
+    ),
 
     vscode.commands.registerCommand(CONVERT_MDLINK_TO_WIKILINK.command, () => {
       getTelemetry()?.trackCommand(CONVERT_MDLINK_TO_WIKILINK.command);
@@ -35,17 +39,34 @@ export default async function activate(
   );
 }
 
-async function convertWikilinkToMarkdown(foam: Foam): Promise<void> {
+/**
+ * Converts the wikilink at `position` in the document at `uri`, or, when
+ * either is missing, the wikilink at the cursor of the active text editor.
+ */
+async function convertWikilinkToMarkdown(
+  foam: Foam,
+  uri?: vscode.Uri,
+  position?: vscode.Position
+): Promise<void> {
   const activeEditor = vscode.window.activeTextEditor;
-  if (!activeEditor) {
+  const location =
+    uri && position
+      ? { uri, position }
+      : activeEditor && {
+          uri: activeEditor.document.uri,
+          position: activeEditor.selection.active,
+        };
+  if (!location) {
     return;
   }
 
-  const document = activeEditor.document;
-  const position = activeEditor.selection.active;
-  const foamPosition = { line: position.line, character: position.character };
+  const foamPosition = {
+    line: location.position.line,
+    character: location.position.character,
+  };
 
   try {
+    const document = await vscode.workspace.openTextDocument(location.uri);
     const documentUri = fromVsCodeUri(document.uri);
     // Re-parse from current text to handle dirty editor state
     const resource = foam.services.parser.parse(documentUri, document.getText());
@@ -63,7 +84,13 @@ async function convertWikilinkToMarkdown(foam: Foam): Promise<void> {
     }
 
     const linkInfo = MarkdownLink.analyzeLink(targetLink);
-    const targetResource = foam.workspace.find(linkInfo.target);
+    // Resolve the link the way navigation does. resolveLink may embed the
+    // section as a URI fragment; strip it to get the resource URI.
+    // A Gollum link that climbs above the root resolves to nothing
+    const targetUri = foam.workspace
+      .resolveLink(resource, targetLink)
+      ?.asPlain();
+    const targetResource = targetUri ? foam.workspace.find(targetUri) : null;
     if (!targetResource) {
       throw new Error(`Resource "${linkInfo.target}" not found`);
     }
@@ -82,11 +109,14 @@ async function convertWikilinkToMarkdown(foam: Foam): Promise<void> {
     });
 
     const range = toVsCodeRange(edit.range);
-    const success = await activeEditor.edit(editBuilder => {
-      editBuilder.replace(range, edit.newText);
-    });
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    workspaceEdit.replace(document.uri, range, edit.newText);
+    const success = await vscode.workspace.applyEdit(workspaceEdit);
 
-    if (success) {
+    if (
+      success &&
+      activeEditor?.document.uri.toString() === document.uri.toString()
+    ) {
       const newEndPosition = new vscode.Position(
         range.start.line,
         range.start.character + edit.newText.length
@@ -135,23 +165,43 @@ async function convertMarkdownToWikilink(foam: Foam): Promise<void> {
     // resolveLink may embed the section as a URI fragment; strip it to get the resource URI
     const targetUri = foam.workspace
       .resolveLink(resource, targetLink)
-      .asPlain();
+      ?.asPlain();
+    if (!targetUri) {
+      throw new Error(`Resource not found: ${linkInfo.target}`);
+    }
     const targetResource = foam.workspace.get(targetUri);
 
     if (!targetResource) {
       throw new Error(`Resource not found: ${targetUri.path}`);
     }
 
-    const identifier = foam.workspace.getIdentifier(targetResource.uri);
     const defaultAlias = linkInfo.section
       ? `${targetResource.title}#${linkInfo.section}`
       : targetResource.title;
-    const alias =
-      linkInfo.alias && linkInfo.alias !== defaultAlias ? linkInfo.alias : '';
+    let target: string;
+    let alias: string;
+    if (Config.getWikilinksSyntax() === 'gollum') {
+      // A Gollum link is the path from the note's folder, without the extension
+      const path = targetResource.uri
+        .relativeTo(documentUri.getDirectory())
+        .changeExtension(foam.workspace.defaultExtension, '').path;
+      const sameAsTarget = [
+        defaultAlias,
+        targetResource.title,
+        targetResource.uri.getName(),
+        path,
+      ].includes(linkInfo.alias);
+      target = path;
+      alias = linkInfo.alias && !sameAsTarget ? linkInfo.alias : '';
+    } else {
+      target = foam.workspace.getIdentifier(targetResource.uri);
+      alias =
+        linkInfo.alias && linkInfo.alias !== defaultAlias ? linkInfo.alias : '';
+    }
 
     const edit = MarkdownLink.createUpdateLinkEdit(targetLink, {
       type: 'wikilink',
-      target: identifier,
+      target,
       alias,
     });
 

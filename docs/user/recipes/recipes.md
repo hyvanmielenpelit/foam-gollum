@@ -38,6 +38,8 @@ A #recipe is a guide, tip or strategy for getting the most out of your Foam work
 ## Organise
 
 - Using [[backlinking]] for reference lists.
+- Keeping your notes inside a bigger project with [[notes-in-a-subfolder]].
+- Using one notes folder across several projects with [[multi-root-workspaces]].
 
 ## Write
 
@@ -145,3 +147,5 @@ _See [[how-to-write-recipes]] and the [contribution guide](https://github.com/fo
 [graph-view]: ../features/graph-view.md 'Graph Visualization'
 [templates]: ../features/templates.md 'Note Templates'
 [embeds]: ../features/embeds.md 'Note Embeds'
+[notes-in-a-subfolder]: notes-in-a-subfolder.md 'Keep your notes in a subfolder'
+[multi-root-workspaces]: multi-root-workspaces.md 'Multi-root workspaces'

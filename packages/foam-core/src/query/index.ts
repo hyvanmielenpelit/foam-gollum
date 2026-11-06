@@ -5,7 +5,7 @@ import { FoamWorkspace } from '../model/workspace';
 import { FoamGraph } from '../model/graph';
 import { Logger } from '../utils/log';
 import { URI } from '../model/uri';
-import { stripFrontMatter } from '../utils/md';
+import { stripFrontMatter, stripFrontMatterAndTitle } from '../utils/md';
 import { getDirectory, getExtension, getName } from '../utils/path';
 
 const queryJexl = new jexl.Jexl();
@@ -153,10 +153,14 @@ export interface QueryExecutionResult {
  * Augments the raw Resource with graph-derived fields so users can write
  * `resource.backlinks.length > 3` in expressions.
  */
-function makeExpressionContext(r: Resource, graph: FoamGraph) {
+function makeExpressionContext(
+  r: Resource,
+  graph: FoamGraph,
+  workspace: FoamWorkspace
+) {
   return {
     ...r,
-    path: r.uri.path,
+    path: workspace.relativePath(r.uri),
     tags: r.tags.map(t => t.label),
     backlinks: graph.getBacklinks(r.uri),
     outlinks: graph.getLinks(r.uri),
@@ -202,7 +206,7 @@ export function parseFilter(
     const built = tryBuildUserRegex(filter.path, 'path filter');
     if ('regex' in built) {
       const re = built.regex;
-      predicates.push(r => re.test(r.uri.path));
+      predicates.push(r => re.test(workspace.relativePath(r.uri)));
     } else {
       warnings.push(warn(built.warning));
       predicates.push(() => false);
@@ -264,7 +268,9 @@ export function parseFilter(
       predicates.push(r => {
         try {
           return Boolean(
-            expr.evalSync({ resource: makeExpressionContext(r, graph) })
+            expr.evalSync({
+              resource: makeExpressionContext(r, graph, workspace),
+            })
           );
         } catch (e) {
           // Runtime errors fire per-resource and would be noisy if surfaced
@@ -354,7 +360,10 @@ function parseShorthand(
     const built = tryBuildUserRegex(filter.slice(1, -1), 'shorthand /regex/');
     if ('regex' in built) {
       const re = built.regex;
-      return { predicate: r => re.test(r.uri.path), warnings: [] };
+      return {
+        predicate: r => re.test(workspace.relativePath(r.uri)),
+        warnings: [],
+      };
     }
     return {
       predicate: () => false,
@@ -391,35 +400,31 @@ export function requiresSource(field: string): boolean {
   );
 }
 
-function stripH1Title(source: string): string {
-  const lines = source.split(/\r?\n/);
-  let i = 0;
-  while (i < lines.length && lines[i].trim() === '') i++;
-  if (i < lines.length && /^#\s+/.test(lines[i])) {
-    let next = i + 1;
-    if (next < lines.length && lines[next].trim() === '') next++;
-    return lines.slice(next).join('\n');
-  }
-  return source;
-}
-
 function getSectionContent(r: Resource, source: string, label: string): string | undefined {
   // Case-sensitive: matches `Resource.findSection` so labels work the same way
   // in `section[Foo]` selects as in `![[note#Foo]]` embeds.
   const section = r.sections.find(s => s.label === label);
   if (!section) return undefined;
-  // Section range is half-open at end.line; start.line is the heading row, so
-  // skip it.
+  // Section range is half-open at end.line; skip the heading, which spans two
+  // lines for setext headings.
   const lines = source.split(/\r?\n/);
-  return lines.slice(section.range.start.line + 1, section.range.end.line).join('\n');
+  return lines
+    .slice(section.headingRange.end.line + 1, section.range.end.line)
+    .join('\n');
 }
 
-function buildFullView(r: Resource, graph: FoamGraph): Record<string, unknown> {
+function buildFullView(
+  r: Resource,
+  graph: FoamGraph,
+  workspace: FoamWorkspace
+): Record<string, unknown> {
+  // `path`/`folder` are documented as workspace-relative — see foam-queries.md.
+  const relPath = workspace.relativePath(r.uri);
   return {
     title: r.title,
-    path: r.uri.path,
+    path: relPath,
     filename: getName(r.uri.path),
-    folder: getDirectory(r.uri.path),
+    folder: getDirectory(relPath),
     extension: getExtension(r.uri.path),
     type: r.type,
     tags: r.tags.map(t => t.label),
@@ -445,7 +450,9 @@ function resolveField(
   }
   if (field === 'content') {
     const src = getSource();
-    return src === undefined ? undefined : stripH1Title(stripFrontMatter(src));
+    return src === undefined
+      ? undefined
+      : stripFrontMatterAndTitle(src, r.sections);
   }
   const sectionMatch = SECTION_FIELD_RE.exec(field);
   if (sectionMatch) {
@@ -463,10 +470,11 @@ function resolveField(
 function projectResource(
   r: Resource,
   graph: FoamGraph,
+  workspace: FoamWorkspace,
   fields: string[],
   readSource?: SourceReader
 ): ResourceView {
-  const full = buildFullView(r, graph);
+  const full = buildFullView(r, graph, workspace);
   const needsSource = fields.some(requiresSource);
   let cached: string | undefined;
   let cacheLoaded = false;
@@ -706,7 +714,7 @@ export function executeQuery(
   const matched = workspace.list().filter(predicate);
 
   let slice = matched.map(r =>
-    projectResource(r, graph, cheapFields, undefined)
+    projectResource(r, graph, workspace, cheapFields, undefined)
   );
 
   if (query.sort) {
@@ -740,6 +748,7 @@ export function executeQuery(
     const sourceProjection = projectResource(
       resource,
       graph,
+      workspace,
       sourceFields,
       options.readSource
     );

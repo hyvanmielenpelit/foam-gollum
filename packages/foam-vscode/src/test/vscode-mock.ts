@@ -13,14 +13,11 @@ import { Logger } from '@foam/core';
 import { TextEdit as FoamTextEdit } from '@foam/core';
 import { Foam, bootstrap } from '@foam/core';
 import { createMarkdownParser } from '@foam/core';
-import {
-  GenericDataStore,
-  AlwaysIncludeMatcher,
-  IWatcher,
-} from '@foam/core';
+import { GenericDataStore, AlwaysIncludeMatcher, IWatcher } from '@foam/core';
 import { MarkdownResourceProvider } from '@foam/core';
 import { FOAM_EXTENSION_ID, randomString } from './test-utils';
 import micromatch from 'micromatch';
+import markdownItKatex from '@vscode/markdown-it-katex';
 import { Emitter } from '@foam/core';
 
 interface Thenable<T> {
@@ -77,9 +74,9 @@ export class Position implements FoamPosition {
   }
 
   translate(lineDelta?: number, characterDelta?: number): Position;
-   
+
   translate(change: { lineDelta?: number; characterDelta?: number }): Position;
-   
+
   translate(
     lineDeltaOrChange?:
       | number
@@ -101,9 +98,9 @@ export class Position implements FoamPosition {
   }
 
   with(line?: number, character?: number): Position;
-   
+
   with(change: { line?: number; character?: number }): Position;
-   
+
   with(
     lineOrChange?: number | { line?: number; character?: number },
     character?: number
@@ -266,7 +263,7 @@ export function fromVsCodeUri(vsCodeUri: Uri): URI {
 }
 
 // VS Code Uri static methods
- 
+
 export const Uri = {
   file(path: string): Uri {
     return createVSCodeUri(URI.file(path));
@@ -301,6 +298,24 @@ export const Uri = {
 // VS Code Location class
 export class Location {
   constructor(public uri: Uri, public range: Range) {}
+}
+
+// VS Code DocumentLink class
+export class DocumentLink {
+  public tooltip?: string;
+  constructor(public range: Range, public target?: Uri) {}
+}
+
+export class RelativePattern {
+  public baseUri: Uri;
+  constructor(base: Uri | { uri: Uri } | string, public pattern: string) {
+    this.baseUri =
+      typeof base === 'string'
+        ? createVSCodeUri(URI.file(base))
+        : 'uri' in base
+        ? base.uri
+        : base;
+  }
 }
 
 // VS Code SymbolKind enum
@@ -519,7 +534,7 @@ export class CompletionList {
 
 export class MarkdownString {
   public value: string;
-  public isTrusted?: boolean;
+  public isTrusted?: boolean | { readonly enabledCommands: readonly string[] };
 
   constructor(value?: string) {
     this.value = value || '';
@@ -1015,6 +1030,11 @@ class MockTextDocument implements TextDocument {
   async save(): Promise<boolean> {
     try {
       await fs.promises.writeFile(this.uri.fsPath, this._content);
+      // Saving changes the file on disk, so the file watcher fires — same as
+      // every other write path in this mock, and as VS Code does for real.
+      for (const watcher of mockState.fileWatchers) {
+        watcher._fireChange(this.uri);
+      }
       return true;
     } catch {
       return false;
@@ -1146,6 +1166,30 @@ export interface TextEditor {
   hide(): void;
 }
 
+/**
+ * Resolves what VS Code resolves when a snippet is inserted: tabstops, with or
+ * without placeholder text, and the TM_ file variables. Anything else is left
+ * as written.
+ */
+function resolveSnippet(text: string, uri: Uri): string {
+  const basename = path.basename(uri.fsPath);
+  const variables: Record<string, string> = {
+    TM_FILENAME: basename,
+    TM_FILENAME_BASE: basename.replace(/\.[^.]+$/, ''),
+    TM_DIRECTORY: path.dirname(uri.fsPath),
+    TM_FILEPATH: uri.fsPath,
+  };
+  return text
+    .replace(/\$\{\d+:([^}]*)\}/g, (_, placeholder) => placeholder)
+    .replace(/\$\{\d+\}/g, '')
+    .replace(/\$\d+/g, '')
+    .replace(
+      /\$\{(TM_[A-Z_]+)(?::([^}]*))?\}/g,
+      (match, name, fallback) => variables[name] ?? fallback ?? match
+    )
+    .replace(/\$(TM_[A-Z_]+)/g, (match, name) => variables[name] ?? match);
+}
+
 class MockTextEditor implements TextEditor {
   public readonly document: TextDocument;
   public selection: Selection;
@@ -1194,8 +1238,8 @@ class MockTextEditor implements TextEditor {
   async insertSnippet(snippet: any): Promise<boolean> {
     // Insert snippet at current selection
     if (snippet && typeof snippet === 'object' && snippet.value) {
-      const text = snippet.value;
       const document = this.document as MockTextDocument;
+      const text = resolveSnippet(snippet.value, document.uri);
 
       // Replace selection with snippet text
       const startOffset = document.offsetAt(this.selection.start);
@@ -1278,6 +1322,17 @@ export class WorkspaceEdit {
       this._edits.set(key, []);
     }
     this._edits.get(key)!.push(new TextEdit(range, ''));
+  }
+
+  deleteFile(
+    uri: Uri,
+    options?: { recursive?: boolean; ignoreIfNotExists?: boolean }
+  ): void {
+    const key = uri.toString();
+    if (!this._edits.has(key)) {
+      this._edits.set(key, []);
+    }
+    this._edits.get(key)!.push({ type: 'delete', uri, options });
   }
 
   renameFile(
@@ -1400,17 +1455,8 @@ class MockFileSystem implements FileSystem {
   }
 
   async delete(uri: Uri, options?: { recursive?: boolean }): Promise<void> {
-    // Fire onWillDeleteFiles listeners before deleting, so handlers can
-    // clean up workspace state synchronously (mirrors VS Code's behaviour).
-    if (mockState.onWillDeleteFilesListeners.length > 0) {
-      const event = { files: [uri] };
-      for (const listener of mockState.onWillDeleteFilesListeners) {
-        const result = listener(event);
-        if (result && typeof result.then === 'function') {
-          await result;
-        }
-      }
-    }
+    // No file-operation event here: `workspace.fs` is a plain filesystem API,
+    // and VS Code reports it only through the file watcher.
 
     if (options?.recursive) {
       // Use rmdir with recursive option for older Node.js versions
@@ -1503,7 +1549,17 @@ class MockFileSystemWatcher implements FileSystemWatcher {
   ignoreChangeEvents = false;
   ignoreDeleteEvents = false;
 
-  constructor(private pattern: string) {
+  private readonly pattern: string;
+  private readonly baseUri: Uri | undefined;
+
+  constructor(globPattern: string | RelativePattern) {
+    if (typeof globPattern === 'string') {
+      this.pattern = globPattern;
+      this.baseUri = undefined;
+    } else {
+      this.pattern = globPattern.pattern;
+      this.baseUri = globPattern.baseUri;
+    }
     // Register this watcher in mockState (will be added to mockState)
     if (mockState.fileWatchers) {
       mockState.fileWatchers.push(this);
@@ -1530,13 +1586,18 @@ class MockFileSystemWatcher implements FileSystemWatcher {
   }
 
   private matches(uri: Uri): boolean {
-    const workspaceFolder = mockState.workspaceFolders[0];
-    if (!workspaceFolder) return false;
+    // A RelativePattern scopes matching to its base folder; a plain string
+    // pattern is matched relative to the first workspace folder.
+    const baseFsPath =
+      this.baseUri?.fsPath ?? mockState.workspaceFolders[0]?.uri.fsPath;
+    if (!baseFsPath) return false;
 
     const relativePath = path
-      .relative(workspaceFolder.uri.fsPath, uri.fsPath)
+      .relative(baseFsPath, uri.fsPath)
       .split(path.sep)
       .join('/');
+    // A path outside the base folder (starts with '..') is not watched.
+    if (relativePath.startsWith('..')) return false;
     // Use micromatch (already imported) for glob matching
     return micromatch.isMatch(relativePath, this.pattern);
   }
@@ -1728,14 +1789,9 @@ class TestFoam {
       return findMarkdownFiles(workspaceFolder.uri.fsPath);
     };
 
-    const readFile = async (uri: URI): Promise<string> => {
-      try {
-        return await fs.promises.readFile(uri.toFsPath(), 'utf8');
-      } catch (error) {
-        Logger.debug(`Failed to read file ${uri.toString()}: ${error}`);
-        return '';
-      }
-    };
+    // Fails on a missing file, as `workspace.fs.readFile` does
+    const readFile = (uri: URI): Promise<string> =>
+      fs.promises.readFile(uri.toFsPath(), 'utf8');
 
     // Create services
     const dataStore = new GenericDataStore(listFiles, readFile);
@@ -1831,7 +1887,64 @@ const mockState = {
   onDidRenameFilesListeners: [] as ((e: any) => any)[],
   onWillDeleteFilesListeners: [] as ((e: any) => any)[],
   openDocuments: new Map<string, MockTextDocument>(),
+  tabs: [] as MockTab[],
+  activeTab: undefined as MockTab | undefined,
 };
+
+interface MockTab {
+  input: { uri: Uri; viewType?: string };
+  label: string;
+}
+
+/**
+ * The `workbench.editorAssociations` entry that applies to `uri`, if any.
+ *
+ * Matching is deliberately literal — the file name, `*.ext`, or the full path —
+ * rather than VS Code's glob and priority resolution. The mock only has to make
+ * the "opened in an associated editor" branch observable; the e2e suite is what
+ * asserts against the real resolver.
+ */
+function matchingEditorAssociation(uri: Uri): string | undefined {
+  const associations =
+    workspace
+      .getConfiguration()
+      .get<Record<string, string>>('workbench.editorAssociations') ?? {};
+  const name = path.basename(uri.fsPath);
+  const extension = path.extname(name);
+  for (const [pattern, viewType] of Object.entries(associations)) {
+    if (viewType === 'default') {
+      continue;
+    }
+    if (
+      pattern === name ||
+      pattern === `*${extension}` ||
+      pattern === uri.fsPath
+    ) {
+      return viewType;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Records a tab as the active one, replacing any tab already open for the same
+ * URI and view type. `window.tabGroups` is what `getActiveTabUri()` reads, so a
+ * feature acting on "the current note" only sees what is recorded here.
+ */
+function setActiveTab(input: { uri: Uri; viewType?: string }): void {
+  const tab: MockTab = { input, label: path.basename(input.uri.fsPath) };
+  const existing = mockState.tabs.findIndex(
+    t =>
+      t.input.uri.toString() === input.uri.toString() &&
+      t.input.viewType === input.viewType
+  );
+  if (existing >= 0) {
+    mockState.tabs[existing] = tab;
+  } else {
+    mockState.tabs.push(tab);
+  }
+  mockState.activeTab = tab;
+}
 
 // Window namespace
 export const window = {
@@ -1853,7 +1966,13 @@ export const window = {
 
   createTreeView(viewId: string, options: any): any {
     const noop = () => ({ dispose: () => {} });
-    return { dispose: () => {}, onDidChangeSelection: noop, onDidChangeVisibility: noop, onDidExpandElement: noop, onDidCollapseElement: noop };
+    return {
+      dispose: () => {},
+      onDidChangeSelection: noop,
+      onDidChangeVisibility: noop,
+      onDidExpandElement: noop,
+      onDidCollapseElement: noop,
+    };
   },
 
   registerTreeDataProvider(_viewId: string, _provider: any): Disposable {
@@ -1869,8 +1988,12 @@ export const window = {
   },
 
   tabGroups: {
-    activeTabGroup: { activeTab: undefined as any, tabs: [] as any[] },
-    all: [] as any[],
+    get activeTabGroup() {
+      return { activeTab: mockState.activeTab, tabs: mockState.tabs };
+    },
+    get all() {
+      return [this.activeTabGroup];
+    },
     onDidChangeTabs(_listener: (e: any) => any): Disposable {
       return { dispose: () => {} };
     },
@@ -1928,6 +2051,7 @@ export const window = {
     if (!mockState.visibleTextEditors.includes(editor)) {
       mockState.visibleTextEditors.push(editor);
     }
+    setActiveTab({ uri: document.uri });
 
     return editor;
   },
@@ -1985,6 +2109,33 @@ export const window = {
 };
 
 // Workspace namespace
+/**
+ * Fires a `will` file-operation event the way VS Code does: a listener's own
+ * promise is not awaited, only the thenables it hands to `waitUntil`.
+ *
+ * A participant that rejects is reported and the operation carries on, as VS
+ * Code does — a misbehaving listener must not cancel the edit.
+ */
+async function fireWillEvent(
+  listeners: ((e: any) => any)[],
+  payload: { files: any[] }
+): Promise<void> {
+  const participants: Thenable<unknown>[] = [];
+  const event = {
+    ...payload,
+    waitUntil: (thenable: Thenable<unknown>) => participants.push(thenable),
+  };
+  for (const listener of listeners) {
+    listener(event);
+  }
+  const outcomes = await Promise.allSettled(participants);
+  for (const outcome of outcomes) {
+    if (outcome.status === 'rejected') {
+      Logger.error('waitUntil participant failed', outcome.reason);
+    }
+  }
+}
+
 export const workspace = {
   get workspaceFolders(): WorkspaceFolder[] | undefined {
     return mockState.workspaceFolders.length > 0
@@ -1996,7 +2147,9 @@ export const workspace = {
     return mockState.fileSystem;
   },
 
-  createFileSystemWatcher(globPattern: string): FileSystemWatcher {
+  createFileSystemWatcher(
+    globPattern: string | RelativePattern
+  ): FileSystemWatcher {
     return new MockFileSystemWatcher(globPattern);
   },
 
@@ -2017,14 +2170,25 @@ export const workspace = {
   },
 
   async findFiles(
-    include: string,
-    exclude?: string,
+    include: string | RelativePattern,
+    exclude?: string | RelativePattern,
     maxResults?: number
   ): Promise<Uri[]> {
-    // Simple implementation that recursively finds files
-    const workspaceFolder = mockState.workspaceFolders[0];
+    // Simple implementation that recursively finds files. As in VS Code, a
+    // RelativePattern searches under its own base rather than the workspace
+    // folder, and its pattern is relative to that base. The exclude pattern is
+    // matched against the include's base: every caller passes the same base for
+    // both, so the two-base case isn't modelled.
+    const includePattern =
+      include instanceof RelativePattern ? include.pattern : include;
+    const excludePattern =
+      exclude instanceof RelativePattern ? exclude.pattern : exclude;
+    const base =
+      include instanceof RelativePattern
+        ? include.baseUri
+        : mockState.workspaceFolders[0]?.uri;
 
-    if (!workspaceFolder) {
+    if (!base) {
       return [];
     }
 
@@ -2036,7 +2200,7 @@ export const workspace = {
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           const relativePath = path
-            .relative(workspaceFolder.uri.fsPath, fullPath)
+            .relative(base.fsPath, fullPath)
             .split(path.sep)
             .join('/');
 
@@ -2045,9 +2209,12 @@ export const workspace = {
             files.push(...subFiles);
           } else if (entry.isFile()) {
             // Check if file matches include pattern
-            if (micromatch.isMatch(relativePath, include)) {
+            if (micromatch.isMatch(relativePath, includePattern)) {
               // Check if file matches exclude pattern
-              if (!exclude || !micromatch.isMatch(relativePath, exclude)) {
+              if (
+                !excludePattern ||
+                !micromatch.isMatch(relativePath, excludePattern)
+              ) {
                 files.push(fullPath);
               }
             }
@@ -2061,7 +2228,7 @@ export const workspace = {
     };
 
     try {
-      const files = await findFilesRecursive(workspaceFolder.uri.fsPath);
+      const files = await findFilesRecursive(base.fsPath);
 
       let result = files.map(file => createVSCodeUri(URI.file(file)));
 
@@ -2135,6 +2302,10 @@ export const workspace = {
     return { dispose: () => {} };
   },
 
+  onDidCloseTextDocument(listener: (e: any) => void): Disposable {
+    return { dispose: () => {} };
+  },
+
   async openTextDocument(
     uriOrFileNameOrOptions:
       | Uri
@@ -2170,26 +2341,35 @@ export const workspace = {
 
   async applyEdit(edit: WorkspaceEdit): Promise<boolean> {
     try {
-      // Collect rename operations and fire onWillRenameFiles before processing
+      // Collect the file operations, to announce them before processing
       const renames: { oldUri: Uri; newUri: Uri }[] = [];
+      const deletions: { uri: Uri; options?: any }[] = [];
       for (const [, edits] of edit._getEdits()) {
         for (const e of edits) {
           if (e.type === 'rename') {
             renames.push(e);
           }
+          if (e.type === 'delete') {
+            deletions.push(e);
+          }
         }
       }
+
       if (
         renames.length > 0 &&
         mockState.onWillRenameFilesListeners.length > 0
       ) {
-        const event = { files: renames };
-        for (const listener of mockState.onWillRenameFilesListeners) {
-          const result = listener(event);
-          if (result && typeof result.then === 'function') {
-            await result;
-          }
-        }
+        await fireWillEvent(mockState.onWillRenameFilesListeners, {
+          files: renames,
+        });
+      }
+      if (
+        deletions.length > 0 &&
+        mockState.onWillDeleteFilesListeners.length > 0
+      ) {
+        await fireWillEvent(mockState.onWillDeleteFilesListeners, {
+          files: deletions.map(d => d.uri),
+        });
       }
 
       for (const [uriString, edits] of edit._getEdits()) {
@@ -2275,6 +2455,42 @@ export const workspace = {
               }
             }
           }
+          if (e.type === 'delete') {
+            let deletedFiles: string[] = [];
+            try {
+              const stat = await fs.promises.stat(e.uri.fsPath);
+              deletedFiles = stat.isDirectory()
+                ? await collectFilesRecursively(e.uri.fsPath)
+                : [e.uri.fsPath];
+            } catch {
+              // already gone: VS Code still reports the operation
+            }
+            try {
+              await fs.promises.rm(e.uri.fsPath, {
+                recursive: e.options?.recursive ?? false,
+                force: e.options?.ignoreIfNotExists ?? false,
+              });
+            } catch (err) {
+              if (!e.options?.ignoreIfNotExists) {
+                throw err;
+              }
+              // Nothing was removed: announcing the deletion would tell the
+              // watchers that files still on disk are gone.
+              Logger.error(
+                `vscode-mock: could not delete ${e.uri.fsPath}`,
+                err
+              );
+              continue;
+            }
+            mockState.openDocuments.delete(e.uri.toString());
+            for (const deleted of deletedFiles) {
+              const deletedUri = createVSCodeUri(URI.file(deleted));
+              mockState.openDocuments.delete(deletedUri.toString());
+              for (const watcher of mockState.fileWatchers) {
+                watcher._fireDelete(deletedUri);
+              }
+            }
+          }
         }
       }
 
@@ -2285,10 +2501,7 @@ export const workspace = {
       ) {
         const event = { files: renames };
         for (const listener of mockState.onDidRenameFilesListeners) {
-          const result = listener(event);
-          if (result && typeof result.then === 'function') {
-            await result;
-          }
+          listener(event);
         }
       }
 
@@ -2386,7 +2599,11 @@ export const languages = {
     };
   },
 
-  registerCompletionItemProvider(selector: any, provider: any, ...triggerChars: string[]): Disposable {
+  registerCompletionItemProvider(
+    selector: any,
+    provider: any,
+    ...triggerChars: string[]
+  ): Disposable {
     return { dispose: () => {} };
   },
 
@@ -2410,7 +2627,11 @@ export const languages = {
     return { dispose: () => {} };
   },
 
-  registerCodeActionsProvider(selector: any, provider: any, metadata?: any): Disposable {
+  registerCodeActionsProvider(
+    selector: any,
+    provider: any,
+    metadata?: any
+  ): Disposable {
     return { dispose: () => {} };
   },
 
@@ -2426,8 +2647,37 @@ export const languages = {
 };
 
 // Extensions namespace
+/**
+ * Exports of VS Code's built-in `vscode.markdown-math` extension, mirroring
+ * extensions/markdown-math/src/extension.ts in the VS Code repository.
+ */
+const markdownMath = {
+  extendMarkdownIt(md: any) {
+    const config = workspace.getConfiguration('markdown');
+    if (!config.get<boolean>('math.enabled', true)) {
+      return md;
+    }
+    const settingsMacros = config.get<Record<string, string>>(
+      'math.macros',
+      {}
+    );
+    const options = {
+      enableFencedBlocks: true,
+      globalGroup: true,
+      macros: { ...settingsMacros },
+    };
+    md.core.ruler.push('reset-katex-macros', () => {
+      options.macros = { ...settingsMacros };
+    });
+    return md.use(markdownItKatex, options);
+  },
+};
+
 export const extensions = {
   getExtension<T = any>(extensionId: string): Extension<T> | undefined {
+    if (extensionId === 'vscode.markdown-math') {
+      return new MockExtension<any>(extensionId, markdownMath) as Extension<T>;
+    }
     // VS Code matches extension ids case-insensitively
     if (extensionId.toLowerCase() === FOAM_EXTENSION_ID.toLowerCase()) {
       return new MockExtension<any>(
@@ -2458,7 +2708,13 @@ export const extensions = {
 };
 
 // Env namespace
+export enum UIKind {
+  Desktop = 1,
+  Web = 2,
+}
+
 export const env = {
+  uiKind: UIKind.Desktop,
   __mockClipboard: '',
   clipboard: {
     async writeText(value: string): Promise<void> {
@@ -2505,6 +2761,8 @@ export function resetMockState(): void {
   mockState.onDidRenameFilesListeners = [];
   mockState.onWillDeleteFilesListeners = [];
   mockState.openDocuments.clear();
+  mockState.tabs = [];
+  mockState.activeTab = undefined;
   mockState.configuration = new MockWorkspaceConfiguration();
 
   // Create a default workspace folder for tests
@@ -2521,11 +2779,20 @@ export function resetMockState(): void {
     mockState.activeTextEditor = undefined;
     mockState.visibleTextEditors = [];
     mockState.openDocuments.clear();
+    mockState.tabs = [];
+    mockState.activeTab = undefined;
     return Promise.resolve();
   });
 
   commands.registerCommand('vscode.open', async uri => {
-    // Mock opening a file - just show it in editor
+    const viewType = matchingEditorAssociation(uri);
+    if (viewType) {
+      // VS Code opens the file in the associated editor, so there is no text
+      // editor for it — only a custom-editor tab.
+      mockState.activeTextEditor = undefined;
+      setActiveTab({ uri, viewType });
+      return undefined;
+    }
     return window.showTextDocument(uri);
   });
 
@@ -2547,6 +2814,8 @@ export async function forceCleanup(): Promise<void> {
   // Clear all event listeners by resetting emitters
   mockState.activeTextEditor = undefined;
   mockState.visibleTextEditors = [];
+  mockState.tabs = [];
+  mockState.activeTab = undefined;
 
   // Close any open file handles by clearing the file system
   mockState.fileSystem = new MockFileSystem();

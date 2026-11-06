@@ -7,6 +7,7 @@ import {
 import { Logger } from '../utils/log';
 import { URI } from '../model/uri';
 import { FoamGraph } from '../model/graph';
+import { Config, DefaultFoamConfig } from '../config';
 import {
   createTestNote,
   createTestWorkspace,
@@ -473,6 +474,124 @@ describe('Link resolution', () => {
         ws.set(noteA).set(noteB);
         // Default provider without workspace roots should work as before
         expect(ws.resolveLink(noteA, noteA.links[0])).toEqual(noteB.uri);
+      });
+
+      describe('with percent-encoded targets (#1745)', () => {
+        it('should decode the target', () => {
+          const linker = createTestNote({
+            uri: '/workspace/dir1/page-a.md',
+            links: [{ to: '/dir2/page%20b.md' }],
+          });
+          const target = createNoteFromMarkdown(
+            '',
+            '/workspace/dir2/page b.md'
+          );
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(target);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(target.uri);
+        });
+
+        it('should decode the target when it lives in another root', () => {
+          const linker = createTestNote({
+            uri: '/workspace1/dir1/page-a.md',
+            links: [{ to: '/shared/page%20b.md' }],
+          });
+          const target = createNoteFromMarkdown(
+            '',
+            '/workspace2/shared/page b.md'
+          );
+
+          const ws = createTestWorkspace([
+            URI.file('/workspace1'),
+            URI.file('/workspace2'),
+          ]);
+          ws.set(linker).set(target);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(target.uri);
+        });
+
+        it('should decode a directory target', () => {
+          const linker = createTestNote({
+            uri: '/workspace/page-a.md',
+            links: [{ to: '/my%20folder' }],
+          });
+          const index = createNoteFromMarkdown(
+            '',
+            '/workspace/my folder/index.md'
+          );
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(index);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(index.uri);
+        });
+
+        it('should keep the block anchor of a reference-style link', () => {
+          const linker = createNoteFromMarkdown(
+            '[b][ref]\n\n[ref]: /dir2/page%20b.md#^block1',
+            '/workspace/dir1/page-a.md'
+          );
+          const target = createNoteFromMarkdown(
+            '',
+            '/workspace/dir2/page b.md'
+          );
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(target);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(
+            target.uri.with({ fragment: '^block1' })
+          );
+        });
+
+        it('should resolve a file whose name contains a literal percent sequence', () => {
+          const linker = createTestNote({
+            uri: '/workspace/page-a.md',
+            links: [{ to: '/attachments/shot%202024.png' }],
+          });
+          const attachment = createNoteFromMarkdown(
+            '',
+            '/workspace/attachments/shot%202024.png'
+          );
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(attachment);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(
+            attachment.uri
+          );
+        });
+
+        it('should not treat ? in the target as a query', () => {
+          const linker = createTestNote({
+            uri: '/workspace/page-a.md',
+            links: [{ to: '/notes/why?.md' }],
+          });
+          const target = createNoteFromMarkdown('', '/workspace/notes/why?.md');
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(target);
+
+          expect(ws.resolveLink(linker, linker.links[0])).toEqual(target.uri);
+        });
+
+        it('should not resolve an encoded # to the note named before it', () => {
+          const linker = createTestNote({
+            uri: '/workspace/page-a.md',
+            links: [{ to: '/notes/c%23.md' }],
+          });
+          const c = createNoteFromMarkdown('', '/workspace/notes/c.md');
+          const cSharp = createNoteFromMarkdown('', '/workspace/notes/c#.md');
+
+          const ws = createTestWorkspace([URI.file('/workspace')]);
+          ws.set(linker).set(c).set(cSharp);
+
+          const resolved = ws.resolveLink(linker, linker.links[0]);
+          expect(resolved.isPlaceholder()).toBe(true);
+          expect(resolved.path).toEqual('/workspace/notes/c%23.md');
+        });
       });
     });
   });
@@ -1151,5 +1270,166 @@ describe('Gollum path resolution', () => {
       const result = provider.getFilePathForTarget('target.png', 'dir1/', false, '/workspace', workspace);
       expect(result).toEqual('/workspace/dir1/target.png');
     });
+  });
+});
+
+describe('createMarkdownReferences edge cases', () => {
+  it('returns no definitions for a URI not in the workspace', () => {
+    const ws = createTestWorkspace();
+    expect(
+      createMarkdownReferences(ws, URI.file('/missing.md'), true)
+    ).toEqual([]);
+  });
+});
+
+describe('Link resolution with Gollum syntax', () => {
+  const wikiRoot = URI.file('/wiki');
+
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => true,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('should resolve a target relative to the folder of the linking note', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[[Page]]', '/wiki/a/Src.md');
+    const sibling = createNoteFromMarkdown('', '/wiki/a/Page.md');
+    const atRoot = createNoteFromMarkdown('', '/wiki/Page.md');
+    ws.set(source).set(sibling).set(atRoot);
+
+    expect(ws.resolveLink(source, source.links[0])).toEqual(sibling.uri);
+  });
+
+  it('should resolve a target starting with / relative to the wiki root', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[[/dir/Page]]', '/wiki/a/Src.md');
+    const target = createNoteFromMarkdown('', '/wiki/dir/Page.md');
+    const decoy = createNoteFromMarkdown('', '/wiki/a/dir/Page.md');
+    ws.set(source).set(target).set(decoy);
+
+    expect(ws.resolveLink(source, source.links[0])).toEqual(target.uri);
+  });
+
+  it('should resolve a target starting with ../ from the parent folder', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[[../Page]]', '/wiki/a/Src.md');
+    const target = createNoteFromMarkdown('', '/wiki/Page.md');
+    const decoy = createNoteFromMarkdown('', '/wiki/a/Page.md');
+    ws.set(source).set(target).set(decoy);
+
+    expect(ws.resolveLink(source, source.links[0])).toEqual(target.uri);
+  });
+
+  it('should return undefined when ../ climbs above the wiki root', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const fromRoot = createNoteFromMarkdown('[[../Page]]', '/wiki/Src.md');
+    const fromFolder = createNoteFromMarkdown(
+      '[[../../Page]]',
+      '/wiki/a/Src.md'
+    );
+    ws.set(fromRoot).set(fromFolder);
+
+    expect(ws.resolveLink(fromRoot, fromRoot.links[0])).toBeUndefined();
+    expect(ws.resolveLink(fromFolder, fromFolder.links[0])).toBeUndefined();
+  });
+
+  it('should not resolve a wikilink to the index file of a folder', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[[folder]]', '/wiki/Src.md');
+    const index = createNoteFromMarkdown('', '/wiki/folder/index.md');
+    ws.set(source).set(index);
+
+    const resolved = ws.resolveLink(source, source.links[0]);
+    expect(resolved.isPlaceholder()).toBe(true);
+    expect(resolved.path).toEqual('/wiki/folder.md');
+  });
+
+  it('should not resolve a direct link to the index file of a folder', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[text](folder/)', '/wiki/Src.md');
+    const index = createNoteFromMarkdown('', '/wiki/folder/index.md');
+    ws.set(source).set(index);
+
+    const resolved = ws.resolveLink(source, source.links[0]);
+    expect(resolved.isPlaceholder()).toBe(true);
+    expect(resolved.path).not.toEqual(index.uri.path);
+  });
+
+  it('should percent-decode the target of a direct link', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown(
+      '[text](My%20Page.md)',
+      '/wiki/Src.md'
+    );
+    const target = createNoteFromMarkdown('', '/wiki/My Page.md');
+    ws.set(source).set(target);
+
+    expect(ws.resolveLink(source, source.links[0])).toEqual(target.uri);
+  });
+
+  it('should fall back to the literal target of a direct link', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown(
+      '[text](shot%202024.md)',
+      '/wiki/Src.md'
+    );
+    const target = createNoteFromMarkdown('', '/wiki/shot%202024.md');
+    ws.set(source).set(target);
+
+    expect(ws.resolveLink(source, source.links[0])).toEqual(target.uri);
+  });
+
+  it('should never decode %23 in the target of a direct link', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown('[text](C%23.md)', '/wiki/Src.md');
+    const cSharp = createNoteFromMarkdown('', '/wiki/C#.md');
+    ws.set(source).set(cSharp);
+
+    const resolved = ws.resolveLink(source, source.links[0]);
+    expect(resolved.isPlaceholder()).toBe(true);
+    expect(resolved.path).toEqual('/wiki/C%23.md');
+  });
+});
+
+describe('readAsMarkdown with Gollum syntax', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => true,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('should embed a section named by its slug', async () => {
+    const dataStore = new InMemoryDataStore();
+    const uri = URI.file('/wiki/note.md');
+    dataStore.set(
+      uri,
+      '# Before\n\nSome text\n\n# Section 2\n\nSection content\n\n# After\n\nMore text'
+    );
+    const provider = new MarkdownResourceProvider(
+      dataStore,
+      createMarkdownParser([])
+    );
+
+    const result = await provider.readAsMarkdown(
+      uri.with({ fragment: 'section-2' })
+    );
+
+    expect(result).toContain('Section 2');
+    expect(result).toContain('Section content');
+    expect(result).not.toContain('Some text');
+    expect(result).not.toContain('More text');
   });
 });

@@ -29,7 +29,12 @@ export function convertLinkFormat(
   }
   const targetUri = workspace.resolveLink(resource, link);
   /* If it's already the target format or a placeholder, no transformation happens */
-  if (link.type === targetFormat || targetUri.scheme === 'placeholder') {
+  if (
+    link.type === targetFormat ||
+    // A Gollum link that climbs above the wiki root resolves to nothing
+    !targetUri ||
+    targetUri.scheme === 'placeholder'
+  ) {
     return {
       newText: link.rawText,
       range: link.range,

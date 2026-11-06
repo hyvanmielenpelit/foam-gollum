@@ -22,7 +22,7 @@ We use two distinct types of test files, each serving different purposes:
   - **Mock Environment**: Vitest with VS Code API mocks (fast)
   - **Real VS Code**: Full VS Code extension host (slow but comprehensive)
 - **Speed**: Depends on environment (see performance section below)
-- **Location**: Primarily in `src/features/` and service layers
+- **Location**: Primarily in `src/vscode/features/` and service layers
 
 ## Key Principle: Environment Flexibility for `.spec.ts` Files
 
@@ -74,12 +74,12 @@ import * as vscode from 'vscode';
 
 ```typescript
 // Before
-const format = getFoamVsCodeConfig('openDailyNote.filenameFormat');
+const afterCompletion = getFoamVsCodeConfig('dateSnippets.afterCompletion');
 
 // After (defensive)
-const format = getFoamVsCodeConfig(
-  'openDailyNote.filenameFormat',
-  'yyyy-mm-dd'
+const afterCompletion = getFoamVsCodeConfig(
+  'dateSnippets.afterCompletion',
+  'createNote'
 );
 ```
 

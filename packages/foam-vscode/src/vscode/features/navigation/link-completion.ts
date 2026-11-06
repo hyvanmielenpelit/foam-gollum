@@ -7,8 +7,9 @@ import { FoamWorkspace } from '@foam/core';
 import { getFoamVsCodeConfig } from '../../config';
 import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { getNoteTooltip, getFoamDocSelectors } from '../../services/editor';
+import { getContentCacheFor } from '../../services/content-cache';
 import { CONVERT_WIKILINK_TO_MDLINK } from '../editing/convert-links';
-import { Config } from '@foam/core';
+import { Config, completionAt } from '@foam/core';
 import { MarkdownLink } from '@foam/core';
 import * as path from 'path';
 
@@ -21,9 +22,59 @@ const COMPLETION_CURSOR_MOVE = {
   title: 'Foam: Move cursor after completion',
 };
 
-export const WIKILINK_REGEX = /\[\[[^[\]]*(?!.*\]\])/;
-export const GOLLUM_REGEX = /\[\[([^\[|]*)|$/;
-export const SECTION_REGEX = /\[\[([^\[\]]*#(?!.*\]\]))/;
+/**
+ * How far to move the cursor back after a completion moved it two characters
+ * right, past the closing `]]`, given where the selection then changed to.
+ * Returns 0 when it stays.
+ */
+export function cursorMoveBack(params: {
+  isGollum: boolean;
+  completion: { line: number; character: number };
+  selection: { line: number; character: number };
+  /** The text of the selection's line */
+  lineText: string;
+}): number {
+  const { isGollum, completion, selection, lineText } = params;
+  const preChar = lineText.charAt(selection.character - 1);
+  if (!isGollum) {
+    return linkCommitCharacters.includes(preChar) &&
+      selection.line === completion.line &&
+      selection.character === completion.character + 1
+      ? 2
+      : 0;
+  }
+  const preChar2 =
+    selection.character - 2 >= 0 ? lineText.charAt(selection.character - 2) : '';
+  const afterChar = lineText.charAt(selection.character);
+  const afterChar2 = lineText.charAt(selection.character + 1);
+  if (selection.line === completion.line) {
+    if (
+      preChar === ']' &&
+      preChar2 === ']' &&
+      selection.character === completion.character + 2
+    ) {
+      return 2;
+    }
+    if (
+      linkCommitCharacters.includes(preChar) &&
+      selection.character === completion.character + 1
+    ) {
+      return 2;
+    }
+    if (
+      (afterChar !== ']' || afterChar2 !== ']') &&
+      selection.character === completion.character + 2
+    ) {
+      return 2;
+    }
+  } else if (
+    selection.line === completion.line + 1 &&
+    selection.character === 0
+  ) {
+    return 1;
+  }
+  return 0;
+}
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -34,7 +85,8 @@ export default async function activate(
     vscode.languages.registerCompletionItemProvider(
       getFoamDocSelectors(),
       new WikilinkCompletionProvider(foam.workspace, foam.graph),
-      '[', '|'
+      '[',
+      '|'
     ),
     vscode.languages.registerCompletionItemProvider(
       getFoamDocSelectors(),
@@ -52,59 +104,28 @@ export default async function activate(
       COMPLETION_CURSOR_MOVE.command,
       async () => {
         const activeEditor = vscode.window.activeTextEditor;
+        // Without a text editor there is no cursor to move
+        if (!activeEditor) {
+          return;
+        }
         const document = activeEditor.document;
         const currentPosition = activeEditor.selection.active;
         const cursorChange = vscode.window.onDidChangeTextEditorSelection(
           async e => {
             const changedPosition = e.selections[0].active;
-            const preChar = document
-              .lineAt(changedPosition.line)
-              .text.charAt(changedPosition.character - 1);
-            const preChar2 = changedPosition.character - 2 >= 0 ? document
-              .lineAt(changedPosition.line)
-              .text.charAt(changedPosition.character - 2) : '';
-            const afterChar = document
-              .lineAt(changedPosition.line)
-              .text.charAt(changedPosition.character);
-            const afterChar2 = document
-              .lineAt(changedPosition.line)
-              .text.charAt(changedPosition.character + 1);
+            const moveBack = cursorMoveBack({
+              isGollum: Config.getWikilinksSyntax() === 'gollum',
+              completion: currentPosition,
+              selection: changedPosition,
+              lineText: document.lineAt(changedPosition.line).text,
+            });
 
-            const { character: selectionChar, line: selectionLine } =
-              e.selections[0].active;
-
-            const { line: completionLine, character: completionChar } =
-              currentPosition;
-
-            const isGollum = Config.getWikilinksSyntax() === 'gollum';
-            let inCompleteBySectionDivider: boolean = false;
-            let moveCharCount = 2;
-            if (isGollum) {
-              if(selectionLine === completionLine) {
-                if(preChar === ']' && preChar2 === ']' && selectionChar === completionChar + 2) {
-                  inCompleteBySectionDivider = true;
-                } else if (linkCommitCharacters.includes(preChar) && selectionChar === completionChar + 1) {
-                  inCompleteBySectionDivider = true;
-                } else if ((afterChar !== ']' || afterChar2 !== ']') && selectionChar === completionChar + 2) {
-                  inCompleteBySectionDivider = true;
-                }
-              } else if (selectionLine === completionLine + 1 && selectionChar === 0) {
-                moveCharCount = 1;
-                inCompleteBySectionDivider = true;
-              }
-            } else {
-              inCompleteBySectionDivider =
-                linkCommitCharacters.includes(preChar) &&
-                selectionLine === completionLine &&
-                selectionChar === completionChar + 1;
-            }
-  
             cursorChange.dispose();
-            if (inCompleteBySectionDivider) {
+            if (moveBack > 0) {
               await vscode.commands.executeCommand('cursorMove', {
                 to: 'left',
                 by: 'character',
-                value: moveCharCount,
+                value: moveBack,
               });
             }
           }
@@ -129,50 +150,35 @@ export class SectionCompletionProvider
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.CompletionList<vscode.CompletionItem>> {
-    const cursorPrefix = document
-      .lineAt(position)
-      .text.substring(0, position.character);
-
-    // Requires autocomplete only if cursorPrefix matches `[[` that NOT ended by `]]`.
-    // See https://github.com/foambubble/foam/pull/596#issuecomment-825748205 for details.
-    const match = cursorPrefix.match(SECTION_REGEX);
-
-    if (!match) {
+    const syntax = Config.getWikilinksSyntax();
+    const isGollum = syntax === 'gollum';
+    const context = completionAt(
+      document.getText(),
+      document.offsetAt(position),
+      syntax
+    );
+    if (context?.kind !== 'section' && context?.kind !== 'block') {
       return null;
     }
-    
-    const isGollum = Config.getWikilinksSyntax() === 'gollum';
-    let resourceId: string | URI = null;
-    if(match[1] === '#') {
-      resourceId = fromVsCodeUri(document.uri);
-    } else {
-      const slice =  match[1].slice(0, -1);
-      if (isGollum) {
-        const indexOfPipe = slice.lastIndexOf('|');
-        const target2 = slice.substring(indexOfPipe + 1);
-        let {target, isRoot, parentCount} = MarkdownLink.convertGollumTarget(target2);
-        resourceId = target;
-        if (resourceId === '') {
-          resourceId = fromVsCodeUri(document.uri);
-        }
-      } else {
-        resourceId = slice;
-      }
-    }
- 
-    const resource = this.ws.find(resourceId);
+
+    // A Gollum target is a path, which may start with `/` or `../`
+    const target = isGollum
+      ? MarkdownLink.convertGollumTarget(context.target).target
+      : context.target;
+    const resource = this.ws.find(
+      target === '' ? fromVsCodeUri(document.uri) : target
+    );
+    const aliasLength =
+      context.alias !== undefined ? context.alias.length + 1 : 0;
+    // From after the `#` that follows `[[`, any alias, and the target
     const replacementRange = new vscode.Range(
-      position.line,
-      cursorPrefix.lastIndexOf('#') + 1,
-      position.line,
-      position.character
+      document.positionAt(
+        context.start + 2 + aliasLength + context.target.length + 1
+      ),
+      position
     );
     if (resource) {
-      const wikiLinkSyntax = Config.getWikilinksSyntax();
-      const fragmentSoFar = cursorPrefix.slice(
-        cursorPrefix.lastIndexOf('#') + 1
-      );
-      if (fragmentSoFar.startsWith('^')) {
+      if (context.kind === 'block') {
         // Block anchor completions
         const items = resource.blocks.map(b => {
           const label = `^${b.id}`;
@@ -190,9 +196,9 @@ export class SectionCompletionProvider
         });
         return new vscode.CompletionList(items);
       }
-      // Section completions
+      // Section completions; a Gollum link names a section by its slug
       const items = resource.sections.map(b => {
-        const anchor = wikiLinkSyntax === "gollum" ? Resource.convertAnchor(b.label) : b.label;  
+        const anchor = isGollum ? Resource.convertAnchor(b.label) : b.label;
         const item = new ResourceCompletionItem(
           b.label,
           vscode.CompletionItemKind.Text,
@@ -202,7 +208,9 @@ export class SectionCompletionProvider
         item.range = replacementRange;
         item.commitCharacters = sectionCommitCharacters;
         item.command = COMPLETION_CURSOR_MOVE;
-        item.insertText = anchor;
+        if (isGollum) {
+          item.insertText = anchor;
+        }
         return item;
       });
       return new vscode.CompletionList(items);
@@ -213,10 +221,12 @@ export class SectionCompletionProvider
     item: ResourceCompletionItem | vscode.CompletionItem
   ): vscode.ProviderResult<vscode.CompletionItem> {
     if (item instanceof ResourceCompletionItem) {
-      return this.ws.readAsMarkdown(item.resourceUri).then(text => {
-        item.documentation = getNoteTooltip(text);
-        return item;
-      });
+      return getContentCacheFor(this.ws)
+        .readAsMarkdown(item.resourceUri)
+        .then(text => {
+          item.documentation = getNoteTooltip(text);
+          return item;
+        });
     }
     return item;
   }
@@ -231,58 +241,59 @@ export class WikilinkCompletionProvider
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.CompletionList<vscode.CompletionItem>> {
-    const cursorPrefix = document
-      .lineAt(position)
-      .text.substr(0, position.character);
-
-    // Requires autocomplete only if cursorPrefix matches `[[` that NOT ended by `]]`.
-    // See https://github.com/foambubble/foam/pull/596#issuecomment-825748205 for details.
-    const requiresAutocomplete = cursorPrefix.match(WIKILINK_REGEX);
-    if (!requiresAutocomplete || requiresAutocomplete[0].indexOf('#') >= 0) {
+    const syntax = Config.getWikilinksSyntax();
+    const isGollum = syntax === 'gollum';
+    const context = completionAt(
+      document.getText(),
+      document.offsetAt(position),
+      syntax
+    );
+    if (context?.kind !== 'link') {
       return null;
     }
+    // A Gollum alias is already typed, so only the target is completed
+    const afterAlias = context.alias !== undefined;
 
-    const text = requiresAutocomplete[0];
-    const indexOfPipe = text.indexOf('|');
-    let replacementRange: vscode.Range = null;
-
-    if (indexOfPipe >= 0) {
-      const textBeforePipeMatch = text.match(GOLLUM_REGEX);
-      if (textBeforePipeMatch) {
-        const textBeforePipe = textBeforePipeMatch[1];
-        const lastIndexOfDot = textBeforePipe.lastIndexOf('.');
-        if (lastIndexOfDot > 0) {
-          return null;
-          // const extension = textBeforePipe.substring(lastIndexOfDot).toLowerCase();
-          // if (imageExtensions.includes(extension)) {
-          //   return null;
-          // }
-        }
-      } 
-      const lengthOfTextAfterPipe = text.length - indexOfPipe - 1;
-      replacementRange = new vscode.Range(
-        position.line,
-        position.character - lengthOfTextAfterPipe,
-        position.line,
-        position.character
-      );
-    } else {
-      replacementRange = new vscode.Range(
-        position.line,
-        position.character - (text.length - 2),
-        position.line,
-        position.character
-      );
-    }
     const labelStyle = getCompletionLabelSetting();
     const aliasSetting = getCompletionAliasSetting();
     const linkFormat = getCompletionLinkFormatSetting();
 
-    const isGollum = Config.getWikilinksSyntax() === 'gollum';
-    const documentRelativePath = vscode.workspace.asRelativePath(document.uri);
-    const documentHasSubDir = documentRelativePath.indexOf('/') > 0;
+    // Use safe range that VS Code accepts - replace content inside brackets
+    // only, after any Gollum alias and its `|`
+    const replacementRange = new vscode.Range(
+      document.positionAt(
+        context.start + 2 + (afterAlias ? context.alias.length + 1 : 0)
+      ),
+      position
+    );
+
+    // The inserted text never moves the start of the replacement range, so
+    // the link is still there when the command runs.
+    const convertToMarkdownLink: vscode.Command = {
+      ...CONVERT_WIKILINK_TO_MDLINK,
+      arguments: [document.uri, replacementRange.start],
+    };
 
     const directoryMode = Config.getLinksDirectoryMode();
+
+    const documentHasSubDir =
+      vscode.workspace.asRelativePath(document.uri).indexOf('/') > 0;
+    // The Gollum link to a resource: its path from the wiki root, without
+    // the note extension. A note at the root, linked from the root, has no `/`.
+    const gollumPath = (resource: Resource, resourceIsDocument: boolean) => {
+      const relativePath = vscode.workspace.asRelativePath(
+        toVsCodeUri(resource.uri)
+      );
+      const resourceHasSubDir = relativePath.indexOf('/') > 0;
+      const rootSlash =
+        documentHasSubDir || resourceHasSubDir || !resourceIsDocument
+          ? '/'
+          : '';
+      const absolutePath = rootSlash + relativePath;
+      return path.extname(absolutePath) === this.ws.defaultExtension
+        ? absolutePath.slice(0, -this.ws.defaultExtension.length)
+        : absolutePath;
+    };
 
     const resources = this.ws.list().map(resource => {
       const resourceIsDocument =
@@ -299,38 +310,39 @@ export class WikilinkCompletionProvider
         directoryIdentifier && !this.ws.find(directoryIdentifier)
           ? directoryIdentifier
           : this.ws.getIdentifier(resource.uri);
+      const relativePath = vscode.workspace.asRelativePath(
+        toVsCodeUri(resource.uri)
+      );
+      const linkPath = isGollum
+        ? gollumPath(resource, resourceIsDocument)
+        : undefined;
 
-      const relativePath = vscode.workspace.asRelativePath(toVsCodeUri(resource.uri));
-      const resourceHasSubDir = relativePath.indexOf('/') > 0;
-      const conditionalRootSlash = (documentHasSubDir || resourceHasSubDir || !resourceIsDocument) ? '/' : '';
-      let absolutePath: string = conditionalRootSlash + relativePath;
-      if (path.extname(absolutePath) === this.ws.defaultExtension) {
-        absolutePath = absolutePath.substring(0, absolutePath.length - this.ws.defaultExtension.length);
-      }
+      const label = isGollum
+        ? linkPath
+        : !resourceIsDocument
+        ? identifier
+        : labelStyle === 'path'
+        ? relativePath
+        : labelStyle === 'title'
+        ? resource.title
+        : identifier;
 
-      let label: string = null;
-      if (isGollum) {
-        label = absolutePath;
-      } else {
-        label = !resourceIsDocument
-          ? identifier
-          : labelStyle === 'path'
-          ? relativePath
-          : labelStyle === 'title'
-          ? resource.title
-          : identifier;
-      }
-      
       const item = new ResourceCompletionItem(
         label,
         vscode.CompletionItemKind.File,
         resource.uri
       );
 
-      item.detail = absolutePath;
+      item.detail = isGollum ? linkPath : relativePath;
       item.sortText = resourceIsDocument
         ? `0-${item.label}`
         : `1-${item.label}`;
+      // A path label starts with its folders, so a filter that only matches
+      // from the start could not find the note by the identifier it links
+      // with. The path follows for filters that match anywhere.
+      if (resourceIsDocument && (isGollum || labelStyle === 'path')) {
+        item.filterText = `${identifier} ${label}`;
+      }
 
       const useAlias =
         resourceIsDocument &&
@@ -339,11 +351,8 @@ export class WikilinkCompletionProvider
         wikilinkRequiresAlias(resource, this.ws.defaultExtension);
 
       if (isGollum) {
-        if (useAlias) {
-          item.insertText = `${resource.title}|${absolutePath}`;
-        } else {
-          item.insertText = absolutePath;
-        }
+        item.insertText =
+          useAlias && !afterAlias ? `${resource.title}|${linkPath}` : linkPath;
       } else {
         item.insertText = useAlias
           ? `${identifier}|${resource.title}`
@@ -355,9 +364,7 @@ export class WikilinkCompletionProvider
         useAlias || linkFormat === 'link' ? [] : linkCommitCharacters;
       item.range = replacementRange;
       item.command =
-        linkFormat === 'link'
-          ? CONVERT_WIKILINK_TO_MDLINK
-          : COMPLETION_CURSOR_MOVE;
+        linkFormat === 'link' ? convertToMarkdownLink : COMPLETION_CURSOR_MOVE;
       return item;
     });
     const aliases = this.ws.list().flatMap(resource =>
@@ -368,9 +375,13 @@ export class WikilinkCompletionProvider
           resource.uri
         );
 
-        const identifier = this.ws.getIdentifier(resource.uri);
-
-        item.insertText = `${identifier}|${a.title}`;
+        if (isGollum) {
+          const linkPath = gollumPath(resource, true);
+          item.insertText = afterAlias ? linkPath : `${a.title}|${linkPath}`;
+        } else {
+          const identifier = this.ws.getIdentifier(resource.uri);
+          item.insertText = `${identifier}|${a.title}`;
+        }
         // When using markdown link format, don't allow commit characters
         item.commitCharacters =
           linkFormat === 'link' ? [] : aliasCommitCharacters;
@@ -379,10 +390,7 @@ export class WikilinkCompletionProvider
         // If link format is enabled, convert after completion
         item.command =
           linkFormat === 'link'
-            ? {
-                command: CONVERT_WIKILINK_TO_MDLINK.command,
-                title: CONVERT_WIKILINK_TO_MDLINK.title,
-              }
+            ? convertToMarkdownLink
             : COMPLETION_CURSOR_MOVE;
 
         item.detail = `Alias of ${vscode.workspace.asRelativePath(
@@ -391,19 +399,19 @@ export class WikilinkCompletionProvider
         return item;
       })
     );
-
-    const placeholders = isGollum ? [] : Array.from(this.graph.placeholders.values()).map(
-      uri => {
-        const item = new vscode.CompletionItem(
-          uri.path,
-          vscode.CompletionItemKind.Interface
-        );
-        item.insertText = uri.path;
-        item.command = COMPLETION_CURSOR_MOVE;
-        item.range = replacementRange;
-        return item;
-      }
-    );
+    // A Gollum placeholder has no path to complete
+    const placeholders = isGollum
+      ? []
+      : Array.from(this.graph.placeholders.values()).map(uri => {
+          const item = new vscode.CompletionItem(
+            uri.path,
+            vscode.CompletionItemKind.Interface
+          );
+          item.insertText = uri.path;
+          item.command = COMPLETION_CURSOR_MOVE;
+          item.range = replacementRange;
+          return item;
+        });
 
     return new vscode.CompletionList([
       ...resources,
@@ -416,10 +424,12 @@ export class WikilinkCompletionProvider
     item: ResourceCompletionItem | vscode.CompletionItem
   ): vscode.ProviderResult<vscode.CompletionItem> {
     if (item instanceof ResourceCompletionItem) {
-      return this.ws.readAsMarkdown(item.resourceUri).then(text => {
-        item.documentation = getNoteTooltip(text);
-        return item;
-      });
+      return getContentCacheFor(this.ws)
+        .readAsMarkdown(item.resourceUri)
+        .then(text => {
+          item.documentation = getNoteTooltip(text);
+          return item;
+        });
     }
     return item;
   }

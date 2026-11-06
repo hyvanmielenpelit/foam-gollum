@@ -21,6 +21,11 @@ export const resolveExportLink = (
   }
 
   const resolvedUri = context.workspace.resolveLink(note, link);
+  // A Gollum link that climbs above the wiki root resolves to nothing, and
+  // is passed through as it is
+  if (!resolvedUri) {
+    return null;
+  }
   const section = resolvedUri.fragment || undefined;
 
   if (resolvedUri.isPlaceholder()) {

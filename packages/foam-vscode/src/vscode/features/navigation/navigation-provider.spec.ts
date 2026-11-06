@@ -1,12 +1,15 @@
+/* @unit-ready */
 import * as vscode from 'vscode';
 import { createTestWorkspace } from '../../../test/test-utils';
 import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  deleteFile,
   MEDIAWIKI_SYNTAX,
   showInEditor,
   useFoamConfiguration,
+  GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
 import { NavigationProvider } from './navigation-provider';
 import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
@@ -96,6 +99,11 @@ describe('Document navigation', () => {
 
       expect(links.length).toEqual(1);
       expect(links[0].target).toEqual(toVsCodeUri(fileA.uri));
+      // The link range excludes the surrounding brackets, consistent with
+      // how VS Code styles markdown links
+      expect(links[0].range).toEqual(
+        new vscode.Range(0, 20, 0, 20 + fileA.name.length)
+      );
     });
 
     it('should create links for placeholders', async () => {
@@ -185,7 +193,6 @@ describe('Document navigation', () => {
       // The link should not be treated as a "create note" placeholder
       expect(links.length).toEqual(0);
     });
-
   });
 
   describe('definition provider', () => {
@@ -378,10 +385,16 @@ describe('Document navigation', () => {
   });
 
   // Attachments (PDFs, docs, etc.) and images must be surfaced as DocumentLinks
-  // and NOT as definitions, so clicks route through VS Code's URI-opening
-  // pipeline (which honors `workbench.editorAssociations`) rather than the
-  // text-editor pipeline. See: https://github.com/foambubble/foam/issues/1675
+  // targeting the `vscode.open` command, and NOT as definitions, to honor
+  // user-level `workbench.editorAssociations`.
+  // See: https://github.com/foambubble/foam/issues/1675
   describe('attachment and image navigation', () => {
+    const openCommandURI = (uri: URI) =>
+      commandAsURI({
+        name: 'vscode.open',
+        params: [toVsCodeUri(uri)],
+      });
+
     const makeAttachment = (uri: URI, type: 'attachment' | 'image') => ({
       uri,
       type,
@@ -393,6 +406,7 @@ describe('Document navigation', () => {
       links: [],
       tags: [],
       footnotes: [],
+      tasks: [],
     });
 
     it('surfaces a wikilink resolving to an attachment as a document link, not a definition', async () => {
@@ -409,7 +423,12 @@ describe('Document navigation', () => {
 
       const links = await provider.provideDocumentLinks(doc);
       expect(links.length).toEqual(1);
-      expect(links[0].target).toEqual(toVsCodeUri(pdf.uri));
+      expect(links[0].target).toEqual(openCommandURI(pdf.uri));
+      // The link range excludes the surrounding brackets, consistent with
+      // how VS Code styles markdown links
+      expect(links[0].range).toEqual(
+        new vscode.Range(0, 6, 0, 6 + pdf.base.length)
+      );
 
       const definitions = await provider.provideDefinition(
         doc,
@@ -418,7 +437,7 @@ describe('Document navigation', () => {
       expect(definitions).toBeUndefined();
     });
 
-    it('surfaces a markdown link resolving to an attachment as a document link, not a definition', async () => {
+    it('defers a direct markdown link resolving to an attachment to the built-in Markdown extension', async () => {
       const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
       const noteA = await createFile(`see [the report](./${pdf.base}).`);
       const ws = createTestWorkspace()
@@ -430,10 +449,12 @@ describe('Document navigation', () => {
       const { doc } = await showInEditor(noteA.uri);
       const provider = new NavigationProvider(ws, graph, parser, tags);
 
+      // No Foam DocumentLink: it would shadow the built-in Markdown link,
       const links = await provider.provideDocumentLinks(doc);
-      expect(links.length).toEqual(1);
-      expect(links[0].target).toEqual(toVsCodeUri(pdf.uri));
+      expect(links.length).toEqual(0);
 
+      // No definition either, or ctrl+click would route through the
+      // text-editor pipeline instead of the built-in link.
       const definitions = await provider.provideDefinition(
         doc,
         new vscode.Position(0, 8)
@@ -455,13 +476,78 @@ describe('Document navigation', () => {
 
       const links = await provider.provideDocumentLinks(doc);
       expect(links.length).toEqual(1);
-      expect(links[0].target).toEqual(toVsCodeUri(img.uri));
+      expect(links[0].target).toEqual(openCommandURI(img.uri));
+      expect(links[0].range).toEqual(
+        new vscode.Range(0, 6, 0, 6 + img.base.length)
+      );
 
       const definitions = await provider.provideDefinition(
         doc,
         new vscode.Position(0, 8)
       );
       expect(definitions).toBeUndefined();
+    });
+
+    it('surfaces a reference-style link resolving to an attachment as a vscode.open document link', async () => {
+      const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
+      const noteA = await createFile(
+        `see [the report][report].\n\n[report]: ./${pdf.base}\n`
+      );
+      const ws = createTestWorkspace()
+        .set(makeAttachment(pdf.uri, 'attachment'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(openCommandURI(pdf.uri));
+      // For [text][ref] the link covers only the reference label, matching
+      // the built-in Markdown extension's styling
+      expect(links[0].range).toEqual(new vscode.Range(0, 17, 0, 23));
+    });
+
+    it('covers only the text of a collapsed reference link ([text][]) resolving to an attachment', async () => {
+      const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
+      const noteA = await createFile(
+        `see [report][].\n\n[report]: ./${pdf.base}\n`
+      );
+      const ws = createTestWorkspace()
+        .set(makeAttachment(pdf.uri, 'attachment'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(openCommandURI(pdf.uri));
+      expect(links[0].range).toEqual(new vscode.Range(0, 5, 0, 11));
+    });
+
+    it('covers only the text of a shortcut reference link ([text]) resolving to an attachment', async () => {
+      const pdf = await createFile('%PDF-1.4 fake', ['report.pdf']);
+      const noteA = await createFile(
+        `see [report].\n\n[report]: ./${pdf.base}\n`
+      );
+      const ws = createTestWorkspace()
+        .set(makeAttachment(pdf.uri, 'attachment'))
+        .set(parser.parse(noteA.uri, noteA.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(noteA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(openCommandURI(pdf.uri));
+      expect(links[0].range).toEqual(new vscode.Range(0, 5, 0, 11));
     });
   });
 
@@ -650,9 +736,57 @@ describe('Document navigation', () => {
 
     it.todo('should provide references for placeholders');
   });
+
+  describe('Footnotes', () => {
+    const content = 'Some text[^1].\n\n[^1]: The footnote.';
+    // Inside "[^1]" on the first line
+    const onReference = new vscode.Position(0, 11);
+
+    it('shows the footnote definition on hover and jumps to it', async () => {
+      const file = await createFile(content);
+      const ws = createTestWorkspace().set(parser.parse(file.uri, content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(file.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const hover = await provider.provideHover(doc, onReference);
+      expect((hover.contents[0] as vscode.MarkdownString).value).toContain(
+        'The footnote.'
+      );
+
+      const definitions = await provider.provideDefinition(doc, onReference);
+      expect(definitions.length).toEqual(1);
+      expect(definitions[0].targetRange.start.line).toEqual(2);
+    });
+
+    it('provides no hover or definition when footnotes are disabled (#1705)', async () => {
+      const file = await createFile(content);
+      const ws = createTestWorkspace().set(parser.parse(file.uri, content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(file.uri);
+      const provider = new NavigationProvider(
+        ws,
+        graph,
+        parser,
+        tags,
+        () => false
+      );
+
+      expect(await provider.provideHover(doc, onReference)).toBeUndefined();
+      expect(
+        await provider.provideDefinition(doc, onReference)
+      ).toBeUndefined();
+    });
+  });
 });
 
 describe('Document navigation with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
   // Gollum links put the alias first, and a leading slash makes a path
   // relative to the workspace root.
   const parser = createMarkdownParser([]);
@@ -753,5 +887,137 @@ describe('Document navigation with Gollum syntax', () => {
     );
 
     expect(definitions).toBeUndefined();
+  });
+});
+
+describe('Attachment and image navigation with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  // Attachments and images open through the `vscode.open` command, not as
+  // definitions, the same as with MediaWiki syntax.
+  const parser = createMarkdownParser([]);
+
+  const openCommandURI = (uri: URI) =>
+    commandAsURI({
+      name: 'vscode.open',
+      params: [toVsCodeUri(uri)],
+    });
+
+  const makeAttachment = (uri: URI, type: 'attachment' | 'image') => ({
+    uri,
+    type,
+    title: uri.getBasename(),
+    properties: { type },
+    aliases: [],
+    sections: [],
+    blocks: [],
+    links: [],
+    tags: [],
+    footnotes: [],
+    tasks: [],
+  });
+
+  const providerFor = async (
+    attachment: { uri: URI },
+    type: 'attachment' | 'image',
+    note: { uri: URI; content: string }
+  ) => {
+    const ws = createTestWorkspace([
+      fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri),
+    ])
+      .set(makeAttachment(attachment.uri, type))
+      .set(parser.parse(note.uri, note.content));
+    const graph = FoamGraph.fromWorkspace(ws);
+    const tags = FoamTags.fromWorkspace(ws);
+    const { doc } = await showInEditor(note.uri);
+    return { doc, provider: new NavigationProvider(ws, graph, parser, tags) };
+  };
+
+  it('surfaces [[file.pdf]] as a document link that opens the attachment', async () => {
+    await closeEditors();
+    const pdf = await createFile('%PDF-1.4 fake', ['gollum-report.pdf']);
+    const note = await createFile(`see [[${pdf.base}]] for details.`);
+    try {
+      const { doc, provider } = await providerFor(pdf, 'attachment', note);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(openCommandURI(pdf.uri));
+      expect(links[0].range).toEqual(
+        new vscode.Range(0, 6, 0, 6 + pdf.base.length)
+      );
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 8)
+      );
+      expect(definitions).toBeUndefined();
+    } finally {
+      await closeEditors();
+      await deleteFile(pdf);
+      await deleteFile(note);
+    }
+  });
+
+  it('surfaces [[image.png|frame|align=left]] as a document link that opens the image', async () => {
+    await closeEditors();
+    const img = await createFile('fake png', ['gollum-photo.png']);
+    const linkText = `${img.base}|frame|align=left`;
+    const note = await createFile(`see [[${linkText}]] here.`);
+    try {
+      const { doc, provider } = await providerFor(img, 'image', note);
+
+      const links = await provider.provideDocumentLinks(doc);
+      expect(links.length).toEqual(1);
+      expect(links[0].target).toEqual(openCommandURI(img.uri));
+      expect(links[0].range).toEqual(
+        new vscode.Range(0, 6, 0, 6 + linkText.length)
+      );
+
+      const definitions = await provider.provideDefinition(
+        doc,
+        new vscode.Position(0, 8)
+      );
+      expect(definitions).toBeUndefined();
+    } finally {
+      await closeEditors();
+      await deleteFile(img);
+      await deleteFile(note);
+    }
+  });
+});
+
+describe('Links above the wiki root with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  // `../` past the wiki root resolves to no note at all
+  it('offers no link, definition or references for a link that climbs above the root', async () => {
+    await closeEditors();
+    const parser = createMarkdownParser([]);
+    const note = await createFile('Up [[../../..]] here', [
+      'gollum-above-root',
+      'note.md',
+    ]);
+    const ws = createTestWorkspace([
+      fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri),
+    ]).set(parser.parse(note.uri, note.content));
+    const graph = FoamGraph.fromWorkspace(ws);
+    const provider = new NavigationProvider(
+      ws,
+      graph,
+      parser,
+      FoamTags.fromWorkspace(ws)
+    );
+    const { doc } = await showInEditor(note.uri);
+    const position = new vscode.Position(0, 6);
+
+    try {
+      expect(await provider.provideDocumentLinks(doc)).toEqual([]);
+      expect(await provider.provideDefinition(doc, position)).toBeUndefined();
+      expect(await provider.provideReferences(doc, position)).toEqual([]);
+    } finally {
+      graph.dispose();
+      await deleteFile(note);
+    }
   });
 });

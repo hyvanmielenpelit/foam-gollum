@@ -48,8 +48,9 @@ const collectLinkedAssets = (
         return;
       }
 
-      const resolvedUri = workspace.resolveLink(note, link).asPlain();
-      if (resolvedUri.isPlaceholder()) {
+      // A Gollum link that climbs above the wiki root resolves to nothing
+      const resolvedUri = workspace.resolveLink(note, link)?.asPlain();
+      if (!resolvedUri || resolvedUri.isPlaceholder()) {
         return;
       }
 
