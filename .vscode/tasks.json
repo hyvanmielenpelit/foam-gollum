@@ -6,7 +6,10 @@
     {
       "label": "watch: foam-vscode",
       "type": "shell",
-      "command": "source ~/.nvm/nvm.sh && nvm use && yarn workspace foam-vscode watch",
+      "command": "source ~/.nvm/nvm.sh && nvm use && yarn workspace foam-vscode-gollum watch",
+      "windows": {
+        "command": "yarn workspace foam-vscode-gollum watch"
+      },
       "problemMatcher": {
         "owner": "typescript",
         "fileLocation": ["relative", "${workspaceFolder}"],

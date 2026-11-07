@@ -1092,7 +1092,7 @@
     "bench:seed": "node ../../scripts/perf/seed-baseline.mjs",
     "lint": "oxlint src",
     "clean": "rimraf out",
-    "watch": "nodemon --watch 'src/**/*.ts' --watch '../foam-core/src/**/*.ts' --watch '../foam-graph/src/**/*.ts' --exec 'yarn build' --ext ts",
+    "watch": "nodemon --watch \"src/**/*.ts\" --watch \"../foam-core/src/**/*.ts\" --watch \"../foam-graph/src/**/*.ts\" --exec \"yarn build\" --ext ts",
     "tag-release": "node ../../scripts/tag-release.js vscode",
     "package": "npx @vscode/vsce@4.1.0 package --yarn",
     "publish:vscode": "cross-env-shell npx @vscode/vsce@4.1.0 publish --packagePath foam-vscode-gollum-$npm_package_version.vsix",
