@@ -180,6 +180,8 @@ Foam for Gollum sends **error reports only**, never usage data. When something g
 - the extension version;
 - the VS Code version and the operating system.
 
+The same error is reported once per session, and at most 20 reports are sent per session.
+
 Reports never contain your notes, file names or paths, your user or machine ID, or your IP address. VS Code for the Web sends no reports.
 
 Error reports follow VS Code's `telemetry.telemetryLevel` setting: they are sent when it is `all` or `error`, and never when it is `crash` or `off`. See [Telemetry](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/tools/telemetry.md) for details.

@@ -13,6 +13,7 @@ import {
   makeFoamMock,
   showInEditor,
 } from '../../test/test-utils-vscode';
+import { removeTestFolder } from '../../test/test-utils';
 import { fileExists } from './editor';
 
 const text = (content: string) => async (): Promise<Template> => ({
@@ -126,7 +127,7 @@ describe('NoteFactory.createNote', () => {
         await test(outside);
       } finally {
         trusted.mockRestore();
-        fs.rmSync(outside, { recursive: true, force: true });
+        removeTestFolder(outside);
       }
     }
 
@@ -211,7 +212,7 @@ describe('NoteFactory.createNote', () => {
         } finally {
           await closeEditors();
           fs.unlinkSync(link.toFsPath());
-          fs.rmSync(folder.toFsPath(), { recursive: true, force: true });
+          removeTestFolder(folder.toFsPath());
         }
       }));
 
@@ -248,7 +249,7 @@ describe('NoteFactory.createNote', () => {
         } finally {
           await closeEditors();
           fs.unlinkSync(link.toFsPath());
-          fs.rmSync(folder.toFsPath(), { recursive: true, force: true });
+          removeTestFolder(folder.toFsPath());
         }
       }));
   });

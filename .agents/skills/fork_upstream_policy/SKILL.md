@@ -13,9 +13,12 @@ Upstream does not want Gollum-related changes.
 - **Never propose changes to upstream foam** -- no pull requests, issues, or patches.
   Every fix stays in the fork, generic ones (for example Windows fixes) included.
 - **Port upstream changes only when easy**: a fix that is small and applies in isolation,
-  with no dependency on other unported upstream work. Name the upstream commit in the
-  change description.
-- **A full upstream merge is its own task**, done only when the user asks.
+  with no dependency on other unported upstream work. Leave the port uncommitted, and
+  name the upstream commit in the commit message you hand over.
+- **A full upstream merge is its own task**, done only when the user asks. Prepare it with
+  `git merge --no-commit --no-ff upstream/main`, resolve the conflicts in the working tree,
+  and leave the merge for the contributor to commit, unless the contributor separately asks
+  you to commit it.
 
 ## Sync State
 

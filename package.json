@@ -4,7 +4,7 @@
   "description": "Foam",
   "repository": "git@github.com:hyvanmielenpelit/foam-gollum.git",
   "license": "MIT",
-  "private": "true",
+  "private": true,
   "workspaces": [
     "packages/*"
   ],

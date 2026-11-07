@@ -730,5 +730,35 @@ describe('factories with Gollum syntax', () => {
         'currentDir'
       );
     });
+
+    it('creates no note for a placeholder above the workspace root and says why', async () => {
+      const text = 'see [[Out there|../outside-note]]';
+      const source = await createFile(text, ['gollum-placeholder-outside.md']);
+      const link = createMarkdownParser().parse(source.uri, source.content)
+        .links[0];
+      const warning = vi
+        .spyOn(window, 'showWarningMessage')
+        .mockImplementationOnce(vi.fn(() => Promise.resolve(undefined)));
+      try {
+        const command = CREATE_NOTE_COMMAND.forPlaceholder(
+          Location.forObjectWithRange(source.uri, link),
+          '.md'
+        );
+        const result = await commands.executeCommand<
+          Awaited<ReturnType<typeof createNote>>
+        >(command.name, command.params);
+
+        expect(result).toEqual({ didCreateFile: false, uri: undefined });
+        expect(warning).toHaveBeenCalledWith(
+          'Cannot create a note for a link outside the workspace'
+        );
+        const { doc } = await showInEditor(source.uri);
+        expect(doc.getText()).toEqual(text);
+      } finally {
+        warning.mockRestore();
+        await closeEditors();
+        await deleteFile(source.uri);
+      }
+    });
   });
 });

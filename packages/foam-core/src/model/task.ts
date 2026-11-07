@@ -137,9 +137,10 @@ export abstract class Task {
       ];
     }
     return linksFrom.map(({ link }) => {
-      const { target, alias } = MarkdownLink.analyzeLink(link);
+      const { target, rawTarget, alias } = MarkdownLink.analyzeLink(link);
+      const written = rawTarget ?? target;
       return MarkdownLink.createUpdateLinkEdit(link, {
-        target: target.slice(0, target.length - fromDay.length) + toDay,
+        target: written.slice(0, written.length - fromDay.length) + toDay,
         alias: alias === fromDay ? toDay : alias,
       });
     });

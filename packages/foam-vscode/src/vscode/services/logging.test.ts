@@ -4,7 +4,7 @@ describe('VsCodeOutputLogger error forwarding', () => {
   it('forwards the Error argument and never the message text', () => {
     const logger = new VsCodeOutputLogger();
     const forwarded: Error[] = [];
-    logger.setErrorSink({ logError: e => forwarded.push(e) });
+    logger.setErrorSink({ captureOriginal: e => forwarded.push(e) });
     const error = new Error('boom');
 
     logger.error('text with C:\\Users\\x\\note.md', error, { detail: 'not an error' });
@@ -16,7 +16,7 @@ describe('VsCodeOutputLogger error forwarding', () => {
   it('forwards the message when it is itself an Error', () => {
     const logger = new VsCodeOutputLogger();
     const forwarded: Error[] = [];
-    logger.setErrorSink({ logError: e => forwarded.push(e) });
+    logger.setErrorSink({ captureOriginal: e => forwarded.push(e) });
     const error = new Error('boom');
 
     logger.error(error);
@@ -28,7 +28,7 @@ describe('VsCodeOutputLogger error forwarding', () => {
   it('forwards errors even when the log level hides them', () => {
     const logger = new VsCodeOutputLogger();
     const forwarded: Error[] = [];
-    logger.setErrorSink({ logError: e => forwarded.push(e) });
+    logger.setErrorSink({ captureOriginal: e => forwarded.push(e) });
     logger.setLevel('off');
 
     logger.error('hidden', new Error('boom'));

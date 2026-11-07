@@ -24,20 +24,6 @@ jobs:
         uses: crate-ci/typos@v1.52.0
         with:
           config: ./typos.toml
-  lint:
-    name: Lint
-    runs-on: ubuntu-22.04
-    timeout-minutes: 5
-    # Informational only: lint findings never fail the workflow
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-      - name: Run oxlint
-        uses: oxc-project/oxlint-action@v3.0.0
-        with:
-          working-directory: packages/foam-vscode
-          config: .oxlintrc.json
-          all-files: 'true'
 
   test:
     name: Build and Test

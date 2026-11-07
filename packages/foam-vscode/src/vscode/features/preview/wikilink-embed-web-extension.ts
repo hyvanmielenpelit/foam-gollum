@@ -4,10 +4,18 @@ import markdownItRegex from 'markdown-it-regex';
 import { ResourceParser } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 import type { WikilinkEmbedOptions } from './wikilink-embed';
+import { WIKILINK_EMBED_REGEX } from './embed-helpers';
 
-export const WIKILINK_EMBED_REGEX =
-  /((?:(?:full|content)-(?:inline|card)|full|content|inline|card)?!\[\[[^[\]]+?\]\])/;
-export const CONFIG_EMBED_NOTE_TYPE = 'preview.embedNoteType';
+export {
+  WIKILINK_EMBED_REGEX,
+  WIKILINK_EMBED_REGEX_GROUPS,
+  CONFIG_EMBED_NOTE_TYPE,
+  withLinksRelativeToWorkspaceRoot,
+  retrieveNoteConfig,
+  extractBlockContent,
+  parseImageParameters,
+  generateImageStyles,
+} from './embed-helpers';
 
 export const markdownItWikilinkEmbed = (
   md: markdownit,

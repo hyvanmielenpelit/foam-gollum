@@ -33,6 +33,8 @@ Foam for Gollum releases only the extension, `foam-vscode-gollum` in `packages/f
    - In Sentry, organization `hyvan-mielen-pelit-ry`, project `foam-for-gollum` (EU region, `de.sentry.io`), open the release `foam-vscode-gollum@<version>` and confirm its source maps were uploaded.
 10. Update the release notes in GitHub from `CHANGELOG.md`, as in step 8 of [Cutting a release](#cutting-a-release).
 
+The Sentry project relies on spike protection and a $0 pay-as-you-go budget to keep a flood of reports from exhausting the organization's error quota. Per-key rate limits need Sentry's Business plan, which the organization does not have. The extension itself sends each distinct error once per session, and at most 20 reports per session.
+
 ## Upstream Foam releases
 
 The rest of this page is upstream Foam's release process, kept for upstream merges. Foam for Gollum does not use it for its releases.

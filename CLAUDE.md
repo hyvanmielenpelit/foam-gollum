@@ -9,7 +9,7 @@ The rest of this file is specific to Claude Code.
 Defined in `.claude/commands/`:
 
 - `/research-issue <issue>` — researches a GitHub issue into `.agent/tasks/<issue>-<sanitized-title>.md`. Before working on an issue, check whether that file exists; if not, suggest running the command.
-- `/prepare-pr` — PR title and description ready to paste, plus lint results and reviewer notes.
+- `/prepare-pr` — PR title and description ready to paste, the commit message and commands for the contributor to run, and reviewer notes.
 - `/update-changelog` — drafts the lines missing from the unreleased entry of `packages/foam-vscode/CHANGELOG.md` for commits since the last release, which the fork edits directly (see `changelog-versioning`), not changeset fragments.
 - `/review-docs [user|dev]` — audits the docs tree for stubs, stale content, and dangling references.
 
@@ -32,4 +32,4 @@ The Bash tool's CWD is always the main checkout, not wherever you last `cd`'d. T
 - `cd <path> && npm <cmd>` for npm
 - Don't mix `git -C` with `cd &&` in one command
 
-`.agent/` scratch — plans and issue research — lives only in the main checkout, never in a worktree. Tracked specs under `specs/` are ordinary repo files and belong on the branch like any other change.
+`.agent/` scratch — plans and issue research — lives only in the main checkout, never in a worktree. Tracked specs under `specs/` are ordinary repo files and are changed like any other repository file.

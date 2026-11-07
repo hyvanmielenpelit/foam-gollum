@@ -1,4 +1,4 @@
-import type { TelemetryLogger } from 'vscode';
+import type { ErrorReporter } from './error-reporting';
 
 export interface ErrorReporterOptions {
   release: string;
@@ -13,6 +13,6 @@ export interface ErrorReporterOptions {
 export function createErrorReporter(
   _dsn: string,
   _options: ErrorReporterOptions
-): TelemetryLogger | undefined {
+): ErrorReporter | undefined {
   return undefined;
 }

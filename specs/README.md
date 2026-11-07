@@ -12,14 +12,13 @@ specs/<slug>/
   plan.md    how: approach, work breakdown  (only when the work needs one)
 ```
 
-`<slug>` matches the branch name minus its type prefix, so
-`feature/1712-daily-note-previous-link` uses
-`specs/1712-daily-note-previous-link/`. A spec that came from an issue is
-prefixed with its number; one that came from an idea is not. Slugs are unique
-across the repo and never change once the spec exists.
+`<slug>` is a short name chosen when the spec is written, such as
+`1712-daily-note-previous-link`. A spec that came from an issue is prefixed
+with its number; one that came from an idea is not. Slugs are unique across
+the repo and never change once the spec exists.
 
-**The active spec is the one matching the current branch.** There is no index
-file to keep in sync; the cross-feature view is `gh pr list`.
+**The active spec is the one the contributor names, or the only one under
+`specs/` whose work is unfinished.** There is no index file to keep in sync.
 
 ## Two tiers
 
@@ -30,18 +29,20 @@ file to keep in sync; the cross-feature view is `gh pr list`.
 
 ## The flow
 
-Each feature is one branch and one pull request, from spec to merge.
+In the fork, all of this happens in the working tree:
 
-1. Label the issue `agent:spec` → a draft PR containing `spec.md`. The label
-   comes off when the run finishes, so re-adding it re-runs the stage.
-2. Comment `@claude plan` on the PR → `plan.md` (skip it when the work is
-   small)
-3. Comment `@claude implement` on the PR → a failing test, then the change
-4. Review, then merge
+1. Write `spec.md`.
+2. Write `plan.md` (skip it when the work is small).
+3. Write a failing test, then the change.
+4. Review, then the contributor commits.
 
-Because a spec only reaches `main` when its feature merges, everything under
-`specs/` in `main` is finished work. In-progress specs live on their branch.
-Nothing needs archiving.
+A spec is committed with its feature's change, so everything under `specs/` in
+`main` is finished work. Nothing needs archiving.
+
+Upstream drives the same steps with automation: labeling an issue `agent:spec`
+and commenting `@claude plan` or `@claude implement` on the pull request. The
+fork does not have that automation; its workflows are excluded (see
+`AGENTS.md`, "Excluded upstream content").
 
 ## Does this need a spec?
 

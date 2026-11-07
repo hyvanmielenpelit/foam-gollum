@@ -1,4 +1,10 @@
-import { mkdtempSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
+import {
+  mkdtempSync,
+  realpathSync,
+  writeFileSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { URI } from '@foam/core';
@@ -16,9 +22,7 @@ const collect = (watcher: NodeWatcher) => {
   return { created, changed, deleted };
 };
 
-// On Windows, libuv aborts the process (fs-event.c assertion) when the watched
-// folder is an 8.3 short path such as the default os.tmpdir()
-describe.skipIf(process.platform === 'win32')('NodeWatcher', () => {
+describe('NodeWatcher', () => {
   it('fires onDidCreate when a file is added after the watcher starts', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'foam-watcher-create-'));
     const watcher = new NodeWatcher(dir);
@@ -81,6 +85,27 @@ describe.skipIf(process.platform === 'win32')('NodeWatcher', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // On Windows, os.tmpdir() is often an 8.3 short path with a `NAME~1` segment
+  it.skipIf(realpathSync.native(tmpdir()) === tmpdir())(
+    'reports events with the path it was given when that path is a short alias',
+    async () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'foam-watcher-alias-'));
+      const watcher = new NodeWatcher(dir);
+      try {
+        const events = collect(watcher);
+        await wait(150);
+        const file = path.join(dir, 'aliased.md');
+        writeFileSync(file, '# Aliased');
+        await wait(300);
+        expect(events.created.map(u => u.toFsPath())).toEqual([file]);
+      } finally {
+        await watcher.dispose();
+        await wait(100);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
 
   it('does not fire onDidCreate for pre-existing files (ignoreInitial)', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'foam-watcher-existing-'));

@@ -107,7 +107,8 @@ This guide assumes you read the previous instructions and you're set up to work 
 Claude Code, Codex, Cursor, and similar tools pick up [AGENTS.md](AGENTS.md) automatically (Claude Code reads [CLAUDE.md](CLAUDE.md), which includes it and adds a few Claude-specific notes). A few things to know:
 
 - You are responsible for what your agent produces. Read the diff, run the tests, and make sure the change is the smallest one that covers the behavior.
-- The guidance tells agents not to push, open PRs, or comment on GitHub. Pushing and opening the PR is your job.
+- The guidance tells agents not to commit, push, open PRs, or comment on GitHub. Committing, pushing and opening the PR is your job.
+- Agents work on the branch you have checked out and do not create branches.
 - `.agent/current-plan.md` and `.agent/tasks/` are gitignored scratch space where agents keep plans and issue research.
 - Larger changes start from a spec: a short document in `specs/<slug>/` saying what the change is and how we will know it works, reviewed before the code is written. See [specs/README.md](specs/README.md).
 
@@ -119,7 +120,7 @@ Claude Code, Codex, Cursor, and similar tools pick up [AGENTS.md](AGENTS.md) aut
 - Domain code passes `URI`s around; path strings appear only at I/O boundaries.
 - A line in [packages/foam-vscode/CHANGELOG.md](packages/foam-vscode/CHANGELOG.md) when users will notice the change, following [the fork's changelog rules](.agents/skills/changelog_versioning/SKILL.md). The fork does not use changesets.
 - Foam vocabulary: "workspace", never "vault".
-- The code is formatted with Prettier (`yarn format`). `yarn lint` inside a package is informational: no hook or CI job fails on it.
+- No formatter or linter is used: match the style of the surrounding code.
 
 ### Submitting a Pull Request (PR)
 

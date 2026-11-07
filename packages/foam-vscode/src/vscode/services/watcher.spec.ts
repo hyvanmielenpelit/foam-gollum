@@ -5,7 +5,11 @@ import {
   waitForNoteInFoamWorkspace,
   waitForNoteRemovedFromFoamWorkspace,
 } from '../../test/test-utils-vscode';
-import { randomString, wait } from '../../test/test-utils';
+import {
+  randomString,
+  removeTestFolder,
+  wait,
+} from '../../test/test-utils';
 
 /**
  * VS Code reports a folder moved or renamed as a single event for the folder,
@@ -27,8 +31,8 @@ describe('Watching folders changed outside VS Code', () => {
 
       await waitForNoteInFoamWorkspace(note);
     } finally {
-      fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-      fs.rmSync(folder.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      removeTestFolder(outside);
+      removeTestFolder(folder.toFsPath());
     }
   });
 
@@ -49,8 +53,8 @@ describe('Watching folders changed outside VS Code', () => {
       await waitForNoteInFoamWorkspace(noteAfter);
       await waitForNoteRemovedFromFoamWorkspace(noteBefore);
     } finally {
-      fs.rmSync(before.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-      fs.rmSync(after.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      removeTestFolder(before.toFsPath());
+      removeTestFolder(after.toFsPath());
     }
   });
 });

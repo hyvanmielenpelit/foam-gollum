@@ -10,9 +10,9 @@ export interface VsCodeLogger extends ILogger, IDisposable {
   show();
 }
 
-/** Receives the `Error` objects passed to `Logger.error`. */
+/** Receives the `Error` objects passed to `Logger.error`, as thrown. */
 export interface ErrorSink {
-  logError(error: Error): void;
+  captureOriginal(error: Error): void;
 }
 
 export class VsCodeOutputLogger extends BaseLogger implements VsCodeLogger {
@@ -36,7 +36,7 @@ export class VsCodeOutputLogger extends BaseLogger implements VsCodeLogger {
     }
     for (const value of [message, ...params]) {
       if (value instanceof Error) {
-        this.errorSink.logError(value);
+        this.errorSink.captureOriginal(value);
       }
     }
   }

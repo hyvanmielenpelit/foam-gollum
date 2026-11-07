@@ -5,7 +5,7 @@
  * them here so existing imports keep working, and override the few values
  * that need to be foam-vscode-specific (e.g. TEST_DATA_DIR).
  */
-import { readFileSync } from 'fs';
+import { readFileSync, rmSync } from 'fs';
 import path from 'path';
 import { Config, IFoamConfig, URI } from '@foam/core';
 
@@ -68,3 +68,25 @@ export const useWikilinkSyntax = (
     Config.setDefaultConfig(previous);
   });
 };
+
+/**
+ * Removes a folder a test created. When VS Code still holds a handle on it,
+ * as happens on Windows, the folder is left behind with a warning: it is in
+ * the temporary folder or the e2e workspace, which the test setup wipes.
+ */
+export function removeTestFolder(folder: string): void {
+  try {
+    rmSync(folder, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  } catch (e) {
+    if (['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(e?.code)) {
+      console.warn(`Could not remove ${folder} (${e.code}), leaving it`);
+      return;
+    }
+    throw e;
+  }
+}

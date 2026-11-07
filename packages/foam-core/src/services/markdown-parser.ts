@@ -21,6 +21,8 @@ import { Logger } from '../utils/log';
 import { getYAMLKey } from '../utils/md';
 import { URI } from '../model/uri';
 import { ICache } from '../utils/cache';
+import { Config } from '../config';
+import { parseGollumWikilink } from './markdown-link';
 
 export interface ParserPlugin {
   name?: string;
@@ -804,6 +806,20 @@ const aliasesPlugin: ParserPlugin = {
   },
 };
 
+/**
+ * The reference a wikilink names: remark-wiki-link's `value` is the text
+ * before the `|`, which in Gollum is the alias.
+ */
+function wikilinkDefinition(node: Node, literalContent: string): string {
+  if (Config.getWikilinksSyntax() === 'gollum') {
+    const parts = parseGollumWikilink(literalContent);
+    if (parts) {
+      return parts.section ? `${parts.target}#${parts.section}` : parts.target;
+    }
+  }
+  return (node as any).value;
+}
+
 const wikilinkPlugin: ParserPlugin = {
   name: 'wikilink',
   visit: (node, note, noteSource) => {
@@ -832,7 +848,7 @@ const wikilinkPlugin: ParserPlugin = {
         rawText: literalContent,
         range,
         isEmbed,
-        definition: (node as any).value,
+        definition: wikilinkDefinition(node, literalContent),
       });
     }
     if (node.type === 'link' || node.type === 'image') {

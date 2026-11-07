@@ -1,12 +1,13 @@
 # Prepare PR Command
 
-Analyze the current branch changes and generate:
+Analyze the current branch changes, including uncommitted ones (`git diff origin/main` and `git status`, since agents do not commit), and generate:
 
 - a PR title
 - a PR description
+- a commit message and the commands to commit it
 - considerations for the developer before pushing the PR
 
-Output the title and description ready to paste into GitHub.
+Output the title and description ready to paste into GitHub. Do not commit, push or open the PR: the contributor does.
 
 ## PR TITLE
 
@@ -53,7 +54,10 @@ ONLY include if relevant:
 
 If no critical notes exist, omit this section.
 
+## Commit
+
+When there are uncommitted changes, give a ready-to-paste commit message and the commands for the contributor to run: `git add` with the exact paths, then `git commit`.
+
 ## Considerations
 
-Run the `yarn lint` command and report any failures.
-Also analize the changeset, and act as a PR reviewer to provide comments about the changes.
+Analyze the changeset, and act as a PR reviewer to provide comments about the changes.

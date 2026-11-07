@@ -1,5 +1,11 @@
-import { workspace, commands, WorkspaceEdit, ExtensionContext } from 'vscode';
-import { URI } from '@foam/core';
+import {
+  workspace,
+  window,
+  commands,
+  WorkspaceEdit,
+  ExtensionContext,
+} from 'vscode';
+import { Config, URI } from '@foam/core';
 import {
   askUserForTemplate,
   getDefaultTemplateUri,
@@ -160,8 +166,11 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
   // under a workspace root and as workspace-relative otherwise (into the root
   // its first segment names). A placeholder's note goes where its link points
   // instead, so it is resolved the way links are.
-  const fallbackFilepath =
-    args.notePath === undefined
+  const isGollumPlaceholder =
+    args.sourceLink !== undefined && Config.getWikilinksSyntax() === 'gollum';
+  const fallbackFilepath = isGollumPlaceholder
+    ? await gollumPlaceholderPath(args.sourceLink, foam)
+    : args.notePath === undefined
       ? undefined
       : typeof args.notePath !== 'string'
       ? args.notePath
@@ -170,6 +179,12 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
       : args.sourceLink
       ? foam.workspace.resolveUri(args.notePath)
       : foam.workspace.resolveNoteUri(args.notePath);
+  if (isGollumPlaceholder && fallbackFilepath === undefined) {
+    window.showWarningMessage(
+      'Cannot create a note for a link outside the workspace'
+    );
+    return { didCreateFile: false, uri: undefined };
+  }
 
   // Create resolver with all variables upfront
   const locale = getFoamVsCodeConfig<string>('dateLocale', 'default');
@@ -199,8 +214,9 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
     onRelativePath: args.onRelativeNotePath,
   });
 
-  // Handle source link updates for placeholders
-  if (args.sourceLink && createdNote.uri) {
+  // Handle source link updates for placeholders. A Gollum placeholder's note
+  // is created where its link already points.
+  if (args.sourceLink && !isGollumPlaceholder && createdNote.uri) {
     const identifier = foam.workspace.getIdentifier(createdNote.uri);
     const edit = MarkdownLink.createUpdateLinkEdit(args.sourceLink.data, {
       target: identifier,
@@ -218,6 +234,29 @@ export async function createNote(args: CreateNoteArgs, foam: Foam) {
   }
 
   return createdNote;
+}
+
+/**
+ * The file a Gollum link points to, with the default extension when it has
+ * none; `undefined` when the link climbs above the workspace root.
+ */
+async function gollumPlaceholderPath(
+  sourceLink: Location<ResourceLink>,
+  foam: Foam
+): Promise<URI | undefined> {
+  const sourceUri = new URI(sourceLink.uri);
+  const source =
+    foam.workspace.find(sourceUri) ?? (await foam.workspace.fetch(sourceUri));
+  const target = source
+    ? foam.workspace.resolveLink(source, sourceLink.data)
+    : undefined;
+  if (!target) {
+    return undefined;
+  }
+  const file = sourceUri.with({ path: target.path, fragment: '' });
+  return file.getExtension() === ''
+    ? file.changeExtension('', foam.workspace.defaultExtension)
+    : file;
 }
 
 export const CREATE_NOTE_COMMAND = {

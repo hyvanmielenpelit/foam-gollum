@@ -35,6 +35,10 @@ All notable changes to the Foam for Gollum extension are documented in this file
 - Fix the custom file drop provider copying the file even when another drop option was chosen.
 - Fix links to a section or block of the same page (`[[#section]]`, `[[#^block]]`) not working in the Gollum wikilink mode: the preview showed them as links to missing pages, embedded pages did not show such blocks, and renaming the heading or block did not update them.
 - Fix the quick fix for a wrong section in a Gollum wikilink suggesting heading names instead of section anchors.
+- Fix Gollum links with an alias picking up a link reference definition named after the alias.
+- Fix moving a task to another day removing the `/` or `../` at the start of its Gollum link.
+- Fix creating a note from a Gollum placeholder putting it in the wrong folder.
+- Fix the reload prompt not appearing after changing `foam.files.notesExtensions`.
 
 ## 1.6.16
 

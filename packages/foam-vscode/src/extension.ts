@@ -255,7 +255,7 @@ export async function activate(context: ExtensionContext) {
             'foam.files.exclude',
             'foam.files.include',
             'foam.files.attachmentExtensions',
-            'foam.files.noteExtensions',
+            'foam.files.notesExtensions',
             'foam.files.defaultNoteExtension',
             'foam.useCustomFileDropdownProvider',
             'foam.wikilinks.syntax',

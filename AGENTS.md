@@ -20,13 +20,13 @@ Guidance for coding agents working in this repository — Claude Code, Codex, Cu
 
 **Never lose existing content.** Through rewrites, reverts, or unrelated changes — if you're replacing a document or backing something out, preserve what was there and say what you dropped.
 
-**Nothing leaves the machine unless the contributor says so.** No pushes, PRs, issues, comments, or releases unless explicitly asked for in that same exchange. Cut branches from `origin/main` (fetch first — a local `main` may carry unpushed work), commit locally, and hand over a ready-to-paste PR title and description. Reading GitHub with `gh` is fine.
+**Nothing leaves the machine unless the contributor says so.** No pushes, PRs, issues, comments, or releases unless explicitly asked for in that same exchange. Work on the branch that is checked out; create, switch or delete no branch unless the contributor asks. The shared plans repository is the only repository where an agent commits and pushes on its own. In this repository, do not commit, push, tag or merge unless the contributor separately and explicitly asks for that action — approving a plan or asking for an implementation is not such a request. Leave the changes in the working tree and hand over a ready-to-paste commit message, the `git` commands, and the PR title and description. Reading GitHub with `gh` is fine.
 
 ## Specs
 
 Work that warrants acceptance criteria before code gets a spec in `specs/<slug>/`. `spec.md` is what and why and is reviewer-visible; `plan.md` is how, and a code reviewer must not read it — a reviewer who knows the intended approach checks the code against the plan instead of checking whether it's right. `specs.local/` is the same layout, gitignored, for exploration that hasn't graduated.
 
-`<slug>` is the branch name minus its type prefix (`feature/`, `fix/`, `spike/`), so the active spec is the one matching the current branch. One branch and one PR carry a feature from spec to merge. Not everything needs a spec — a bug whose failing test says it all doesn't. See [specs/README.md](specs/README.md) for the layout and the acceptance-criteria format.
+`<slug>` is a short name chosen when the spec is written, starting with the issue number when there is one. The active spec is the one the contributor names, or the only one under `specs/` whose work is unfinished. Not everything needs a spec — a bug whose failing test says it all doesn't. See [specs/README.md](specs/README.md) for the layout and the acceptance-criteria format.
 
 ## Environment
 
@@ -36,7 +36,7 @@ Yarn v1 workspaces + Lerna. Node 22 (`.nvmrc`): `nvm use` from the repo root is 
 
 ## Commands
 
-From the repo root, each runs across every package via Lerna: `yarn build`, `yarn watch`, `yarn clean`, `yarn reset` (clean, install, build), `yarn test:unit`, `yarn test:e2e`, `yarn test`, `yarn bench`, `yarn format`.
+From the repo root, each runs across every package via Lerna: `yarn build`, `yarn watch`, `yarn clean`, `yarn reset` (clean, install, build), `yarn test:unit`, `yarn test:e2e`, `yarn test`, `yarn bench`.
 
 Per package: `yarn workspace <name> <script>`, where `<name>` is `@foam/core`, `foam-vscode-gollum`, `@foam/cli`, `@foam/graph-view`, or `@foam/mcp`.
 
@@ -50,7 +50,7 @@ In `foam-vscode-gollum` (`packages/foam-vscode`):
 
 The runner ignores extra arguments — you cannot run a single test, only the whole suite.
 
-Lint is oxlint, run per package with `yarn lint` and informational only: the root `yarn lint` is disabled and no hook lints (`.husky/pre-push` is commented out). Formatting is Prettier with the config in the root `package.json`.
+No linter or formatter is used: match the style of the surrounding code. Upstream's oxlint and Prettier configuration stays in the repository for upstream merges but is not run.
 
 ## Testing
 
@@ -135,6 +135,6 @@ Written for people new to Foam who may not be technical. Show how to use a featu
   - Extension workspace and package name: `foam-vscode-gollum` (not `foam-vscode`).
   - Marketplace ID: `Hyvnmielenpelitry.foam-vscode-gollum`.
   - Sentry project: `foam-for-gollum` in organization `hyvan-mielen-pelit-ry` (EU region, `de.sentry.io`).
-- **Lint.** Root `yarn lint` is disabled; run `yarn lint` inside a package for information.
+- **No linting or formatting.** The fork runs no linter or formatter; match the style of the surrounding code. Upstream's oxlint and Prettier configuration and the per-package `lint` scripts stay for upstream merges but are not run.
 - **Gollum test convention.** Upstream specs assume MediaWiki syntax, so their describes are pinned with `useFoamConfiguration(MEDIAWIKI_SYNTAX)` inside the describe (in `*.test.ts`, a `Config.setDefaultConfig` override), never at file level and never by changing an upstream expectation. Gollum cases go in their own `... with Gollum syntax` describe that sets `GOLLUM_SYNTAX` explicitly, set up and torn down inside the test.
 - **Excluded upstream content.** Upstream's AI-automation tooling and docs site are not part of the fork: `.github/workflows/claude.yml`, `review.yml` and `spec.yml`, `packages/agent-loop/`, the root `agent-loop` script and its CI step, the `.claude/skills/write-spec`, `write-plan` and `implement` skills, and the docs site: `.github/workflows/deploy-docs.yml`, `update-docs.yml`, the `docs-site-verify` CI job and the root `publish:docs-site` script. An upstream merge that reintroduces or modifies them resolves by deleting them again.

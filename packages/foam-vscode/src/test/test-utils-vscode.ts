@@ -10,7 +10,12 @@ import { fromVsCodeUri, toVsCodeUri } from '../vscode/utils/vsc-utils';
 import { Logger } from '@foam/core';
 import { URI } from '@foam/core';
 import { Resource } from '@foam/core';
-import { FOAM_EXTENSION_ID, randomString, wait } from './test-utils';
+import {
+  FOAM_EXTENSION_ID,
+  randomString,
+  removeTestFolder,
+  wait,
+} from './test-utils';
 import { Foam } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 
@@ -276,7 +281,7 @@ export async function withSecondRoot(fn: (root: URI) => Promise<void>) {
     await fn(root);
   } finally {
     folders.mockRestore();
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTestFolder(dir);
   }
 }
 

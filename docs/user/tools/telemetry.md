@@ -4,12 +4,14 @@ Foam for Gollum sends **error reports only**. It sends no usage data: nothing ab
 
 ## What an error report contains
 
-When something goes wrong inside the extension, VS Code passes the error to Foam for Gollum, which sends a report to [Sentry](https://sentry.io/). A report contains:
+When something goes wrong inside the extension, Foam for Gollum sends a report to [Sentry](https://sentry.io/). A report contains:
 
 - the type of error, for example `TypeError`;
 - the error message and the stack trace, with file and folder paths removed;
 - the version of Foam for Gollum;
 - the VS Code version, the operating system and the type of VS Code installation (for example desktop, or a remote connection).
+
+The same error is reported once per session, and at most 20 reports are sent per session. A session lasts until you close or reload the VS Code window.
 
 ## What is never sent
 
@@ -27,7 +29,7 @@ Reports go to Sentry's servers in the European Union, to a project operated by H
 
 ## Seeing what is sent
 
-VS Code shows every report the extension sends in the **Extension Telemetry** output channel.
+VS Code shows the reports for errors it passes to the extension in the **Extension Telemetry** output channel. Errors the extension catches and reports itself are not shown there; they appear in the **Foam** output channel, before paths are removed.
 
 ## How to turn it off
 
