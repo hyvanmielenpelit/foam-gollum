@@ -12,7 +12,19 @@
     },
     {
       "comment": "Standard Markdown hyperlink and image link coloring",
-      "match": "(!?\\[)(.*?)(\\])(\\()([^\\)]*)(\\))",
+      "match": "(!?\\[)(?!\\[)((?:[^\\[\\]]|\\[[^\\[\\]]*\\])*)(\\])(\\()((?:[^()]|\\([^()]*\\))*)(\\))",
+      "captures": {
+        "1": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "2": { "name": "comment.line.wikilink.target.markdown.foam" },
+        "3": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "4": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "5": { "name": "string.other.link.title.markdown.foam" },
+        "6": { "name": "punctuation.definition.metadata.markdown.foam" }
+      }
+    },
+    {
+      "comment": "Markdown full reference link and image: [label][ref], ![alt][ref]",
+      "match": "(!?\\[)(?!\\[)((?:[^\\[\\]]|\\[[^\\[\\]]*\\])*)(\\])(\\[)([^\\[\\]]+)(\\])",
       "captures": {
         "1": { "name": "punctuation.definition.metadata.markdown.foam" },
         "2": { "name": "comment.line.wikilink.target.markdown.foam" },
@@ -60,6 +72,17 @@
           "name": "comment.line.wikilink.target.markdown.foam"
         }
       ]
+    },
+    {
+      "comment": "Autolinks before HTML, in the order Markdown paragraphs use",
+      "include": "text.html.markdown#link-inet"
+    },
+    {
+      "include": "text.html.markdown#link-email"
+    },
+    {
+      "comment": "Inline HTML in table cells, as Markdown paragraphs include it",
+      "include": "text.html.derivative"
     }
   ]
 }

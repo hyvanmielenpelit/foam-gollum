@@ -2,6 +2,16 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.7.1
+
+### Patch Changes
+
+- Fix the coloring of image links and links whose address contains parentheses, such as `(Steam)`.
+- Fix the coloring of HTML tags, such as `<img>`, inside Markdown tables.
+- Fix the coloring of a wikilink followed by a Markdown link on the same line.
+- Fix wikilinks and Markdown links inside HTML blocks, such as a `<div>` on its own lines, not being colored.
+- Color the label of reference links, such as `[label][ref]`, green like the label of other links.
+
 ## 1.7.0
 
 ### Minor Changes

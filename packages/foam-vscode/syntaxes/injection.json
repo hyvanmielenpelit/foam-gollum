@@ -1,10 +1,22 @@
 {
   "scopeName": "foam.wikilink.injection",
-  "injectionSelector": "L:meta.paragraph.markdown, L:markup.heading.markdown, L:markup.list.unnumbered.markdown, L:markup.list.numbered.markdown, L:meta.block.html, L:text.html.basic, L:meta.tag.inline.any.html, L:meta.tag.block.any.html, L:markup.quote.markdown",
+  "injectionSelector": "L:meta.paragraph.markdown, L:markup.heading.markdown, L:markup.list.unnumbered.markdown, L:markup.list.numbered.markdown, L:meta.block.html, L:text.html.basic, L:meta.tag.inline.any.html, L:meta.tag.block.any.html, L:markup.quote.markdown, text.html.markdown - meta - markup - comment - string - source",
   "patterns": [
     {
       "comment": "Standard Markdown hyperlink and image link coloring",
-      "match": "(!?\\[)(.*?)(\\])(\\()([^\\)]*)(\\))",
+      "match": "(!?\\[)(?!\\[)((?:[^\\[\\]]|\\[[^\\[\\]]*\\])*)(\\])(\\()((?:[^()]|\\([^()]*\\))*)(\\))",
+      "captures": {
+        "1": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "2": { "name": "comment.line.wikilink.target.markdown.foam" },
+        "3": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "4": { "name": "punctuation.definition.metadata.markdown.foam" },
+        "5": { "name": "string.other.link.title.markdown.foam" },
+        "6": { "name": "punctuation.definition.metadata.markdown.foam" }
+      }
+    },
+    {
+      "comment": "Markdown full reference link and image: [label][ref], ![alt][ref]",
+      "match": "(!?\\[)(?!\\[)((?:[^\\[\\]]|\\[[^\\[\\]]*\\])*)(\\])(\\[)([^\\[\\]]+)(\\])",
       "captures": {
         "1": { "name": "punctuation.definition.metadata.markdown.foam" },
         "2": { "name": "comment.line.wikilink.target.markdown.foam" },
