@@ -129,6 +129,12 @@ Written for people new to Foam who may not be technical. Show how to use a featu
 `hyvanmielenpelit/foam-gollum` is Foam for Gollum, a fork of `foambubble/foam` that adds Gollum wikilinks (`foam.wikilinks.syntax`: `gollum`, the default, or `mediawiki`). Where this section and the rest of the file differ, this section wins.
 
 - **Fork skills** live in [.agents/skills/](.agents/skills/): `fork_upstream_policy` (never contribute upstream; how to port and merge) and `changelog_versioning` (the fork edits `packages/foam-vscode/CHANGELOG.md` directly instead of using `.changeset/` fragments). Read them before syncing with upstream or recording a change.
-- **Names.** The extension workspace is `foam-vscode-gollum`, not `foam-vscode`. Root `yarn lint` is disabled; run `yarn lint` inside a package for information.
+- **Names.** Each place has its own name; don't carry one over to another:
+  - GitHub repository: `hyvanmielenpelit/foam-gollum` (not `foam-for-gollum`).
+  - Product name: "Foam for Gollum".
+  - Extension workspace and package name: `foam-vscode-gollum` (not `foam-vscode`).
+  - Marketplace ID: `Hyvnmielenpelitry.foam-vscode-gollum`.
+  - Sentry project: `foam-for-gollum` in organization `hyvan-mielen-pelit-ry` (EU region, `de.sentry.io`).
+- **Lint.** Root `yarn lint` is disabled; run `yarn lint` inside a package for information.
 - **Gollum test convention.** Upstream specs assume MediaWiki syntax, so their describes are pinned with `useFoamConfiguration(MEDIAWIKI_SYNTAX)` inside the describe (in `*.test.ts`, a `Config.setDefaultConfig` override), never at file level and never by changing an upstream expectation. Gollum cases go in their own `... with Gollum syntax` describe that sets `GOLLUM_SYNTAX` explicitly, set up and torn down inside the test.
 - **Excluded upstream content.** Upstream's AI-automation tooling is not part of the fork: `.github/workflows/claude.yml`, `review.yml` and `spec.yml`, `packages/agent-loop/`, the root `agent-loop` script and its CI step, and the `.claude/skills/write-spec`, `write-plan` and `implement` skills. An upstream merge that reintroduces or modifies them resolves by deleting them again.
