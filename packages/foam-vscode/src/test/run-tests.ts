@@ -40,7 +40,12 @@ async function main() {
     mkdirSync(userSettingsDir, { recursive: true });
     writeFileSync(
       path.join(userSettingsDir, 'settings.json'),
-      JSON.stringify({ 'workbench.localHistory.enabled': false })
+      JSON.stringify({
+        'workbench.localHistory.enabled': false,
+        // Deletes made by tests through a WorkspaceEdit would otherwise go to
+        // the OS trash, which is slow and fills the user's Recycle Bin.
+        'files.enableTrash': false,
+      })
     );
 
     const resultFile = path.join(userDataDir, 'foam-e2e-result');

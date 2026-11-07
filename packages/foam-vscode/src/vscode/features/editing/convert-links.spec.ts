@@ -258,7 +258,9 @@ describe('Link Conversion Commands with Gollum syntax', () => {
   useFoamConfiguration(GOLLUM_SYNTAX);
 
   beforeEach(async () => {
-    await cleanWorkspace();
+    // Tests reuse note paths, so a delete still pending in the Foam index
+    // would remove the next test's note.
+    await cleanWorkspace(5000);
     await closeEditors();
   });
 
