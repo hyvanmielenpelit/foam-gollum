@@ -10,7 +10,7 @@
 // file (the environment wins):
 //   - FOAM_SENTRY_DSN (baked into the bundle by esbuild.js for error reporting)
 //   - SENTRY_AUTH_TOKEN (source map upload by esbuild.js)
-//   - OPENVSX_TOKEN (consumed by the `publish:openvsx` script)
+//   - OVSX_PAT (read by `ovsx` in the `publish:openvsx` script)
 // Marketplace auth comes from the local `vsce` CLI session.
 //
 const { execSync } = require('child_process');
@@ -43,10 +43,11 @@ run('yarn publish:vscode');
 
 // 4. Upload the same vsix to OpenVSX. Fail fast if the token is missing
 //    so the user knows step 3 succeeded but step 4 didn't.
-if (!process.env.OPENVSX_TOKEN) {
+if (!process.env.OVSX_PAT) {
   throw new Error(
-    'OPENVSX_TOKEN env var is required to publish to OpenVSX. ' +
-      'Marketplace upload succeeded; rerun this script after exporting the token.'
+    'OVSX_PAT env var is required to publish to OpenVSX. ' +
+      'Marketplace upload succeeded; set the token and run ' +
+      '`yarn workspace foam-vscode-gollum publish:openvsx`.'
   );
 }
 run('yarn publish:openvsx');

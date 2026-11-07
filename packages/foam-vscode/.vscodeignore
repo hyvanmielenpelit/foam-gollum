@@ -10,6 +10,7 @@ test-data/**
 src/**
 vitest.config.mts
 esbuild.js
+release.js
 .test-workspace
 .gitignore
 .claude/**

@@ -19,8 +19,8 @@ Foam for Gollum releases only the extension, `foam-vscode-gollum` in `packages/f
 5. Provide the release secrets, in the environment or in the gitignored `packages/foam-vscode/.env` (the environment wins). Never commit them.
    - `FOAM_SENTRY_DSN`: built into the bundle for error reporting.
    - `SENTRY_AUTH_TOKEN`: uploads the source maps to Sentry.
-   - `OPENVSX_TOKEN`: publishes to OpenVSX.
-   - `packages/foam-vscode/release.js` refuses to release without the first two. Without `OPENVSX_TOKEN` it stops after the Marketplace upload. Marketplace authentication comes from your local `vsce` login.
+   - `OVSX_PAT`: publishes to OpenVSX. `ovsx` reads it from the environment, so it never appears on a command line.
+   - `packages/foam-vscode/release.js` refuses to release without the first two. Without `OVSX_PAT` it stops after the Marketplace upload; then run `yarn workspace foam-vscode-gollum publish:openvsx` once the token is set, not the whole release again. Marketplace authentication comes from your local `vsce` login.
 6. Commit and tag
    - `git add -A && git commit -m "Release <version>"`
    - `git tag v<version>`
