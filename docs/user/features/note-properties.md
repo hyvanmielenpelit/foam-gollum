@@ -29,7 +29,7 @@ Some properties have special meaning for Foam:
 
 | Name    | Description                                                                                                                                                             |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title` | will assign the name to the note that you will see in the graph, regardless of the filename or the first heading (also see how to [[note-taking-in-foam]])              |
+| `title` | will assign the name to the note that you will see in the graph, regardless of the filename or the first heading (also see how to [[../getting-started/note-taking-in-foam]])              |
 | `type`  | can be used to style notes differently in the graph (also see [[graph-view]]). The default type for a document is `note` unless otherwise specified with this property. |
 | `tags`  | can be used to add tags to a note (see [[tags]])                                                                                                                        |
 | `alias` | can be used to add aliases to the note. an alias will show up in the link autocompletion                                                                                |
@@ -47,9 +47,9 @@ alias: alias1, alias2
 
 ## Foam Template Properties
 
-There also exists properties that are even more specific to Foam templates, see [[templates#Metadata]] for more info.
+There also exists properties that are even more specific to Foam templates, see [[templates#metadata]] for more info.
 
 [tags]: tags.md "Tags"
 [graph-view]: ../features/graph-view.md "Graph Visualization"
-[note-taking-in-foam]: ../getting-started/note-taking-in-foam.md "Note-Taking in Foam"
-[templates#Metadata]: templates.md#Metadata "Note Templates"
+[../getting-started/note-taking-in-foam]: ../getting-started/note-taking-in-foam.md "Note-Taking in Foam"
+[templates#metadata]: templates.md#metadata "Note Templates"

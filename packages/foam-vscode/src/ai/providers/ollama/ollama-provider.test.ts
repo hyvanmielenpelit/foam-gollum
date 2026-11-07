@@ -215,12 +215,14 @@ describe('OllamaEmbeddingProvider', () => {
 
 describe('OllamaEmbeddingProvider - Integration', () => {
   const provider = new OllamaEmbeddingProvider();
+  let available = false;
 
-  it('should handle text with unicode characters and emojis', async () => {
-    if (!(await provider.isAvailable())) {
-      console.warn('Ollama is not available, skipping test');
-      return;
-    }
+  beforeAll(async () => {
+    available = await provider.isAvailable();
+  });
+
+  it('should handle text with unicode characters and emojis', async ({ skip }) => {
+    skip(!available, 'Ollama is not available');
     const text = 'Task completed ✔ 🚀: All systems go! 🌟';
     const embedding = await provider.embed(text);
 
@@ -230,11 +232,8 @@ describe('OllamaEmbeddingProvider - Integration', () => {
     expect(embedding.every(n => typeof n === 'number')).toBe(true);
   });
 
-  it('should handle text with various unicode characters', async () => {
-    if (!(await provider.isAvailable())) {
-      console.warn('Ollama is not available, skipping test');
-      return;
-    }
+  it('should handle text with various unicode characters', async ({ skip }) => {
+    skip(!available, 'Ollama is not available');
     const text = 'Hello 🌍 with émojis and spëcial çharacters • bullet ✓ check';
     const embedding = await provider.embed(text);
 
@@ -243,11 +242,8 @@ describe('OllamaEmbeddingProvider - Integration', () => {
     expect(embedding.length).toBe(768);
   });
 
-  it('should handle text with combining unicode characters', async () => {
-    if (!(await provider.isAvailable())) {
-      console.warn('Ollama is not available, skipping test');
-      return;
-    }
+  it('should handle text with combining unicode characters', async ({ skip }) => {
+    skip(!available, 'Ollama is not available');
     // Test with combining diacriticals that could be represented differently
     const text = 'café vs cafe\u0301'; // Two ways to represent é
     const embedding = await provider.embed(text);
@@ -257,11 +253,8 @@ describe('OllamaEmbeddingProvider - Integration', () => {
     expect(embedding.length).toBe(768);
   });
 
-  it('should handle empty text', async () => {
-    if (!(await provider.isAvailable())) {
-      console.warn('Ollama is not available, skipping test');
-      return;
-    }
+  it('should handle empty text', async ({ skip }) => {
+    skip(!available, 'Ollama is not available');
     const text = '';
     const embedding = await provider.embed(text);
 
@@ -271,13 +264,10 @@ describe('OllamaEmbeddingProvider - Integration', () => {
     expect(embedding.length).toBeGreaterThanOrEqual(0);
   });
 
-  it.each([10, 50, 60, 100, 300])(
+  it.for([10, 50, 60, 100, 300])(
     'should handle text of various lengths',
-    async length => {
-      if (!(await provider.isAvailable())) {
-        console.warn('Ollama is not available, skipping test');
-        return;
-      }
+    async (length, { skip }) => {
+      skip(!available, 'Ollama is not available');
       const text = 'Lorem ipsum dolor sit amet. '.repeat(length);
       try {
         const embedding = await provider.embed(text);

@@ -90,7 +90,8 @@ export class NodeFileDataStore implements IDataStore {
 
   async exists(uri: URI): Promise<boolean> {
     try {
-      await fs.access(uri.toFsPath());
+      // Follows symlinks, so a dangling symlink does not exist
+      await fs.stat(uri.toFsPath());
       return true;
     } catch {
       return false;
@@ -98,15 +99,15 @@ export class NodeFileDataStore implements IDataStore {
   }
 
   /**
-   * Returns `uri`'s path with `..` segments resolved, and throws unless it
-   * lies inside the workspace once symlinks are resolved as well. A dangling
-   * symlink on the way counts as outside, since writing through it would
-   * create its target wherever it points. With `linkItself`, a symlink at
-   * the path itself is checked where it is, not where it points: deleting or
-   * renaming it changes the link only.
+   * Returns `uri`'s path with `..` segments and symlinks resolved, and throws
+   * unless it lies inside the workspace. A dangling symlink on the way counts
+   * as outside, since writing through it would create its target wherever it
+   * points. With `linkItself`, a symlink at the path itself is checked where
+   * it is, not where it points: deleting or renaming it changes the link only.
    *
    * Callers must use the returned path: the OS would resolve a `..` after a
-   * symlink from the symlink's target.
+   * symlink from the symlink's target, and on Windows a recursive `mkdir`
+   * through a directory symlink fails.
    */
   private async resolveInsideWorkspace(
     uri: URI,
@@ -131,7 +132,7 @@ export class NodeFileDataStore implements IDataStore {
         { uri: fsPath }
       );
     }
-    return fsPath;
+    return realPath;
   }
 }
 

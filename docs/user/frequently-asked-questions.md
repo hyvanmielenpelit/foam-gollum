@@ -8,9 +8,9 @@
 
 ## Links/Graphs/BackLinks don't work. How do I enable them?
 
-- Ensure that you have all the [[recommended-extensions]] installed in Visual Studio Code
+- Ensure that you have all the [[getting-started/recommended-extensions]] installed in Visual Studio Code
 - Reload Visual Studio Code by running `Cmd` + `Shift` + `P` (`Ctrl` + `Shift` + `P` for Windows), type "reload" and run the **Developer: Reload Window** command to for the updated extensions take effect
-- Check the formatting rules for links on [[wikilinks]]
+- Check the formatting rules for links on [[features/wikilinks]]
 
 ## I don't want Foam enabled for all my workspaces
 
@@ -29,11 +29,11 @@ Foam collects anonymous usage data (which commands are used, which features are 
 
 Foam follows VS Code's global telemetry setting (`telemetry.telemetryLevel`). If you have disabled telemetry in VS Code, Foam will not send any data.
 
-To inspect what is being sent, set the Foam log level to `Debug` (run `Foam: Set log level` from the command palette) — telemetry events will appear in the Foam output channel. See [[foam-logging-in-vscode]] for details.
+To inspect what is being sent, set the Foam log level to `Debug` (run `Foam: Set log level` from the command palette) — telemetry events will appear in the Foam output channel. See [[tools/foam-logging-in-vscode]] for details.
 
-See [[telemetry]] for the full list of collected data and opt-out instructions.
+See [[tools/telemetry]] for the full list of collected data and opt-out instructions.
 
-[recommended-extensions]: getting-started/recommended-extensions.md 'Recommended Extensions'
-[wikilinks]: features/wikilinks.md 'Wikilinks'
-[telemetry]: tools/telemetry.md 'Telemetry'
-[foam-logging-in-vscode]: tools/foam-logging-in-vscode.md 'Foam logging in VsCode'
+[getting-started/recommended-extensions]: getting-started/recommended-extensions.md "Recommended Extensions"
+[features/wikilinks]: features/wikilinks.md "Wikilinks"
+[tools/foam-logging-in-vscode]: tools/foam-logging-in-vscode.md "Foam logging in VsCode"
+[tools/telemetry]: tools/telemetry.md "Telemetry"

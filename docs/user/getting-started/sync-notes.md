@@ -7,7 +7,7 @@ There are (too) many ways to commit your changes to source control:
 
 - Using VS Code's own git integration
   - The quick and easy way is to use the `Git: Commit All` command after editing files. The default Foam workspace settings will stage & sync all of your changes to the remote:
-- Using GitDoc for [[automatic-git-syncing]]
+- Using GitDoc for [[../recipes/automatic-git-syncing]]
 - Whatever way you like to do it (CLI?)
 
-[automatic-git-syncing]: ../recipes/automatic-git-syncing.md 'Automatically Sync with Git'
+[../recipes/automatic-git-syncing]: ../recipes/automatic-git-syncing.md "Automatically Sync with Git"

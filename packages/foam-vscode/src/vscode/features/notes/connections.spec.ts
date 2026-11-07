@@ -1,14 +1,15 @@
 /* @unit-ready */
-import { workspace, window } from 'vscode';
 import { createTestNote, createTestWorkspace } from '../../../test/test-utils';
 import {
   cleanWorkspace,
   closeEditors,
   createNote,
   getUriInWorkspace,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { ConnectionsTreeDataProvider } from './connections';
-import { MapBasedMemento, toVsCodeUri } from '../../utils/vsc-utils';
+import { MapBasedMemento } from '../../utils/vsc-utils';
 import { FoamGraph } from '@foam/core';
 import {
   ResourceRangeTreeItem,
@@ -16,6 +17,8 @@ import {
 } from '../../utils/tree-views/tree-view-utils';
 
 describe('Backlinks panel', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeAll(async () => {
     await cleanWorkspace();
     await createNote(noteA);
@@ -61,17 +64,6 @@ describe('Backlinks panel', () => {
   beforeEach(async () => {
     await closeEditors();
     provider.target = undefined;
-  });
-
-  it.skip('targets active editor', async () => {
-    const docA = await workspace.openTextDocument(toVsCodeUri(noteA.uri));
-    const docB = await workspace.openTextDocument(toVsCodeUri(noteB.uri));
-
-    await window.showTextDocument(docA);
-    expect(provider.target).toEqual(noteA.uri);
-
-    await window.showTextDocument(docB);
-    expect(provider.target).toEqual(noteB.uri);
   });
 
   it('shows linking resources alphaetically by name', async () => {

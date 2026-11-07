@@ -8,10 +8,10 @@ To allow navigation from within the GitHub repo, make sure to generate the link 
 
 - `Foam › Edit: Link Reference Definitions` -> `withExtensions`
 
-See [[link-reference-definitions]] for more information.
+See [[../features/link-reference-definitions]] for more information.
 
 ## Customising the style
 
 You can edit `assets/css/style.scss` to change how published pages look.
 
-[link-reference-definitions]: ../features/link-reference-definitions.md 'Link Reference Definitions'
+[../features/link-reference-definitions]: ../features/link-reference-definitions.md "Link Reference Definitions"

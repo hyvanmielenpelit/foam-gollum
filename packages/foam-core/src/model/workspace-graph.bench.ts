@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { FoamWorkspace } from './workspace';
 import { FoamGraph } from './graph';
 import { Resource } from './note';
@@ -97,49 +97,54 @@ for (const size of REPO_BENCHMARK_SIZES) {
   });
 }
 
-const eachSize = (fn: (size: number, f: Fixture) => void) => {
-  for (const size of REPO_BENCHMARK_SIZES) {
-    fn(size, fixtures.get(size)!);
-  }
-};
+const eachSize = <T>(fn: (size: number, f: Fixture) => T): T[] =>
+  REPO_BENCHMARK_SIZES.map(size => fn(size, fixtures.get(size)!));
 
-describe('workspace build [linear]', () => {
-  eachSize((size, f) => {
-    bench(`${size} notes`, () => {
-      const workspace = createTestWorkspace();
-      for (const note of f.notes) {
-        workspace.set(note);
-      }
-    });
-  });
+test('workspace build [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...eachSize((size, f) =>
+      bench(`${size} notes`, () => {
+        const workspace = createTestWorkspace();
+        for (const note of f.notes) {
+          workspace.set(note);
+        }
+      })
+    )
+  );
 });
 
-describe('graph build [linear]', () => {
-  eachSize((size, f) => {
-    bench(`${size} notes`, () => {
-      FoamGraph.fromWorkspace(f.workspace).dispose();
-    });
-  });
+test('graph build [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...eachSize((size, f) =>
+      bench(`${size} notes`, () => {
+        FoamGraph.fromWorkspace(f.workspace).dispose();
+      })
+    )
+  );
 });
 
-describe('graph update full rebuild [linear]', () => {
-  eachSize((size, f) => {
-    bench(`${size} notes`, () => {
-      f.graph.update();
-    });
-  });
+test('graph update full rebuild [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...eachSize((size, f) =>
+      bench(`${size} notes`, () => {
+        f.graph.update();
+      })
+    )
+  );
 });
 
 // Incremental path: a single note change flows through the monitored graph's
 // onDidUpdate handler, touching only that note's connections. Must stay ~flat
 // across sizes — that's the guard that it hasn't regressed to a full rebuild.
-describe('graph update incremental [flat]', () => {
-  eachSize((size, f) => {
-    let flip = 0;
-    bench(`${size} notes`, () => {
-      const alt = makeNote(0, size);
-      alt.links = alt.links.slice(0, 3 - (flip++ % 2)); // vary link count
-      f.monitoredWs.set(alt);
-    });
-  });
+test('graph update incremental [flat]', async ({ bench }) => {
+  await bench.compare(
+    ...eachSize((size, f) => {
+      let flip = 0;
+      return bench(`${size} notes`, () => {
+        const alt = makeNote(0, size);
+        alt.links = alt.links.slice(0, 3 - (flip++ % 2)); // vary link count
+        f.monitoredWs.set(alt);
+      });
+    })
+  );
 });

@@ -1,4 +1,4 @@
-import { FoamGraph, resolveNote } from '@foam/core';
+import { Config, DefaultFoamConfig, FoamGraph, resolveNote } from '@foam/core';
 import { createTestNote, createInMemoryWorkspace, withTmpWorkspace, TestLogger } from '../test/test-utils';
 import { linksData, runLinksCommand } from './links';
 import { setColorsEnabled } from '../support/colors';
@@ -93,4 +93,77 @@ describe('runLinksCommand', () => {
       expect(Array.isArray(result.outgoing)).toBe(true);
       expect(Array.isArray(result.incoming)).toBe(true);
     }));
+});
+
+// ─── runLinksCommand with Gollum syntax ───────────────────────────────────────
+
+describe('runLinksCommand with Gollum syntax', () => {
+  const files = {
+    '.vscode/settings.json': JSON.stringify({ 'foam.wikilinks.syntax': 'gollum' }),
+    'a/Src.md': '# Src\n\n[[Shown|Page]] and [[/Top]]\n',
+    'a/Page.md': '# Page\n',
+    'Page.md': '# Root Page\n',
+    'Top.md': '# Top\n',
+  };
+
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('lists the outgoing links of a note, resolved from its folder and from the wiki root', () =>
+    withTmpWorkspace(files, async ({ rootDir }) => {
+      const logger = new TestLogger();
+      const code = await runLinksCommand(
+        ['Src', '--outgoing', '--format', 'json', '--workspace', rootDir],
+        logger
+      );
+      expect(code).toBe(0);
+      const result = JSON.parse(logger.logs[0]);
+      expect(result.outgoing.map((e: { path: string; label: string }) => [e.path, e.label])).toEqual([
+        ['a/Page.md', '[[Shown|Page]]'],
+        ['Top.md', '[[/Top]]'],
+      ]);
+    }));
+
+  it('lists the incoming links of a note only from the notes whose links resolve to it', () =>
+    withTmpWorkspace(files, async ({ rootDir }) => {
+      const sibling = new TestLogger();
+      await runLinksCommand(
+        ['--path', 'a/Page.md', '--incoming', '--format', 'json', '--workspace', rootDir],
+        sibling
+      );
+      const atRoot = new TestLogger();
+      await runLinksCommand(
+        ['--path', 'Page.md', '--incoming', '--format', 'json', '--workspace', rootDir],
+        atRoot
+      );
+
+      expect(JSON.parse(sibling.logs[0]).incoming.map((e: { path: string }) => e.path)).toEqual(['a/Src.md']);
+      expect(JSON.parse(atRoot.logs[0]).incoming).toEqual([]);
+    }));
+});
+
+// ─── runLinksCommand with MediaWiki syntax ────────────────────────────────────
+
+describe('runLinksCommand with MediaWiki syntax', () => {
+  it('reads the target before the alias when the workspace settings ask for MediaWiki links', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.wikilinks.syntax': 'mediawiki' }),
+        'a/Src.md': '# Src\n\n[[Page|Shown]]\n',
+        'a/Page.md': '# Page\n',
+      },
+      async ({ rootDir }) => {
+        const logger = new TestLogger();
+        const code = await runLinksCommand(
+          ['Src', '--outgoing', '--format', 'json', '--workspace', rootDir],
+          logger
+        );
+        expect(code).toBe(0);
+        const result = JSON.parse(logger.logs[0]);
+        expect(result.outgoing.map((e: { path: string; label: string }) => [e.path, e.label])).toEqual([
+          ['a/Page.md', '[[Page|Shown]]'],
+        ]);
+      }
+    ));
 });

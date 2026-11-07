@@ -54,9 +54,9 @@ foam links my-note --format json
 
 ## Note identifiers
 
-Foam identifies notes by the shortest unique part of their filename (without extension). For example, a note at `projects/alpha/notes.md` might be identified as `notes` if that's unique, or `alpha/notes` if there's ambiguity. Use [[note|foam note id]] to check how a note is identified.
+Foam identifies notes by the shortest unique part of their filename (without extension). For example, a note at `projects/alpha/notes.md` might be identified as `notes` if that's unique, or `alpha/notes` if there's ambiguity. Use [[foam note id|note]] to check how a note is identified.
 
-See also [[backlinking]] for the backlinks panel in VS Code.
+See also [[../../features/backlinking]] for the backlinks panel in VS Code.
 
-[backlinking]: ../../features/backlinking.md 'Backlinks'
-[note]: note.md 'foam note'
+[foam note id|note]: note.md "foam note"
+[../../features/backlinking]: ../../features/backlinking.md "Backlinks"

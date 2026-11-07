@@ -10,12 +10,35 @@ export interface VsCodeLogger extends ILogger, IDisposable {
   show();
 }
 
+/** Receives the `Error` objects passed to `Logger.error`. */
+export interface ErrorSink {
+  logError(error: Error): void;
+}
+
 export class VsCodeOutputLogger extends BaseLogger implements VsCodeLogger {
   private channel = window.createOutputChannel('Foam');
+  private errorSink: ErrorSink | undefined;
 
   constructor() {
     super(getFoamLoggerLevel());
     this.channel.appendLine('Foam Logging: ' + getFoamLoggerLevel());
+  }
+
+  setErrorSink(sink: ErrorSink | undefined): void {
+    this.errorSink = sink;
+  }
+
+  /** Forwards each `Error` argument to the error sink; the message text is never forwarded. */
+  error(message?: any, ...params: any[]): void {
+    super.error(message, ...params);
+    if (!this.errorSink) {
+      return;
+    }
+    for (const value of [message, ...params]) {
+      if (value instanceof Error) {
+        this.errorSink.logError(value);
+      }
+    }
   }
 
   log(lvl: LogLevel, msg?: any, ...extra: any[]): void {

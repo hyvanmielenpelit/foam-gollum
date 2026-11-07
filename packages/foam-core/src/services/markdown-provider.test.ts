@@ -1433,3 +1433,65 @@ describe('readAsMarkdown with Gollum syntax', () => {
     expect(result).not.toContain('More text');
   });
 });
+
+describe('Generation of markdown references with Gollum syntax', () => {
+  const wikiRoot = URI.file('/wiki');
+
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => true,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('labels each definition with the link text and points it at the target relative to the note', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown(
+      '[[Page]] [[Shown Name|Other]] [[/dir/Root]] [[../Up]] [[Page#some-heading]]',
+      '/wiki/a/Src.md'
+    );
+    ws.set(source)
+      .set(createNoteFromMarkdown('# Page', '/wiki/a/Page.md'))
+      .set(createNoteFromMarkdown('# Other', '/wiki/a/Other.md'))
+      .set(createNoteFromMarkdown('# Decoy', '/wiki/Other.md'))
+      .set(createNoteFromMarkdown('# Root', '/wiki/dir/Root.md'))
+      .set(createNoteFromMarkdown('# Up', '/wiki/Up.md'));
+
+    expect(createMarkdownReferences(ws, source.uri, false)).toEqual([
+      { label: 'Page', url: 'Page', title: 'Page' },
+      { label: 'Shown Name|Other', url: 'Other', title: 'Other' },
+      { label: '/dir/Root', url: '../dir/Root', title: 'Root' },
+      { label: '../Up', url: '../Up', title: 'Up' },
+      { label: 'Page#some-heading', url: 'Page#some-heading', title: 'Page' },
+    ]);
+  });
+
+  it('keeps the extension in the definition when includeExtension = true', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown(
+      '[[Shown Name|Other]]',
+      '/wiki/a/Src.md'
+    );
+    ws.set(source).set(createNoteFromMarkdown('# Other', '/wiki/a/Other.md'));
+
+    expect(createMarkdownReferences(ws, source.uri, true)).toEqual([
+      { label: 'Shown Name|Other', url: 'Other.md', title: 'Other' },
+    ]);
+  });
+
+  it('creates no definition for a placeholder or a link that climbs above the wiki root', () => {
+    const ws = createTestWorkspace([wikiRoot]);
+    const source = createNoteFromMarkdown(
+      '[[Shown|Missing]] [[../../Up]]',
+      '/wiki/a/Src.md'
+    );
+    ws.set(source).set(createNoteFromMarkdown('# Up', '/wiki/Up.md'));
+
+    expect(createMarkdownReferences(ws, source.uri, false)).toEqual([]);
+  });
+});

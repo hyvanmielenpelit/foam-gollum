@@ -38,8 +38,9 @@ export default defineConfig({
     benchmark: {
       include: ['src/**/*.bench.ts'],
       exclude: ['node_modules/**'],
-      outputJson: PERF_CURRENT,
     },
+    reporters: ['default', 'json'],
+    outputFile: { json: PERF_CURRENT },
     // Benchmarks must not share a process — run serially for stable timings.
     fileParallelism: false,
   },

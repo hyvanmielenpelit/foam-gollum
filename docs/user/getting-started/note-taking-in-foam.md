@@ -101,17 +101,17 @@ This connects to [[2025-01-25-daily-note]] where I first had this insight.
 
 ### Note Embedding
 
-Include content from other notes via [[embeds]]:
+Include content from other notes via [[../features/embeds]]:
 
 ```markdown
-![[Project Management#Key Principles]]
+![[Project Management#key-principles]]
 
 This embeds the "Key Principles" section from the Project Management note.
 ```
 
 ### Tags
 
-Organize your content with [[tags]]:
+Organize your content with [[../features/tags]]:
 
 ```markdown
 #productivity #learning #foam
@@ -234,5 +234,5 @@ Now that you understand note-taking basics:
 4. **[Use daily notes](../features/daily-notes.md)** - Establish a daily capture routine
 
 [navigation]: navigation.md 'Navigation in Foam'
-[tags]: ../features/tags.md 'Tags'
-[embeds]: ../features/embeds.md 'Note Embeds'
+[../features/embeds]: ../features/embeds.md "Note Embeds"
+[../features/tags]: ../features/tags.md "Tags"

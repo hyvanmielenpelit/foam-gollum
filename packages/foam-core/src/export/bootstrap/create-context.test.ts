@@ -1,3 +1,4 @@
+import { Config, DefaultFoamConfig } from '../../config';
 import { URI } from '../../model/uri';
 import {
   createNoteFromMarkdown,
@@ -102,5 +103,86 @@ describe('createExportContext', () => {
       assetUri.path,
     ]);
     expect(linkedFromSnapshots).toEqual([[homeUri.path], [homeUri.path]]);
+  });
+});
+
+describe('createExportContext with Gollum syntax', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => false,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('exports the assets that links name relative to the folder of the linking note or to the wiki root', () => {
+    const workspace = createTestWorkspace([URI.file('/wiki')]);
+    workspace
+      .set(
+        createNoteFromMarkdown(
+          '/wiki/a/note.md',
+          '# Note\n\n[[logo.png]] and [[Logo|/img/icon.png]]'
+        )
+      )
+      .set(
+        createTestNote({
+          uri: '/wiki/a/logo.png',
+          title: 'logo.png',
+          type: 'image',
+        })
+      )
+      .set(
+        createTestNote({
+          uri: '/wiki/logo.png',
+          title: 'logo.png',
+          type: 'image',
+        })
+      )
+      .set(
+        createTestNote({
+          uri: '/wiki/img/icon.png',
+          title: 'icon.png',
+          type: 'image',
+        })
+      );
+
+    const context = createExportContext(
+      { workspace, includeAsset: () => true },
+      testExportTarget()
+    );
+
+    expect(context.assets.map(resource => resource.uri.path)).toEqual([
+      '/wiki/a/logo.png',
+      '/wiki/img/icon.png',
+    ]);
+  });
+
+  it('skips a link that climbs above the wiki root', () => {
+    const workspace = createTestWorkspace([URI.file('/wiki')]);
+    workspace
+      .set(
+        createNoteFromMarkdown('/wiki/a/note.md', '# Note\n\n[[../../logo.png]]')
+      )
+      .set(
+        createTestNote({
+          uri: '/wiki/logo.png',
+          title: 'logo.png',
+          type: 'image',
+        })
+      );
+
+    const context = createExportContext(
+      { workspace, includeAsset: () => true },
+      testExportTarget()
+    );
+
+    expect(context.assets).toEqual([]);
+    expect(context.notes.map(note => note.uri.path)).toEqual([
+      '/wiki/a/note.md',
+    ]);
   });
 });

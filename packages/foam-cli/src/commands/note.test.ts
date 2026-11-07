@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { FoamGraph, URI, resolveNote } from '@foam/core';
+import {
+  Config,
+  DefaultFoamConfig,
+  FoamGraph,
+  URI,
+  resolveNote,
+} from '@foam/core';
 import { setColorsEnabled } from '../support/colors';
 
 setColorsEnabled(false);
@@ -495,4 +501,40 @@ describe('runNoteCommand', () => {
       const ids = JSON.parse(logger.logs[0]).map((n: { id: string }) => n.id);
       expect(ids).toEqual(['beta']);
     }, 'foam-note-test-'));
+});
+
+// ─── runNoteCommand with Gollum syntax ────────────────────────────────────────
+
+describe('runNoteCommand with Gollum syntax', () => {
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('move: rewrites the relative links of the moved note and the links to it', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.wikilinks.syntax': 'gollum' }),
+        'a/Old.md': '# Old\n\n[[Sib]] and [[/Top]]\n',
+        'a/Sib.md': '# Sib\n\n[[Shown|Old]] and [[Old#intro]]\n',
+        'Top.md': '# Top\n\n[[a/Old]] and [[/a/Old]]\n',
+      },
+      async ({ rootDir }) => {
+        const code = await runNoteCommand(
+          ['move', 'Old', '--to', 'b/Old.md', '--workspace', rootDir],
+          new TestLogger()
+        );
+        expect(code).toBe(0);
+        expect(fs.existsSync(path.join(rootDir, 'a', 'Old.md'))).toBe(false);
+        expect(fs.readFileSync(path.join(rootDir, 'b', 'Old.md'), 'utf8')).toBe(
+          '# Old\n\n[[../a/Sib]] and [[/Top]]\n'
+        );
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'Sib.md'), 'utf8')).toBe(
+          '# Sib\n\n[[Shown|../b/Old]] and [[../b/Old#intro]]\n'
+        );
+        expect(fs.readFileSync(path.join(rootDir, 'Top.md'), 'utf8')).toBe(
+          '# Top\n\n[[b/Old]] and [[/b/Old]]\n'
+        );
+      },
+      'foam-note-test-'
+    ));
 });

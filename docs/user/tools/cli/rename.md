@@ -57,7 +57,7 @@ foam rename tag project/active project/in-progress
 
 ### section
 
-Rename a heading section in a note and rewrite all `[[note#Section]]` links pointing to it.
+Rename a heading section in a note and rewrite all `[[note#section]]` links pointing to it.
 
 ```bash
 foam rename section (<identifier> | --path <path>) <old-label> <new-label>
@@ -100,7 +100,7 @@ foam rename block my-note key-insight better-insight
 | `--workspace <dir>` | Workspace root (default: `FOAM_WORKSPACE` env var, then current directory) |
 | `--format <fmt>`    | Output format: `text` (default) or `json`                                  |
 
-See also [[wikilinks]] for how wikilinks work, and [[block-anchors]] for block anchor syntax.
+See also [[../../features/wikilinks]] for how wikilinks work, and [[../../features/block-anchors]] for block anchor syntax.
 
-[wikilinks]: ../../features/wikilinks.md 'Wikilinks'
-[block-anchors]: ../../features/block-anchors.md 'Block Anchors'
+[../../features/wikilinks]: ../../features/wikilinks.md "Wikilinks"
+[../../features/block-anchors]: ../../features/block-anchors.md "Block Anchors"

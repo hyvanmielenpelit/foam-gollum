@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { createMarkdownParser, FoamGraph, Resource, URI } from '@foam/core';
 import { createTestWorkspace, createTestNote } from '@foam/core/test';
 import { createFoamMarkdownIt } from './foam-markdown-it';
@@ -70,31 +70,33 @@ function makeNoteBody(lines: number): string {
 
 // ── Axis 1: note size (small fixed workspace) ────────────────────────────────
 // [linear]: doubling the note size should ~double render time.
-describe('preview pipeline — note size [linear]', () => {
+test('preview pipeline — note size [linear]', async ({ bench }) => {
   const wsNotes = makeWorkspaceNotes(50);
   const current = createTestNote({ uri: '/notes/current.md' });
   const md = buildPipeline(wsNotes, current);
-
-  for (const lines of [500, 1000, 2000, 4000]) {
-    const doc = makeNoteBody(lines);
-    bench(`${lines} lines`, () => {
-      md.render(doc);
-    });
-  }
+  await bench.compare(
+    ...[500, 1000, 2000, 4000].map(lines => {
+      const doc = makeNoteBody(lines);
+      return bench(`${lines} lines`, () => {
+        md.render(doc);
+      });
+    })
+  );
 });
 
 // ── Axis 2: workspace size (fixed 500-line note) ─────────────────────────────
 // [flat]: render cost of a fixed note should not grow with workspace size
 // (per-link lookups are O(1) via the reversed trie).
-describe('preview pipeline — workspace size [flat]', () => {
+test('preview pipeline — workspace size [flat]', async ({ bench }) => {
   const doc = makeNoteBody(500);
-
-  for (const notes of [100, 500, 2000, 10000]) {
-    const wsNotes = makeWorkspaceNotes(notes);
-    const current = createTestNote({ uri: '/notes/current.md' });
-    const md = buildPipeline(wsNotes, current);
-    bench(`${notes} notes`, () => {
-      md.render(doc);
-    });
-  }
+  await bench.compare(
+    ...[100, 500, 2000, 10000].map(notes => {
+      const wsNotes = makeWorkspaceNotes(notes);
+      const current = createTestNote({ uri: '/notes/current.md' });
+      const md = buildPipeline(wsNotes, current);
+      return bench(`${notes} notes`, () => {
+        md.render(doc);
+      });
+    })
+  );
 });

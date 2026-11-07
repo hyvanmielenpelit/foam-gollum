@@ -1,4 +1,4 @@
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 import { FoamGraph } from '../model/graph';
 import { URI } from '../model/uri';
 import { createTestNote, createTestWorkspace } from '../../test/test-utils';
@@ -38,26 +38,32 @@ const placeholderFixtures = SAME_BASENAME_SIZES.map(size =>
   sameBasenameWorkspace(size, i => [{ slug: `missing-${i}` }])
 );
 
-describe('get orphans [linear]', () => {
-  for (const { size, workspace, graph } of orphanFixtures) {
-    bench(`${size} notes`, () => {
-      getOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true });
-    });
-  }
+test('get orphans [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...orphanFixtures.map(({ size, workspace, graph }) =>
+      bench(`${size} notes`, () => {
+        getOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true });
+      })
+    )
+  );
 });
 
-describe('list orphans [linear]', () => {
-  for (const { size, workspace, graph } of orphanFixtures) {
-    bench(`${size} notes`, () => {
-      listOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true });
-    });
-  }
+test('list orphans [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...orphanFixtures.map(({ size, workspace, graph }) =>
+      bench(`${size} notes`, () => {
+        listOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true });
+      })
+    )
+  );
 });
 
-describe('list placeholders [linear]', () => {
-  for (const { size, workspace, graph } of placeholderFixtures) {
-    bench(`${size} notes`, () => {
-      listPlaceholders(workspace, graph);
-    });
-  }
+test('list placeholders [linear]', async ({ bench }) => {
+  await bench.compare(
+    ...placeholderFixtures.map(({ size, workspace, graph }) =>
+      bench(`${size} notes`, () => {
+        listPlaceholders(workspace, graph);
+      })
+    )
+  );
 });

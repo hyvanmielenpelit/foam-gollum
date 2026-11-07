@@ -1,6 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { FoamGraph, FoamTags, URI, resolveNote } from '@foam/core';
+import {
+  Config,
+  DefaultFoamConfig,
+  FoamGraph,
+  FoamTags,
+  URI,
+  resolveNote,
+} from '@foam/core';
 import { withTmpWorkspace, TestLogger } from '../test/test-utils';
 import { setColorsEnabled } from '../support/colors';
 
@@ -347,4 +354,61 @@ describe('runRenameCommand', () => {
       expect(code).toBe(1);
       expect(logger.errors[0]).toContain('--force');
     }));
+});
+
+// ─── runRenameCommand with Gollum syntax ──────────────────────────────────────
+
+describe('runRenameCommand with Gollum syntax', () => {
+  const gollumSettings = JSON.stringify({ 'foam.wikilinks.syntax': 'gollum' });
+
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('note: rewrites each link to the note from the folder of the linking note', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': gollumSettings,
+        'a/Old.md': '# Old\n\n[[Sib]]\n',
+        'a/Sib.md': '# Sib\n\n[[Shown|Old]] and [[Old#intro]]\n',
+        'Top.md': '# Top\n\n[[a/Old]] and [[/a/Old]]\n',
+      },
+      async ({ rootDir }) => {
+        const code = await runRenameCommand(
+          ['note', 'Old', 'New', '--workspace', rootDir],
+          new TestLogger()
+        );
+        expect(code).toBe(0);
+        expect(fs.existsSync(path.join(rootDir, 'a', 'Old.md'))).toBe(false);
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'New.md'), 'utf8')).toBe('# Old\n\n[[Sib]]\n');
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'Sib.md'), 'utf8')).toBe(
+          '# Sib\n\n[[Shown|New]] and [[New#intro]]\n'
+        );
+        expect(fs.readFileSync(path.join(rootDir, 'Top.md'), 'utf8')).toBe(
+          '# Top\n\n[[a/New]] and [[/a/New]]\n'
+        );
+      }
+    ));
+
+  it('section: finds the section by its slug and rewrites the links to it with the new slug', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': gollumSettings,
+        'a/Guide.md': '# Guide\n\n## Getting Started\n\ntext\n',
+        'a/Ref.md': '# Ref\n\n[[Read this|Guide#getting-started]]\n',
+      },
+      async ({ rootDir }) => {
+        const code = await runRenameCommand(
+          ['section', 'Guide', 'getting-started', 'First Steps', '--workspace', rootDir],
+          new TestLogger()
+        );
+        expect(code).toBe(0);
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'Guide.md'), 'utf8')).toBe(
+          '# Guide\n\n## First Steps\n\ntext\n'
+        );
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'Ref.md'), 'utf8')).toBe(
+          '# Ref\n\n[[Read this|Guide#first-steps]]\n'
+        );
+      }
+    ));
 });

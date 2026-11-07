@@ -1,5 +1,42 @@
 # Releasing Foam
 
+## Foam for Gollum releases
+
+Foam for Gollum releases only the extension, `foam-vscode-gollum` in `packages/foam-vscode/`. Its `CHANGELOG.md` is edited directly, following `.agents/skills/changelog_versioning/SKILL.md`, and releases are tagged `v<version>`. The Changesets flow under [Upstream Foam releases](#upstream-foam-releases) is not used.
+
+1. Get to the latest code
+   - `git checkout main && git fetch && git rebase`
+2. Check the changelog
+   - The topmost `## <version>` entry in `packages/foam-vscode/CHANGELOG.md` is the version being released, and `"version"` in `packages/foam-vscode/package.json` matches it.
+   - The entry lists every user-visible change since the last release. `/update-changelog` drafts the missing lines.
+   - Update `packages/foam-vscode/WHATS_NEW.md` if the release has something users should act on or learn to use.
+3. Sanity checks
+   - `yarn reset`
+   - `yarn test`
+4. Audit the dependencies
+   - `yarn audit --summary`
+   - Resolve any finding on a dependency path that ships in the extension before releasing.
+5. Provide the release secrets, in the environment or in the gitignored `packages/foam-vscode/.env` (the environment wins). Never commit them.
+   - `FOAM_SENTRY_DSN`: built into the bundle for error reporting.
+   - `SENTRY_AUTH_TOKEN`: uploads the source maps to Sentry.
+   - `OPENVSX_TOKEN`: publishes to OpenVSX.
+   - `packages/foam-vscode/release.js` refuses to release without the first two. Without `OPENVSX_TOKEN` it stops after the Marketplace upload. Marketplace authentication comes from your local `vsce` login.
+6. Commit and tag
+   - `git add -A && git commit -m "Release <version>"`
+   - `git tag v<version>`
+7. Publish
+   - `yarn release-extension` runs `packages/foam-vscode/release.js`: it cleans, makes the production builds for Node and the web, packages `foam-vscode-gollum-<version>.vsix`, and publishes it to the VS Code Marketplace and then to OpenVSX.
+   - `yarn package-extension` only packages what is already built in `out/`, without building it. Use it to try a package locally; a development build reports no errors to Sentry. A `.vsix` marks its version as released for the changelog rules, so delete it if you don't publish it.
+8. Push
+   - `git push && git push --tags`
+9. Check the source maps
+   - In Sentry, organization `hyvan-mielen-pelit-ry`, project `foam-for-gollum` (EU region, `de.sentry.io`), open the release `foam-vscode-gollum@<version>` and confirm its source maps were uploaded.
+10. Update the release notes in GitHub from `CHANGELOG.md`, as in step 8 of [Cutting a release](#cutting-a-release).
+
+## Upstream Foam releases
+
+The rest of this page is upstream Foam's release process, kept for upstream merges. Foam for Gollum does not use it for its releases.
+
 Foam uses [Changesets](https://github.com/changesets/changesets) to manage versions and changelogs across the monorepo (`foam-vscode`, `@foam/cli`, `@foam/core`). Changesets owns the arithmetic — which package gets which bump, and assembling `CHANGELOG.md`. Deciding _what_ to write is covered by the [changelog rules](#changelog-rules) below.
 
 ## Writing changesets
@@ -81,7 +118,7 @@ At release time, for anything that shipped without a fragment:
    The entry text.
    ```
 
-The `/update-changelog` slash command can draft these for commits already on `main`.
+Upstream's `/update-changelog` slash command can draft these for commits already on `main`; in this fork, the command drafts `CHANGELOG.md` lines instead.
 
 Fragments don't need to be committed before `yarn version-packages` runs — it reads them off disk. Committing them first is still worthwhile if you want the intent recorded independently of the generated changelog.
 

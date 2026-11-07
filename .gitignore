@@ -17,3 +17,4 @@ packages/foam-vscode/src/features/panels/dataviz/graph-protocol.ts
 specs.local
 .agent-loop
 .nx
+.env

@@ -21,15 +21,6 @@ Foam is a personal knowledge management system built on [Visual Studio Code](htt
 
 Foam is like a bathtub: _What you get out of it depends on what you put into it._
 
-<p class="announcement">
-  <b>New!</b> Join <a href="https://discord.com/invite/HV2tn2FpEk" target="_blank">Foam community Discord</a> for users and contributors!
-</p>
-
-<div class="website-only">
-    <a class="github-button" href="https://github.com/foambubble/foam" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star foambubble/foam on GitHub">Star</a>
-    <a class="github-button" href="https://github.com/foambubble/foam-template" data-icon="octicon-repo-template" data-size="large" aria-label="Use this template foambubble/foam-template on GitHub">Use this template</a>
-</div>
-
 ## Table of Contents
 
 - [What is Foam?](#what-is-foam)
@@ -59,7 +50,7 @@ Success with Foam depends on consistent note-taking and linking habits.
 
 Foam combines existing tools:
 
-1. **VS Code** - Enhanced with [[recommended-extensions]] optimized for knowledge management
+1. **VS Code** - Enhanced with [[user/getting-started/recommended-extensions]] optimized for knowledge management
 2. **GitHub** - Version control, backup, and collaboration
 3. **Static site generators** - Publish to GitHub Pages, Netlify, or Vercel
 
@@ -79,13 +70,13 @@ Foam combines existing tools:
 
 **Next steps:**
 
-- Explore the [[recipes]] for usage patterns
-- Check [[frequently-asked-questions]] if you need help
-- Report issues on [GitHub](http://github.com/foambubble/foam/issues)
+- Explore the [[user/recipes/recipes]] for usage patterns
+- Check [[user/frequently-asked-questions]] if you need help
+- Report issues on [GitHub](https://github.com/hyvanmielenpelit/foam-gollum/issues)
 
 ## Features
 
-Foam leverages VS Code and [[recommended-extensions]] to provide:
+Foam leverages VS Code and [[user/getting-started/recommended-extensions]] to provide:
 
 - **Wikilinks** with autocomplete and navigation
 - **Backlinks** panel showing connections
@@ -96,15 +87,15 @@ Foam leverages VS Code and [[recommended-extensions]] to provide:
 
 ![Short video of Foam in use](assets/images/foam-navigation-demo.gif)
 
-Explore [[recipes]] for usage patterns and workflows.
+Explore [[user/recipes/recipes]] for usage patterns and workflows.
 
 ## Contributing
 
 Foam is an evolving project and we welcome contributions:
 
 - Read our [[principles]] to understand Foam's philosophy
-- Follow the [[contribution-guide]] to get involved
-- Share feedback via [GitHub issues](https://github.com/foambubble/foam/issues)
+- Follow the [[dev/contribution-guide]] to get involved
+- Share feedback via [GitHub issues](https://github.com/hyvanmielenpelit/foam-gollum/issues)
 
 ## Thanks and attribution
 
@@ -299,14 +290,14 @@ Foam is an evolving project and we welcome contributions:
 
 Foam was inspired by [Zettelkasten methodology](https://zettelkasten.de/posts/overview).
 
-Foam builds on [Visual Studio Code](https://code.visualstudio.com/), [GitHub](https://github.com/), and our [[recommended-extensions]].
+Foam builds on [Visual Studio Code](https://code.visualstudio.com/), [GitHub](https://github.com/), and our [[user/getting-started/recommended-extensions]].
 
 ## License
 
 Foam is licensed under the [MIT license](LICENSE.txt).
 
-[recommended-extensions]: user/getting-started/recommended-extensions.md 'Recommended Extensions'
-[recipes]: user/recipes/recipes.md 'Recipes'
-[frequently-asked-questions]: user/frequently-asked-questions.md 'Frequently Asked Questions'
 [principles]: principles.md 'Principles'
-[contribution-guide]: dev/contribution-guide.md 'Contribution Guide'
+[user/getting-started/recommended-extensions]: user/getting-started/recommended-extensions.md "Recommended Extensions"
+[user/recipes/recipes]: user/recipes/recipes.md "Recipes"
+[user/frequently-asked-questions]: user/frequently-asked-questions.md "Frequently Asked Questions"
+[dev/contribution-guide]: dev/contribution-guide.md "Contribution Guide"

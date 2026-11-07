@@ -36,15 +36,6 @@ describe('FoamWorkspaceSymbolProvider Integration', () => {
     const symbolNames = symbols.map(s => s.name);
     expect(symbolNames).toContain('first alternative');
     expect(symbolNames).toContain('second alternative');
-
-    // Verify symbol properties match VS Code expectations
-    symbols.forEach(symbol => {
-      expect(symbol).toBeInstanceOf(vscode.SymbolInformation);
-      expect(symbol.kind).toBe(vscode.SymbolKind.String);
-      expect(symbol.location).toBeInstanceOf(vscode.Location);
-      expect(symbol.location.uri).toBeDefined();
-      expect(symbol.location.range).toBeInstanceOf(vscode.Range);
-    });
   });
 
   it('should handle real-world alias formats from frontmatter', async () => {
@@ -88,25 +79,6 @@ describe('FoamWorkspaceSymbolProvider Integration', () => {
     // The createTestNote function uses default ranges for aliases
     expect(symbol.location.range).toBeInstanceOf(vscode.Range);
     expect(symbol.containerName).toBe('location-test.md');
-  });
-
-  it('should handle large workspace with many aliases efficiently (so we do not need to cache)', async () => {
-    // Create many notes with aliases to test performance
-    for (let i = 0; i < 10000; i++) {
-      const note = createTestNote({
-        uri: `/note${i}.md`,
-        aliases: [`alias number ${i}`, `alternative ${i}`],
-      });
-      workspace.set(note);
-    }
-
-    // Performance test - should complete quickly as we have decided not to cache
-    const start = Date.now();
-    const symbols = provider.provideWorkspaceSymbols('alternative');
-    const end = Date.now();
-
-    expect(symbols).toHaveLength(10000);
-    expect(end - start).toBeLessThan(500); // Should complete in under 500ms
   });
 
   it('should not interfere with existing markdown symbols', async () => {

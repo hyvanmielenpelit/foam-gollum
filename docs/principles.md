@@ -36,9 +36,9 @@ This principle may seem like it contradicts [Foam wants you to own your thoughts
 ## Foam allows people to collaborate in discovering better ways to work, together.
 
 - **Foam is a collection of ideas.** Foam was released to the public not to share the few good ideas in it, but to learn many good ideas from others. As you improve your own workflow, share your work on your own Foam blog.
-- **Foam is open for contributions.** If you use a tool or workflow that you like that fits these principles, please contribute them back to the Foam template as [[recipes]], [[recommended-extensions]] or documentation in [this workspace](https://github.com/foambubble/foam). See also: [[contribution-guide]].
+- **Foam is open for contributions.** If you use a tool or workflow that you like that fits these principles, please contribute them back to the Foam template as [[user/recipes/recipes]], [[user/getting-started/recommended-extensions]] or documentation in [this workspace](https://github.com/foambubble/foam). See also: [[dev/contribution-guide]].
 - **Foam is open source.** Feel free to fork it, improve it and remix it under the terms of our [MIT license](LICENSE.txt).
-- **No idea is too big.** If it doesn't fit with Foam's core workflow, we might make it a [[recipes]] page instead.
+- **No idea is too big.** If it doesn't fit with Foam's core workflow, we might make it a [[user/recipes/recipes]] page instead.
 
 ## Foam is for hackers, not only for programmers
 
@@ -46,9 +46,9 @@ While Foam uses tools popular among computer programmers, Foam should be inclusi
 
 - **Foam embraces the hacker mindset.** The target audience for Foam are people who look for creative ways to improve their ability to collect and organise information.
 - **Foam is not just for programmers.** If you're a programmer, feel free to write scripts and extensions to support your own workflow, and publish them for others to use, but the out of the box Foam experience should not require you to know how to do so. You should, however, be curious and open to adopting new tools that are unfamiliar to you, and evaluate whether they could work for you.
-- **Foam is for everyone** As a foam user, you support everyone's quest for knowledge and self-improvement, not only your own, or folks' who look like you. All participants in Foam repositories, discussion forums, physical and virtual meeting spaces etc are expected to respect each other as described in our [[code-of-conduct]]. **Foam is not for toxic tech bros.**
+- **Foam is for everyone** As a foam user, you support everyone's quest for knowledge and self-improvement, not only your own, or folks' who look like you. All participants in Foam repositories, discussion forums, physical and virtual meeting spaces etc are expected to respect each other as described in our [[dev/code-of-conduct]]. **Foam is not for toxic tech bros.**
 
-[recipes]: user/recipes/recipes.md "Recipes"
-[recommended-extensions]: user/getting-started/recommended-extensions.md "Recommended Extensions"
-[contribution-guide]: dev/contribution-guide.md "Contribution Guide"
-[code-of-conduct]: dev/code-of-conduct.md "Code of Conduct"
+[user/recipes/recipes]: user/recipes/recipes.md "Recipes"
+[user/getting-started/recommended-extensions]: user/getting-started/recommended-extensions.md "Recommended Extensions"
+[dev/contribution-guide]: dev/contribution-guide.md "Contribution Guide"
+[dev/code-of-conduct]: dev/code-of-conduct.md "Code of Conduct"

@@ -8,7 +8,7 @@ Foam already has a publishing story, but it is spread across older templates and
 
 Relevant existing material in this repository:
 
-- [Publishing pages](../../user/publishing/publishing.md) says Foam should remain valid Markdown and be publishable by many tools, while leaving room for a more Foam-aware publishing path later.
+- The former publishing overview page, no longer in the docs, said Foam should remain valid Markdown and be publishable by many tools, while leaving room for a more Foam-aware publishing path later.
 - Improved static-site generation, search in published workspaces, graph in published workspaces, and publishing permissions are all established goals.
 
 That gives a fairly clear constraint set:

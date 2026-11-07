@@ -12,11 +12,11 @@ Recipes are intended to document:
 ## Required Extensions
 
 - **[Hacker Typer](https://marketplace.visualstudio.com/items?itemName=jevakallio.vscode-hacker-typer)** (not really required for this recipe, just an example)
-- [Foam for VSCode](https://marketplace.visualstudio.com/items?itemName=foam.foam-vscode) (installed by default)
+- [Foam for Gollum](https://marketplace.visualstudio.com/items?itemName=Hyvnmielenpelitry.foam-vscode-gollum) (installed by default)
 
 The first section should be a bulleted list of extensions required to use this recipe. At a minimum, this section should list all additional, non-standard extensions.
 
-Ideally, you should also note which Foam [[recommended-extensions]] are responsible for providing this feature, so any issue reports can be directed to the correct repositories.
+Ideally, you should also note which Foam [[../getting-started/recommended-extensions]] are responsible for providing this feature, so any issue reports can be directed to the correct repositories.
 
 When creating new recipes, if you don't know which extension does what, you can leave it out.
 
@@ -36,5 +36,5 @@ You can add [[recipes]] by creating a pull request to [foambubble/foam](https://
 
 Read more in our [contribution guide](https://github.com/foambubble/foam/blob/main/CONTRIBUTING.md).
 
-[recommended-extensions]: ../getting-started/recommended-extensions.md 'Recommended Extensions'
 [recipes]: recipes.md 'Recipes'
+[../getting-started/recommended-extensions]: ../getting-started/recommended-extensions.md "Recommended Extensions"

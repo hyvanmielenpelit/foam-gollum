@@ -18,19 +18,19 @@ VS Code provides:
 
 To learn more about using VS Code with Foam, check [[get-started-with-vscode]]
 
-## Step 2: Install the Foam Extension
+## Step 2: Install Foam for Gollum
 
-The Foam extension adds knowledge management superpowers to VS Code.
+The Foam for Gollum extension adds knowledge management superpowers to VS Code.
 
 1. **Open VS Code**
 2. **Click the Extensions icon** in the sidebar (or press `Ctrl+Shift+X` / `Cmd+Shift+X`)
-3. **Search for "Foam"** in the extensions marketplace
-4. **Click "Install"** on the official Foam extension by Foam Team
+3. **Search for "Foam for Gollum"** in the extensions marketplace
+4. **Click "Install"** on [Foam for Gollum](https://marketplace.visualstudio.com/items?itemName=Hyvnmielenpelitry.foam-vscode-gollum) by Hyvän mielen pelit ry. Do not install upstream's Foam extension alongside it.
 5. **Reload VS Code** when prompted
 
-### What the Foam Extension Provides
+### What Foam for Gollum Provides
 
-- Wikilink auto-completion and navigation
+- Wikilink auto-completion and navigation, in Gollum syntax such as `[[Alias|folder/Page]]` (see [[../features/wikilinks]])
 - Backlink discovery and panel
 - Graph visualization
 - Powerful note template engine
@@ -54,11 +54,7 @@ Other extensions:
 
 The Foam CLI lets you work with your workspace from the terminal — search notes, manage tags, create daily notes, and more — without opening VS Code.
 
-```bash
-npm install -g foam-cli
-```
-
-Once installed, run `foam --help` to see available commands, or see the [[cli|CLI documentation]] for details.
+Foam for Gollum does not publish its CLI, and the `foam-cli` package on npm is upstream Foam's, which does not understand Gollum wikilinks. To build this one from the repository, see the [[CLI documentation|../tools/cli]].
 
 ## What's Next?
 
@@ -68,21 +64,21 @@ Now that Foam is installed, you're ready to:
 2. **[[get-started-with-vscode]]** - Learn how to use VS Code for note taking
 3. **[[note-taking-in-foam]]** - Write your first Markdown notes
 4. **[[navigation]]** - Connect your thoughts with wikilinks
-5. **[[graph-view]]** - Visualize your knowledge network
+5. **[[../features/graph-view]]** - Visualize your knowledge network
 
 ## Getting Help
 
 If you encounter issues:
 
-- Check the [[frequently-asked-questions]] for common problems
-- Visit the [Foam Community Discord](https://discord.com/invite/HV2tn2FpEk)
-- Browse [GitHub Issues](https://github.com/foambubble/foam/issues) for known problems
-- Ask questions in [GitHub Discussions](https://github.com/foambubble/foam/discussions)
+- Check the [[../frequently-asked-questions]] for common problems
+- Browse [GitHub Issues](https://github.com/hyvanmielenpelit/foam-gollum/issues) for known problems
+- Ask questions in [GitHub Discussions](https://github.com/hyvanmielenpelit/foam-gollum/discussions)
 
 [get-started-with-vscode]: get-started-with-vscode.md 'Using Foam with VS Code Features'
 [first-workspace]: first-workspace.md 'Creating Your First Workspace'
 [note-taking-in-foam]: note-taking-in-foam.md 'Note-Taking in Foam'
 [navigation]: navigation.md 'Navigation in Foam'
-[graph-view]: ../features/graph-view.md 'Graph Visualization'
-[frequently-asked-questions]: ../frequently-asked-questions.md 'Frequently Asked Questions'
-[cli]: ../tools/cli.md 'Foam CLI'
+[CLI documentation|../tools/cli]: ../tools/cli.md "Foam CLI"
+[../features/graph-view]: ../features/graph-view.md "Graph Visualization"
+[../frequently-asked-questions]: ../frequently-asked-questions.md "Frequently Asked Questions"
+[../features/wikilinks]: ../features/wikilinks.md "Wikilinks"

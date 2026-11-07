@@ -36,11 +36,11 @@ Yarn v1 workspaces + Lerna. Node 22 (`.nvmrc`): `nvm use` from the repo root is 
 
 ## Commands
 
-From the repo root, each runs across every package via Lerna: `yarn build`, `yarn watch`, `yarn clean`, `yarn reset` (clean, install, build), `yarn test:unit`, `yarn test:e2e`, `yarn test`, `yarn lint`, `yarn bench`, `yarn format`.
+From the repo root, each runs across every package via Lerna: `yarn build`, `yarn watch`, `yarn clean`, `yarn reset` (clean, install, build), `yarn test:unit`, `yarn test:e2e`, `yarn test`, `yarn bench`, `yarn format`.
 
-Per package: `yarn workspace <name> <script>`, where `<name>` is `@foam/core`, `foam-vscode`, `@foam/cli`, `@foam/graph-view`, or `@foam/mcp`.
+Per package: `yarn workspace <name> <script>`, where `<name>` is `@foam/core`, `foam-vscode-gollum`, `@foam/cli`, `@foam/graph-view`, or `@foam/mcp`.
 
-In `foam-vscode`:
+In `foam-vscode-gollum` (`packages/foam-vscode`):
 
 |                             |                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------- |
@@ -50,7 +50,7 @@ In `foam-vscode`:
 
 The runner ignores extra arguments — you cannot run a single test, only the whole suite.
 
-Lint is oxlint (`yarn lint`; the pre-push hook runs it too). Formatting is Prettier with the config in the root `package.json`.
+Lint is oxlint, run per package with `yarn lint` and informational only: the root `yarn lint` is disabled and no hook lints (`.husky/pre-push` is commented out). Formatting is Prettier with the config in the root `package.json`.
 
 ## Testing
 
@@ -137,4 +137,4 @@ Written for people new to Foam who may not be technical. Show how to use a featu
   - Sentry project: `foam-for-gollum` in organization `hyvan-mielen-pelit-ry` (EU region, `de.sentry.io`).
 - **Lint.** Root `yarn lint` is disabled; run `yarn lint` inside a package for information.
 - **Gollum test convention.** Upstream specs assume MediaWiki syntax, so their describes are pinned with `useFoamConfiguration(MEDIAWIKI_SYNTAX)` inside the describe (in `*.test.ts`, a `Config.setDefaultConfig` override), never at file level and never by changing an upstream expectation. Gollum cases go in their own `... with Gollum syntax` describe that sets `GOLLUM_SYNTAX` explicitly, set up and torn down inside the test.
-- **Excluded upstream content.** Upstream's AI-automation tooling is not part of the fork: `.github/workflows/claude.yml`, `review.yml` and `spec.yml`, `packages/agent-loop/`, the root `agent-loop` script and its CI step, and the `.claude/skills/write-spec`, `write-plan` and `implement` skills. An upstream merge that reintroduces or modifies them resolves by deleting them again.
+- **Excluded upstream content.** Upstream's AI-automation tooling and docs site are not part of the fork: `.github/workflows/claude.yml`, `review.yml` and `spec.yml`, `packages/agent-loop/`, the root `agent-loop` script and its CI step, the `.claude/skills/write-spec`, `write-plan` and `implement` skills, and the docs site: `.github/workflows/deploy-docs.yml`, `update-docs.yml`, the `docs-site-verify` CI job and the root `publish:docs-site` script. An upstream merge that reintroduces or modifies them resolves by deleting them again.

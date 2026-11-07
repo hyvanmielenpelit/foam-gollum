@@ -734,7 +734,28 @@ describe('Document navigation', () => {
       expect(refs).toBeUndefined();
     });
 
-    it.todo('should provide references for placeholders');
+    it('should provide references for placeholders', async () => {
+      const fileA = await createFile('File A links to [[placeholder]].');
+      const fileB = await createFile('File B also links to [[placeholder]].');
+
+      const ws = createTestWorkspace()
+        .set(parser.parse(fileA.uri, fileA.content))
+        .set(parser.parse(fileB.uri, fileB.content));
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+
+      const refs = await provider.provideReferences(
+        doc,
+        new vscode.Position(0, 20)
+      );
+
+      expect(refs.map(ref => ref.uri.toString()).sort()).toEqual(
+        [fileA.uri, fileB.uri].map(uri => toVsCodeUri(uri).toString()).sort()
+      );
+    });
   });
 
   describe('Footnotes', () => {
@@ -874,6 +895,21 @@ describe('Document navigation with Gollum syntax', () => {
 
     expect(definitions.length).toEqual(1);
     expect(definitions[0].targetUri).toEqual(toVsCodeUri(fileA.uri));
+  });
+
+  it('should provide references for a placeholder linked with and without an alias', async () => {
+    const fileA = await createFile('File A links to [[see this|Missing Page]].');
+    const fileB = await createFile('File B links to [[Missing Page]].');
+
+    const { doc, provider } = await providerFor([fileA, fileB], fileA);
+    const refs = await provider.provideReferences(
+      doc,
+      new vscode.Position(0, 20)
+    );
+
+    expect(refs.map(ref => ref.uri.toString()).sort()).toEqual(
+      [fileA.uri, fileB.uri].map(uri => toVsCodeUri(uri).toString()).sort()
+    );
   });
 
   it('should not resolve a link to a folder to its index note', async () => {

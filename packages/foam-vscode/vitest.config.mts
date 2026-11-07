@@ -50,10 +50,6 @@ export default defineConfig({
         '../foam-core/src/scripting/index.ts'
       ),
       '@foam/core': path.join(__dirname, '../foam-core/src/index.ts'),
-      '@vscode/extension-telemetry': path.join(
-        __dirname,
-        'src/test/extension-telemetry-mock.ts'
-      ),
     },
   },
   // Mirror the version constants injected by esbuild at build time so
@@ -63,6 +59,7 @@ export default defineConfig({
   define: {
     __FOAM_VSCODE_VERSION__: JSON.stringify('0.0.0-test'),
     __CORE_VERSION__: JSON.stringify('0.0.0-test'),
+    __FOAM_SENTRY_DSN__: JSON.stringify(''),
   },
   test: {
     globals: true,
@@ -72,9 +69,9 @@ export default defineConfig({
       './src/test/support/vitest-setup-after-env.ts',
     ],
     include: ['src/**/*.test.ts', ...unitReadySpecs],
-    exclude: ['src/test/web/**', 'node_modules/**', '.vscode-test/**'],
+    exclude: ['node_modules/**', '.vscode-test/**'],
     testTimeout: 20000,
     clearMocks: true,
-    reporters: process.env.CI ? ['dot'] : ['verbose'],
+    reporters: process.env.CI ? ['dot'] : ['tree'],
   },
 });

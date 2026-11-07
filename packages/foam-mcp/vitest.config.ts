@@ -26,6 +26,6 @@ export default defineConfig({
     exclude: ['node_modules/**'],
     testTimeout: 20000,
     clearMocks: true,
-    reporters: process.env.CI ? ['dot'] : ['verbose'],
+    reporters: process.env.CI ? ['dot'] : ['tree'],
   },
 });

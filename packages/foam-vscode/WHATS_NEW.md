@@ -21,7 +21,7 @@ sort: title ASC
 
 Queries used for Smart Folders are also exposed in the CLI and via MCP tools.
 
-[Learn more about Smart Folders](https://docs.foam.md/features/smart-folders/)
+[Learn more about Smart Folders](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/smart-folders.md)
 
 ## Foam CLI
 
@@ -36,7 +36,7 @@ npm install -g foam-cli
 foam <command> [options]
 ```
 
-[Learn more about the command-line interface](https://docs.foam.md/tools/cli/)
+[Learn more about the command-line interface](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/tools/cli.md)
 
 ## Graph revamp
 
@@ -46,13 +46,13 @@ The graph view has been significantly improved:
 - **Node groups** let you visually cluster notes in a flexible way
 - Added **Graph Views**
 
-[Learn more about the graph view](https://docs.foam.md/features/graph-view/)
+[Learn more about the graph view](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/graph-view.md)
 
 ## Block references
 
 In case you missed it, some time ago we added full support for referencing and embedding blocks in the editor and the preview.
 
-[Learn more about blocks](https://docs.foam.md/features/block-anchors/)
+[Learn more about blocks](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/block-anchors.md)
 
 ## Foam Queries
 
@@ -68,13 +68,13 @@ select: [title, path]
 
 Results render inline as a linked list of matching notes. The query updates automatically as your notes change.
 
-[Learn more about Foam Queries](https://docs.foam.md/features/foam-queries/)
+[Learn more about Foam Queries](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/foam-queries.md)
 
 ## Footnotes
 
 Foam now supports footnotes with proper rendering and navigation in editor and the Markdown preview.
 
-[Learn more about footnotes](https://docs.foam.md/features/footnotes/)
+[Learn more about footnotes](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/footnotes.md)
 
 ## Notes Explorer filtering
 

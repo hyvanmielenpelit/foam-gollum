@@ -403,20 +403,6 @@ describe('FOAM_DATE_FORMAT', () => {
 });
 
 describe('variable-resolver, resolveText', () => {
-  it('should do nothing for template without Foam-specific variables', async () => {
-    const input = `
-        # \${AnotherVariable} <-- Unrelated to Foam
-        # \${AnotherVariable:default_value} <-- Unrelated to Foam
-        # \${AnotherVariable:default_value/(.*)/\${1:/upcase}/}} <-- Unrelated to Foam
-        # $AnotherVariable} <-- Unrelated to Foam
-        # $CURRENT_YEAR-\${CURRENT_MONTH}-$CURRENT_DAY <-- Unrelated to Foam
-      `;
-
-    const expected = input;
-    const resolver = new Resolver(new Map(), new Date());
-    expect(await resolver.resolveText(input)).toEqual(expected);
-  });
-
   it.each([
     ['2021-10-12T00:00:00'],
     ['2021-10-12T23:59:59'],

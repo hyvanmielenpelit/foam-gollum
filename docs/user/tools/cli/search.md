@@ -8,7 +8,7 @@ foam search [<query>] [options]
 
 Searches the workspace index. The optional `<query>` is matched against note titles and aliases (substring, case-insensitive). Combine it with `--tag` and `--property` filters to narrow results.
 
-For full-text content search, use [[cli-grep|foam grep]] instead.
+For full-text content search, use [[foam grep|grep]] instead.
 
 ## Options
 
@@ -61,3 +61,5 @@ List only daily notes (matches the `type` set in the note's frontmatter):
 ```bash
 foam search --property type=daily-note
 ```
+
+[foam grep|grep]: grep.md "foam grep"

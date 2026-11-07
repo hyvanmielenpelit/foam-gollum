@@ -5,6 +5,7 @@ import { URI } from '../model/uri';
 import { EOL } from 'os';
 import { createMarkdownParser } from '../services/markdown-parser';
 import { TextEdit } from '../services/text-edit';
+import { Config, DefaultFoamConfig } from '../config';
 
 Logger.setLevel('error');
 
@@ -456,5 +457,98 @@ Some content here.
 
       expect(updated.replace(/\r\n/g, '\n')).toBe(textForNote(testCase.expected).replace(/\r\n/g, '\n'));
     });
+  });
+});
+
+describe('generateLinkReferences with Gollum syntax', () => {
+  const parser = createMarkdownParser();
+
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+        getWikilinksCaseInsensitive: () => true,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  /** `text` with LF line endings, whatever the line endings of this file. */
+  const lf = (text: string) => text.replace(/\r\n/g, '\n');
+
+  /** `text` of `/wiki/a/note.md`, in LF, with its link references updated. */
+  const updateReferences = (text: string) => {
+    const noteText = lf(text);
+    const workspace = createTestWorkspace([URI.file('/wiki')]);
+    [
+      { uri: '/wiki/a/Page.md', title: 'Page' },
+      { uri: '/wiki/a/Other.md', title: 'Other' },
+      { uri: '/wiki/Other.md', title: 'Decoy' },
+      { uri: '/wiki/Top.md', title: 'Top' },
+    ].forEach(note => {
+      workspace.set(createTestNote({ uri: note.uri, title: note.title }));
+    });
+    const note = parser.parse(URI.file('/wiki/a/note.md'), noteText);
+    workspace.set(note);
+    const edits = generateLinkReferences(
+      note,
+      noteText,
+      '\n',
+      workspace,
+      false
+    );
+    return TextEdit.apply(noteText, edits);
+  };
+
+  it('adds definitions labeled with the link text, with targets relative to the note', () => {
+    expect(
+      updateReferences(`
+# Index
+[[Page]] [[Shown Name|Other]] [[/Top]] [[../Top]]
+`)
+    ).toBe(
+      lf(`
+# Index
+[[Page]] [[Shown Name|Other]] [[/Top]] [[../Top]]
+
+[Page]: Page "Page"
+[Shown Name|Other]: Other "Other"
+[/Top]: ../Top "Top"
+[../Top]: ../Top "Top"
+`)
+    );
+  });
+
+  it('does not change correct link references', () => {
+    const text = `
+# Index
+[[Page]] [[Shown Name|Other]] [[/Top]] [[../Top]]
+
+[Page]: Page "Page"
+[Shown Name|Other]: Other "Other"
+[/Top]: ../Top "Top"
+[../Top]: ../Top "Top"
+`;
+    expect(updateReferences(text)).toBe(lf(text));
+  });
+
+  it('replaces the definition of a link written with the target first', () => {
+    expect(
+      updateReferences(`
+# Index
+[[Shown Name|Other]]
+
+[Other|Shown Name]: Other "Other"
+`)
+    ).toBe(
+      lf(`
+# Index
+[[Shown Name|Other]]
+
+[Shown Name|Other]: Other "Other"
+`)
+    );
   });
 });

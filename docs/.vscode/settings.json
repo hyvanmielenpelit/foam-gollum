@@ -4,6 +4,7 @@
   "editor.wrappingIndent": "indent",
   "editor.overviewRulerBorder": false,
   "editor.lineHeight": 24,
+  "foam.wikilinks.syntax": "gollum",
   "foam.edit.linkReferenceDefinitions": "withExtensions",
   "[markdown]": {
     "editor.quickSuggestions": {

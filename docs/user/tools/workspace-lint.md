@@ -6,10 +6,10 @@ To store your personal knowledge graph in markdown files instead of a database, 
 
 Currently, Foam Lint helps you to:
 
-- Ensure your [[link-reference-definitions]] are up to date
+- Ensure your [[../features/link-reference-definitions]] are up to date
 - Ensure every document has a well-formatted title (required for Markdown Links, Markdown Notes, and Foam Gatsby Template compatibility)
 
-The link reference definition check only runs when `foam.edit.linkReferenceDefinitions` is set to `withExtensions` or `withoutExtensions` in your workspace settings. It is `off` by default, so if you want Lint to keep definitions up to date — from VS Code, a git hook, or a GitHub action — turn it on first. See [[link-reference-definitions]].
+The link reference definition check only runs when `foam.edit.linkReferenceDefinitions` is set to `withExtensions` or `withoutExtensions` in your workspace settings. It is `off` by default, so if you want Lint to keep definitions up to date — from VS Code, a git hook, or a GitHub action — turn it on first. See [[../features/link-reference-definitions]].
 
 In the future, Foam Lint can help you with
 
@@ -24,10 +24,9 @@ Execute the "Foam: Lint Workspace" command from the command palette.
 
 ## Using lint from command line
 
-Foam Lint can be installed from [NPM](https://www.npmjs.com/) and executed as a standalone CLI tool:
+Foam Lint is also part of the [[Foam CLI|cli]], which you build from the Foam for Gollum repository (the `foam-cli` package on npm is upstream's and does not understand Gollum wikilinks):
 
 ```sh
-> npm install -g foam-cli
 > foam lint --workspace path/to/workspace
 ```
 
@@ -35,4 +34,5 @@ You can run Foam Lint as a git hook on every commit to ensure your workspace lin
 
 You can also run Foam Lint from a GitHub action to ensure that all changes coming to your workspace are up to date. This can be useful when editing your Foam notes from mobile (i.e. via [GitJournal](https://gitjournal.io)), or your Foam has multiple contributors and you want to ensure that all changes are correctly integrated.
 
-[link-reference-definitions]: ../features/link-reference-definitions.md 'Link Reference Definitions'
+[../features/link-reference-definitions]: ../features/link-reference-definitions.md "Link Reference Definitions"
+[Foam CLI|cli]: cli.md "Foam CLI"

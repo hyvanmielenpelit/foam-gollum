@@ -16,10 +16,10 @@ This will embed the entire content of `note-name` into your current note.
 
 ## Embedding Sections
 
-You can embed specific sections of a note by referencing the heading:
+You can embed specific sections of a note by referencing the heading's anchor, written as for [[section links|wikilinks#section-links]]:
 
 ```markdown
-![[note-name#Section Title]]
+![[note-name#section-title]]
 ```
 
 ## Embedding Blocks
@@ -168,3 +168,4 @@ Add descriptions for accessibility:
 
 [block-anchors]: block-anchors.md 'Block Anchors'
 [foam-queries]: foam-queries.md 'Foam Queries'
+[section links|wikilinks#section-links]: wikilinks.md#section-links "Wikilinks"

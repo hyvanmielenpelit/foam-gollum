@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         This issue form is for requesting features only!
-        If you want to report a bug, please use the [bug report](https://github.com/foambubble/foam/issues/new?assignees=&labels=&template=bug_report.yml) form.
+        If you want to report a bug, please use the [bug report](https://github.com/hyvanmielenpelit/foam-gollum/issues/new?template=bug_report.yml) form.
   - type: textarea
     validations:
       required: true

@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'happy-dom',
-    reporters: process.env.CI ? ['dot'] : ['verbose'],
+    exclude: ['node_modules/**', 'out/**'],
+    reporters: process.env.CI ? ['dot'] : ['tree'],
   },
 });

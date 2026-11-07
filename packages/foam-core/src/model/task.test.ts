@@ -1,4 +1,5 @@
 import { createNoteFromMarkdown } from '../../test/test-utils';
+import { Config, DefaultFoamConfig } from '../config';
 import { TextEdit } from '../services/text-edit';
 import { parseIsoDate } from '../utils/date';
 import { Range } from './range';
@@ -385,5 +386,65 @@ describe('Task.createScheduleEdits with no day to move to', () => {
         '2026-10-12'
       )
     ).toBe('- [ ] [[2026-10-12]]');
+  });
+});
+
+describe('Task scheduling with Gollum syntax', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('reads the day from the target after the alias, not from the alias', () => {
+    const note = parse(
+      '- [ ] a [[Monday|2026-10-12]] b [[journal/2026-10-13#log]] c [[2026-10-14|Wednesday]]'
+    );
+
+    expect(Task.getDays(note, note.tasks[0])).toEqual([
+      day('2026-10-12'),
+      day('2026-10-13'),
+    ]);
+  });
+
+  it('moves the target of an aliased link and keeps its alias, folder and section', () => {
+    expect(
+      schedule(
+        '- [ ] Call [[Meeting notes|journal/2026-10-07#log]] today',
+        '2026-10-07',
+        '2026-10-08'
+      )
+    ).toBe('- [ ] Call [[Meeting notes|journal/2026-10-08#log]] today');
+  });
+
+  it('moves an alias that is the day itself with the target', () => {
+    expect(
+      schedule('- [ ] Call [[2026-10-07|2026-10-07]]', '2026-10-07', '2026-10-08')
+    ).toBe('- [ ] Call [[2026-10-08|2026-10-08]]');
+  });
+
+  it('keeps the / and ../ that start the target of the link it moves', () => {
+    expect(
+      schedule(
+        '- [ ] Call [[/journal/2026-10-07]] and [[Notes|../2026-10-07]]',
+        '2026-10-07',
+        '2026-10-08'
+      )
+    ).toBe('- [ ] Call [[/journal/2026-10-08]] and [[Notes|../2026-10-08]]');
+  });
+
+  it('removes an aliased link to the shown day when the task already links the new one', () => {
+    expect(
+      schedule(
+        '- [ ] Book [[Monday|2026-10-07]] [[2026-10-12]]',
+        '2026-10-07',
+        '2026-10-12'
+      )
+    ).toBe('- [ ] Book [[2026-10-12]]');
   });
 });

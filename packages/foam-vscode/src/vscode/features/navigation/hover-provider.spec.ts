@@ -12,21 +12,22 @@ import {
   useFoamConfiguration,
   GOLLUM_SYNTAX,
 } from '../../../test/test-utils-vscode';
-import { toVsCodeUri } from '../../utils/vsc-utils';
+import { URI } from '@foam/core';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { HoverProvider } from './hover-provider';
 import { readFileFromFs } from '../../../test/test-utils';
 import { FileDataStore } from '../../../test/test-datastore';
 
 // We can't use createTestWorkspace from /packages/foam-vscode/src/test/test-utils.ts
 // because we need a MarkdownResourceProvider with a real instance of FileDataStore.
-const createWorkspace = () => {
+const createWorkspace = (roots: URI[] = []) => {
   const dataStore = new FileDataStore(
     readFileFromFs,
     vscode.workspace.workspaceFolders[0].uri.fsPath
   );
   const parser = createMarkdownParser();
   const resourceProvider = new MarkdownResourceProvider(dataStore, parser);
-  const workspace = new FoamWorkspace();
+  const workspace = new FoamWorkspace(roots);
   workspace.registerProvider(resourceProvider);
   return workspace;
 };
@@ -414,6 +415,74 @@ describe('Hover provider with Gollum syntax', () => {
     expect(getValue(result.contents[1])).toMatch(/^Also referenced in 2 notes:/);
     expect(getValue(result.contents[2])).toMatch(
       "[Create note from template for 'placeholder.md'](command:foam-vscode.create-note?"
+    );
+    ws.dispose();
+    graph.dispose();
+  });
+
+  it('should preview the note after the pipe of an alias-first link', async () => {
+    const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
+    const target = await createFile('This is the content of the target', [
+      'hover-gollum',
+      'target.md',
+    ]);
+    const source = await createFile('See [[My Alias|target]] here.', [
+      'hover-gollum',
+      'source.md',
+    ]);
+    const other = await createFile('Also see [[Another alias|target]].', [
+      'hover-gollum',
+      'other.md',
+    ]);
+
+    const ws = createWorkspace([root])
+      .set(parser.parse(target.uri, target.content))
+      .set(parser.parse(source.uri, source.content))
+      .set(parser.parse(other.uri, other.content));
+    const graph = FoamGraph.fromWorkspace(ws);
+
+    const { doc } = await showInEditor(source.uri);
+    const provider = new HoverProvider(hoverEnabled, ws, graph, parser);
+    const result = await provider.provideHover(
+      doc,
+      new vscode.Position(0, 10),
+      noCancelToken
+    );
+
+    expect(result.contents).toHaveLength(3);
+    expect(getValue(result.contents[0])).toEqual(
+      'This is the content of the target'
+    );
+    expect(getValue(result.contents[1])).toMatch(/^Also referenced in 1 note:/);
+    expect(result.contents[2]).toEqual(null);
+    ws.dispose();
+    graph.dispose();
+  });
+
+  it('should offer to create the note after the pipe of an alias-first placeholder', async () => {
+    const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
+    const source = await createFile('See [[My Alias|missing-target]] here.', [
+      'hover-gollum',
+      'placeholder-source.md',
+    ]);
+
+    const ws = createWorkspace([root]).set(
+      parser.parse(source.uri, source.content)
+    );
+    const graph = FoamGraph.fromWorkspace(ws);
+
+    const { doc } = await showInEditor(source.uri);
+    const provider = new HoverProvider(hoverEnabled, ws, graph, parser);
+    const result = await provider.provideHover(
+      doc,
+      new vscode.Position(0, 10),
+      noCancelToken
+    );
+
+    expect(result.contents).toHaveLength(3);
+    expect(result.contents[0]).toEqual(null);
+    expect(getValue(result.contents[2])).toMatch(
+      "[Create note from template for 'missing-target.md'](command:foam-vscode.create-note?"
     );
     ws.dispose();
     graph.dispose();

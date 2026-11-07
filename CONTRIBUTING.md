@@ -11,25 +11,25 @@ Before you start contributing we recommend that you read the following:
 - [Code of Conduct](docs/dev/code-of-conduct.md) - Rules we hope every contributor aims to follow, allowing everyone to participate in our community!
 - [AGENTS.md](AGENTS.md) - How code is written and reviewed here. It is addressed to coding agents, but the conventions are the project's: PRs are reviewed against them whether a human or an agent wrote the code.
 
-To get yourself familiar with the codebase you can also browse [this repo](https://app.komment.ai/wiki/github/foambubble/foam)
+To get yourself familiar with the codebase you can also browse [a generated wiki of upstream Foam's code](https://app.komment.ai/wiki/github/foambubble/foam)
 
 ## Diving In
 
 We understand that diving in an unfamiliar codebase may seem scary,
 to make it easier for new contributors we provide some resources:
 
-You can also see [existing issues](https://github.com/foambubble/foam/issues) and help out!
-Finally, the easiest way to help, is to use it and provide feedback by [submitting issues](https://github.com/foambubble/foam/issues/new/choose) or participating in the [Foam Community Discord](https://discord.com/invite/HV2tn2FpEk)!
+You can also see [existing issues](https://github.com/hyvanmielenpelit/foam-gollum/issues) and help out!
+Finally, the easiest way to help, is to use it and provide feedback by [submitting issues](https://github.com/hyvanmielenpelit/foam-gollum/issues/new/choose) or joining the [discussions](https://github.com/hyvanmielenpelit/foam-gollum/discussions)!
 
 ## Contributing
 
 If you're interested in contributing, this short guide will help you get things set up locally (assuming [Node.js 22](https://nodejs.org/) and [yarn](https://yarnpkg.com/) are already installed on your system; `.nvmrc` selects the right Node if you use nvm).
 You can also use the provided [Dev Containers](docs/dev/devcontainers.md) to avoid installing dependencies locally. With the Dev Containers extension installed, open the repository in VS Code and run **Dev Containers: Reopen in Container**.
 
-1. Fork the project to your GitHub account by clicking the "Fork" button on the top right hand corner of the project's [home repository page](https://github.com/foambubble/foam).
+1. Fork the project to your GitHub account by clicking the "Fork" button on the top right hand corner of the project's [home repository page](https://github.com/hyvanmielenpelit/foam-gollum).
 2. Clone your newly forked repo locally:
 
-   `git clone https://github.com/your_username/foam.git`
+   `git clone https://github.com/your_username/foam-gollum.git`
 
 3. Install the necessary dependencies by running this command from the root of the cloned repository:
 
@@ -43,9 +43,9 @@ You should now be ready to start working!
 
 ### Structure of the project
 
-Foam code and documentation live in the monorepo at [foambubble/foam](https://github.com/foambubble/foam/).
+Foam for Gollum code and documentation live in the monorepo at [hyvanmielenpelit/foam-gollum](https://github.com/hyvanmielenpelit/foam-gollum), a fork of [foambubble/foam](https://github.com/foambubble/foam/).
 
-- [/docs](https://github.com/foambubble/foam/tree/main/docs): documentation and [recipes](docs/user/recipes/recipes.md).
+- [/docs](docs): documentation and [recipes](docs/user/recipes/recipes.md).
 
 Exceptions to the monorepo are:
 
@@ -56,11 +56,13 @@ This project uses [Yarn workspaces](https://classic.yarnpkg.com/en/docs/workspac
 
 The monorepo contains five Yarn workspace packages:
 
-- [/packages/foam-vscode](https://github.com/foambubble/foam/tree/main/packages/foam-vscode) - The VS Code extension.
-- [/packages/foam-core](https://github.com/foambubble/foam/tree/main/packages/foam-core) - Platform-agnostic core logic (`@foam/core`, published to npm as `foam-core`).
-- [/packages/foam-cli](https://github.com/foambubble/foam/tree/main/packages/foam-cli) - The CLI (`@foam/cli`, published to npm as `foam-cli`).
-- [/packages/foam-graph](https://github.com/foambubble/foam/tree/main/packages/foam-graph) - The graph visualization web component (`@foam/graph-view`).
-- [/packages/foam-mcp](https://github.com/foambubble/foam/tree/main/packages/foam-mcp) - Model Context Protocol server library (`@foam/mcp`) that exposes the Foam knowledge graph to AI agents.
+- [/packages/foam-vscode](packages/foam-vscode) - The VS Code extension.
+- [/packages/foam-core](packages/foam-core) - Platform-agnostic core logic (`@foam/core`).
+- [/packages/foam-cli](packages/foam-cli) - The CLI (`@foam/cli`).
+- [/packages/foam-graph](packages/foam-graph) - The graph visualization web component (`@foam/graph-view`).
+- [/packages/foam-mcp](packages/foam-mcp) - Model Context Protocol server library (`@foam/mcp`) that exposes the Foam knowledge graph to AI agents.
+
+Foam for Gollum publishes only the VS Code extension. The other packages are not published; upstream publishes its own `foam-core` and `foam-cli` to npm.
 
 #### @foam/core
 
@@ -94,11 +96,11 @@ Tests live alongside the code in `src`.
 
 This guide assumes you read the previous instructions and you're set up to work on Foam.
 
-1. Now we'll use the launch configuration defined at [`.vscode/launch.json`](https://github.com/foambubble/foam/blob/main/.vscode/launch.json) to start a new extension host of VS Code. Open the "Run and Debug" Activity (the icon with the bug on the far left) and select "Run VSCode Extension" in the pop-up menu. Now hit F5 or click the green arrow "play" button to fire up a new copy of VS Code with your extension installed.
+1. Now we'll use the launch configuration defined at [`.vscode/launch.json`](.vscode/launch.json) to start a new extension host of VS Code. Open the "Run and Debug" Activity (the icon with the bug on the far left) and select "Run VSCode Extension" in the pop-up menu. Now hit F5 or click the green arrow "play" button to fire up a new copy of VS Code with your extension installed.
 
 2. In the new extension host of VS Code that launched, open a Foam workspace (e.g. your personal one, or a test-specific one created from [foam-template](https://github.com/foambubble/foam-template)).
 
-3. Test a command to make sure it's working as expected. Open the Command Palette (Ctrl/Cmd + Shift + P) and select "Foam: Update Markdown Reference List". If you see no errors, it's good to go!
+3. Test a command to make sure it's working as expected. Open the Command Palette (Ctrl/Cmd + Shift + P) and select "Foam: Update Wikilink Definitions". If you see no errors, it's good to go!
 
 ### Working with an AI coding agent
 
@@ -115,19 +117,19 @@ Claude Code, Codex, Cursor, and similar tools pick up [AGENTS.md](AGENTS.md) aut
 - Bug fixes come with a test that failed before the fix.
 - Domain logic stays separate from VS Code bindings. `@foam/core` has no `vscode` or Node `path` imports.
 - Domain code passes `URI`s around; path strings appear only at I/O boundaries.
-- A changeset when a published package changes. A `@foam/core` change also lists `foam-vscode` and `@foam/cli`, because they bundle core and Changesets won't bump them for you. See [releasing Foam](docs/dev/releasing-foam.md).
+- A line in [packages/foam-vscode/CHANGELOG.md](packages/foam-vscode/CHANGELOG.md) when users will notice the change, following [the fork's changelog rules](.agents/skills/changelog_versioning/SKILL.md). The fork does not use changesets.
 - Foam vocabulary: "workspace", never "vault".
-- `yarn lint` is clean (the pre-push hook runs it) and the code is formatted with Prettier (`yarn format`).
+- The code is formatted with Prettier (`yarn format`). `yarn lint` inside a package is informational: no hook or CI job fails on it.
 
 ### Submitting a Pull Request (PR)
 
 After you have made your changes to your copy of the project, it is time to try and merge those changes into the public community project.
 
-1. Return to the project's [home repository page](https://github.com/foambubble/foam).
+1. Return to the project's [home repository page](https://github.com/hyvanmielenpelit/foam-gollum).
 2. GitHub should show you a button called "Compare & pull request" linking your forked repository to the community repository.
 3. Click that button and confirm that your repository is going to be merged into the community repository. See [this guide](https://blog.robsewell.com/blog/how-to-fork-a-github-repository-and-contribute-to-an-open-source-project/) for more specifics.
 4. Add as many relevant details to the PR message to make it clear to the project maintainers and other members of the community what you have accomplished with your new changes. Link to any issues the changes are related to.
-   - If your change affects users of any published package (extension, CLI, or `@foam/core`), include a changeset in the PR. Run `yarn changeset` from the repo root, pick the affected packages and bump type, and commit the generated `.changeset/*.md` file alongside your code. The accumulated changesets become the next release's CHANGELOG entries when a maintainer runs `yarn version-packages`.
+   - If users of the extension will notice your change, add a line to the unreleased entry in [packages/foam-vscode/CHANGELOG.md](packages/foam-vscode/CHANGELOG.md), following [the fork's changelog rules](.agents/skills/changelog_versioning/SKILL.md).
 5. Your PR will then need to be reviewed and accepted by the other members of the community. Any discussion about the changes will occur in your PR thread.
 6. Once reviewed and accepted you can complete the merge request!
 7. Finally rest and watch the sun rise on a grateful universe... Or start tackling the other open issues ;)

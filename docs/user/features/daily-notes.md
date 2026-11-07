@@ -80,7 +80,7 @@ By default, daily notes are created as `yyyy-mm-dd.md` in the workspace's `journ
 
 To customize your daily note location and format you can create a `.foam/templates/daily-note.md` template. See [[templates]] for more information.
 
-To work with daily notes from the terminal, see [[daily|CLI daily command]].
+To work with daily notes from the terminal, see [[CLI daily command|../tools/cli/daily]].
 
 [templates]: templates.md 'Note Templates'
-[daily]: ../tools/cli/daily.md 'foam daily'
+[CLI daily command|../tools/cli/daily]: ../tools/cli/daily.md "foam daily"

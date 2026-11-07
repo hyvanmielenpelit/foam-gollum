@@ -1,12 +1,13 @@
 .vscode/**
 .vscode-test/**
 .vscode-test-user-data/**
+.vscode-test-web/**
+.env
 out/test/**
 out/**/*.test.*
 out/**/*.spec.*
 test-data/**
 src/**
-jest.config.js
 vitest.config.mts
 esbuild.js
 .test-workspace
@@ -14,7 +15,6 @@ esbuild.js
 .claude/**
 vsc-extension-quickstart.md
 **/tsconfig.json
-**/.eslintrc.json
 **/.oxlintrc.json
 **/*.map
 **/*.ts

@@ -166,4 +166,20 @@ You can customize the image dropdown template with the `foam.fileDropdown.imageT
 
 ## Foam Extension Features
 
-Please refer to [Foam documentation](https://github.com/foambubble/foam/) for the full description of the features of the Foam extension.
+Please refer to the [Foam for Gollum documentation](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/index.md) for the full description of the features of the Foam extension.
+
+## Settings
+
+All settings are listed in the VS Code Settings editor: search for `foam.`. Each feature's page in the [documentation](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/index.md) explains the settings it uses.
+
+## Telemetry
+
+Foam for Gollum sends **error reports only**, never usage data. When something goes wrong in the extension, a report goes to [Sentry](https://sentry.io/) (servers in the EU), operated by Hyvän mielen pelit ry, the maintainers of this extension. A report contains:
+
+- the type of error, its message and its stack trace, with file and folder paths removed;
+- the extension version;
+- the VS Code version and the operating system.
+
+Reports never contain your notes, file names or paths, your user or machine ID, or your IP address. VS Code for the Web sends no reports.
+
+Error reports follow VS Code's `telemetry.telemetryLevel` setting: they are sent when it is `all` or `error`, and never when it is `crash` or `off`. See [Telemetry](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/tools/telemetry.md) for details.

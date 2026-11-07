@@ -129,7 +129,7 @@
       },
       {
         "view": "foam-vscode.smart-folders",
-        "contents": "Smart Folders are saved queries stored in `.foam/queries/`. They group your notes by tag, link, or any other criteria you can express in a query.\n[Create Smart Folder](command:foam-vscode.views.smart-folders.create)\nLearn more about [Smart Folders](https://docs.foam.md/features/smart-folders) and [Foam Queries](https://docs.foam.md/features/foam-queries)."
+        "contents": "Smart Folders are saved queries stored in `.foam/queries/`. They group your notes by tag, link, or any other criteria you can express in a query.\n[Create Smart Folder](command:foam-vscode.views.smart-folders.create)\nLearn more about [Smart Folders](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/smart-folders.md) and [Foam Queries](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/foam-queries.md)."
       },
       {
         "view": "foam-vscode.related-notes",
@@ -872,22 +872,22 @@
           "default": false
         },
         "foam.openDailyNote.fileExtension": {
-          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/foambubble/foam/blob/main/docs/user/features/daily-notes.md",
+          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/daily-notes.md",
           "type": "string"
         },
         "foam.openDailyNote.filenameFormat": {
-          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/foambubble/foam/blob/main/docs/user/features/daily-notes.md",
+          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/daily-notes.md",
           "type": "string"
         },
         "foam.openDailyNote.titleFormat": {
-          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/foambubble/foam/blob/main/docs/user/features/daily-notes.md",
+          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/daily-notes.md",
           "type": [
             "string",
             "null"
           ]
         },
         "foam.openDailyNote.directory": {
-          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/foambubble/foam/blob/main/docs/user/features/daily-notes.md",
+          "deprecationMessage": "No longer used: daily notes follow the daily note template. Run \"Foam: Open Daily Note\" to keep creating them as this setting did. See https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/features/daily-notes.md",
           "type": [
             "string",
             "null"
@@ -970,12 +970,12 @@
           "type": "boolean",
           "default": true,
           "description": "Determines whether to use custom logic for templating wikilinks from dropped files."
-        }, 
+        },
         "foam.fileDropdown.uploadsFolderName": {
           "type": "string",
           "default": "uploads",
           "description": "The name for the base folder for file uploads."
-        }, 
+        },
         "foam.fileDropdown.fileTemplateFormat": {
           "type": "string",
           "default": "markdown",
@@ -1105,10 +1105,11 @@
   "devDependencies": {
     "@foam/core": "*",
     "@foam/graph-view": "*",
+    "@sentry/esbuild-plugin": "^11.11.0",
     "@types/lodash": "^4.17.24",
     "@types/markdown-it": "^12.0.1",
     "@types/micromatch": "^4.0.10",
-    "@types/node": "^18.0.0",
+    "@types/node": "^22.0.0",
     "@types/picomatch": "^2.2.1",
     "@types/remove-markdown": "^0.3.4",
     "@types/vscode": "~1.110.0",
@@ -1125,16 +1126,16 @@
     "rimraf": "^3.0.2",
     "tslib": "^2.8.1",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.6",
+    "vitest": "^5.1.0",
     "wait-for-expect": "^3.0.2"
   },
   "dependencies": {
-    "@microsoft/applicationinsights-common": "3.4.1",
-    "@vscode/extension-telemetry": "1.5.1",
+    "@sentry/browser": "^11.11.0",
     "dayjs": "^1.11.13",
     "detect-newline": "^3.1.0",
     "github-slugger": "^1.4.0",
     "gray-matter": "^4.0.2",
+    "image-size": "^2.0.2",
     "js-sha1": "^0.7.0",
     "lodash": "^4.17.21",
     "lru-cache": "^11.0.0",

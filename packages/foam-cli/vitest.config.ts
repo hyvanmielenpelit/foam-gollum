@@ -5,14 +5,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'threads',
-    poolOptions: {
-      threads: { isolate: false },
-    },
+    isolate: false,
     include: ['src/**/*.test.ts'],
     exclude: ['node_modules/**'],
     testTimeout: 20000,
     clearMocks: true,
-    reporters: process.env.CI ? ['dot'] : ['verbose'],
+    reporters: process.env.CI ? ['dot'] : ['tree'],
   },
   define: {
     __CLI_VERSION__: JSON.stringify('0.0.0-test'),

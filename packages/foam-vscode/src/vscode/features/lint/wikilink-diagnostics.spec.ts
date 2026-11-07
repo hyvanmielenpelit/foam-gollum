@@ -303,6 +303,8 @@ describe('Block diagnostics', () => {
 });
 
 describe('Duplicate block ID diagnostics', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeEach(async () => {
     await cleanWorkspace();
     await closeEditors();

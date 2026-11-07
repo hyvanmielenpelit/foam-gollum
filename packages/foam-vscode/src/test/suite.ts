@@ -10,6 +10,7 @@
  * inside the extension host process where require('vscode') is available.
  * Vitest's default worker pools (forks / threads) cannot resolve 'vscode'
  * because VS Code's Module._load patch is only active in the main process.
+ * The runner (vitest-runner-vscode.ts) loads the tsc-compiled specs from out/.
  */
 
 // Set before imports
@@ -35,6 +36,7 @@ import {
   getE2eRunFailure,
 } from './support/e2e-run-result';
 import path from 'path';
+import { createVsCodePool } from './support/vitest-pool-vscode';
 
 const rootDir = path.join(__dirname, '../..');
 
@@ -85,20 +87,23 @@ export async function run(): Promise<void> {
 
   try {
     const { startVitest } = await import('vitest/node');
+    const workerRuntime = await import('vitest/worker');
 
     const vitest = await startVitest('test', [], {
       root: rootDir,
       include: ['src/**/*.spec.ts'],
-      exclude: ['src/test/web/**', 'node_modules/**', '.vscode-test/**'],
+      exclude: ['node_modules/**', '.vscode-test/**'],
       // Custom in-process pool: runs tests in the extension host main process
       // so that require('vscode') resolves via VS Code's Module._load patch.
-      pool: path.join(rootDir, 'src/test/support/vitest-pool-vscode.ts'),
-      poolOptions: { vscode: { outDir: 'out' } },
+      pool: createVsCodePool(workerRuntime),
+      runner: path.join(rootDir, 'src/test/support/vitest-runner-vscode.ts'),
+      isolate: false,
+      disableConsoleIntercept: true,
       globals: true,
       testTimeout: 30000,
       fileParallelism: false,
       watch: false,
-      reporter: 'verbose',
+      reporters: ['verbose'],
     } as any, { configFile: false } as any);
 
     if (!vitest) {

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FoamGraph, FoamTags } from '@foam/core';
+import { Config, DefaultFoamConfig, FoamGraph, FoamTags } from '@foam/core';
 import { setColorsEnabled } from '../support/colors';
 
 setColorsEnabled(false);
@@ -261,6 +261,32 @@ describe('runListCommand', () => {
         expect(out).toContain('orphan.md');
         expect(out).not.toContain('linked.md');
         expect(out).not.toContain('target.md');
+      }
+    ));
+});
+
+// ─── runListCommand with Gollum syntax ────────────────────────────────────────
+
+describe('runListCommand with Gollum syntax', () => {
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('lists as placeholders only the targets missing from the folder of the linking note', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({ 'foam.wikilinks.syntax': 'gollum' }),
+        'a/Src.md': '# Src\n\n[[Shown|Page]] and [[Missing Page|Gone]]\n',
+        'a/Page.md': '# Page\n',
+        'Gone.md': '# Gone from the folder\n',
+      },
+      async ({ rootDir }) => {
+        const logger = new TestLogger();
+        const code = await runListCommand(['placeholders', '--format', 'json', '--workspace', rootDir], logger);
+        expect(code).toBe(0);
+        const result = JSON.parse(logger.logs[0]);
+        expect(result.map((p: { placeholder_id: string }) => p.placeholder_id)).toEqual(['Gone.md']);
+        expect(result[0].referenced_by.map((r: { path: string }) => r.path)).toEqual(['a/Src.md']);
       }
     ));
 });

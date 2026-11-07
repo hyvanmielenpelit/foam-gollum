@@ -55,12 +55,9 @@ describe('Tags tree panel', () => {
       parentTagItem
     )) as TagItem[];
 
-    childTreeItems.forEach(child => {
-      if (child instanceof TagItem) {
-        // eslint-disable-next-line jest/no-conditional-expect
-        expect(child.label).toEqual('child');
-      }
-    });
+    expect(childTreeItems).toHaveLength(1);
+    expect(childTreeItems[0]).toBeInstanceOf(TagItem);
+    expect(childTreeItems[0].label).toEqual('child');
   });
 
   it('handles a single parent and multiple child tag', async () => {
@@ -123,19 +120,14 @@ describe('Tags tree panel', () => {
       parentTagItem
     )) as TagItem[];
 
-    childTreeItems
-      .filter(item => item instanceof ResourceTreeItem)
-      .forEach(item => {
-        expect(item.label).toEqual('Test note');
-      });
-
-    childTreeItems
-      .filter(item => item instanceof TagItem)
-      .forEach(item => {
-        expect(['main/subtopic']).toContain(item.tag);
-        expect(item.label).toEqual('subtopic');
-      });
-
+    const resourceItems = childTreeItems.filter(
+      item => item instanceof ResourceTreeItem
+    );
+    const tagItems = childTreeItems.filter(item => item instanceof TagItem);
+    expect(resourceItems.map(item => item.label)).toEqual(['Test note']);
+    expect(tagItems.map(item => [item.tag, item.label])).toEqual([
+      ['main/subtopic', 'subtopic'],
+    ]);
     expect(childTreeItems).toHaveLength(2);
   });
 

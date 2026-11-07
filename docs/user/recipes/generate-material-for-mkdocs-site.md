@@ -4,7 +4,7 @@ Configuring a static-site generator (SSG) to publish your Foam provides access t
 
 The following explains how to configure the [Material for MkDocs theme](https://squidfunk.github.io/mkdocs-material/) for the [MkDocs SSG](https://www.mkdocs.org) to publish your Foam.
 
-Like most SSGs (e.g. [Gatsby](https://www.gatsbyjs.com/) is another SSG that can be [used to publish your Foam](https://docs.foam.md/publishing/generate-gatsby-site/)) site content is accepted in the form of Markdown files. Like those produced by Foam. SSGs differ in the languages they are written in (MkDocs is Python, Gatsby is Javascript and React) and the features they provide. MkDocs and Material for MkDocs are designed to support project documentation. Gatsby is more general purpose and provides a nice feature set.
+Like most SSGs (e.g. [Gatsby](https://www.gatsbyjs.com/) is another SSG that can be [used to publish your Foam](../publishing/generate-gatsby-site.md)) site content is accepted in the form of Markdown files. Like those produced by Foam. SSGs differ in the languages they are written in (MkDocs is Python, Gatsby is Javascript and React) and the features they provide. MkDocs and Material for MkDocs are designed to support project documentation. Gatsby is more general purpose and provides a nice feature set.
 
 You choose your poison.
 

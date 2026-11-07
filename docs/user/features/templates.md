@@ -35,7 +35,7 @@ To create a note from a template:
 
 ## Multi-root workspaces
 
-If your VS Code workspace has several folders, see [[multi-root-workspaces]] for where Foam looks for templates and how to create notes in a specific folder.
+If your VS Code workspace has several folders, see [[../recipes/multi-root-workspaces]] for where Foam looks for templates and how to create notes in a specific folder.
 
 ## Special templates
 
@@ -372,6 +372,8 @@ foam_template:
 # $FOAM_DATE_YEAR-$FOAM_DATE_MONTH-$FOAM_DATE_DATE Daily Notes
 ```
 
+A relative `filepath` starts from the workspace root. To start it from the folder of the note you are editing instead, set `foam.files.newNotePath` to `currentDir` (the default is `root`). New notes get the extension in `foam.files.defaultNoteExtension`, `md` by default.
+
 ##### Creating notes in the current directory
 
 To create notes in the same directory as your currently active file, use the `FOAM_CURRENT_DIR` variable in your template's `filepath`:
@@ -452,4 +454,4 @@ This is the rest of the template
 ```
 
 [daily-notes]: daily-notes.md 'Daily Notes'
-[multi-root-workspaces]: ../recipes/multi-root-workspaces.md 'Multi-root workspaces'
+[../recipes/multi-root-workspaces]: ../recipes/multi-root-workspaces.md "Multi-root workspaces"

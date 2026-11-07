@@ -190,6 +190,8 @@ export {
 export { Logger, BaseLogger, ConsoleLogger, NoOpLogger } from './utils/log';
 export type { ILogger, LogLevel, LogLevelThreshold } from './utils/log';
 export { toSlug } from './utils/slug';
+export { scrubPaths } from './utils/scrub-paths';
+export type { ScrubRoot } from './utils/scrub-paths';
 export { convertDateformatToDayjs } from './utils/date-format';
 export { calendarDate, parseIsoDate, formatIsoDate } from './utils/date';
 export { isSubsequence } from './utils/string';

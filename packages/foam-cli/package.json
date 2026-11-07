@@ -23,12 +23,12 @@
     "@foam/mcp": "*",
     "@modelcontextprotocol/inspector": "^0.17.0",
     "@types/micromatch": "^4.0.9",
-    "@types/node": "^18.0.0",
+    "@types/node": "^22.0.0",
     "esbuild": "^0.28.1",
     "oxlint": "^1.57.0",
     "rimraf": "^3.0.2",
     "typescript": "^5.8.0",
-    "vitest": "^3.2.6"
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "chokidar": "^3.5.3",

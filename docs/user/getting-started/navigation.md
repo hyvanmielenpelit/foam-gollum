@@ -20,10 +20,16 @@ When you type `[[`, Foam shows you a list of existing notes to link to. If the n
 
 ### Wikilink Variations
 
-**Link to a specific heading:**
+**Link to a specific heading**, written in lowercase with punctuation removed and spaces as dashes:
 
 ```markdown
-See the [[Project Management#Risk Assessment]] section for details.
+See the [[Project Management#risk-assessment]] section for details.
+```
+
+**Link to a note in another folder**, relative to the current note's folder:
+
+```markdown
+See [[../Archive/Old plan]] and [[/Inbox]] in the wiki root.
 ```
 
 **Link to a specific block:**
@@ -32,10 +38,10 @@ See the [[Project Management#Risk Assessment]] section for details.
 See the [[Project Management#^block-id]] paragraph for details.
 ```
 
-**Link with alias:**
+**Link with alias**, which comes first:
 
 ```markdown
-According to [[Einstein, Albert|Einstein]], imagination is more important than knowledge.
+According to [[Einstein|Einstein, Albert]], imagination is more important than knowledge.
 ```
 
 ### Autocomplete and Link Assistance
@@ -51,7 +57,7 @@ No suggestions appear in front matter, where Foam doesn't read links.
 
 ## The Foam Graph
 
-For a visual overview of your knowledge base, Foam offers a [[graph-view]]. This feature renders your notes as nodes and the links between them as connections, creating an interactive map of your thoughts.
+For a visual overview of your knowledge base, Foam offers a [[../features/graph-view]]. This feature renders your notes as nodes and the links between them as connections, creating an interactive map of your thoughts.
 
 _[📹 Watch: Navigation with the Foam Graph]_
 
@@ -141,4 +147,4 @@ With navigation mastered, you're ready to:
 4. **[Set up templates](../features/templates.md)** - Standardize your note creation
 5. **[Use tags effectively](../features/tags.md)** - Add another layer of organization
 
-[graph-view]: ../features/graph-view.md 'Graph Visualization'
+[../features/graph-view]: ../features/graph-view.md "Graph Visualization"

@@ -240,12 +240,16 @@ describe('Link Conversion Commands', () => {
 
   describe('Command registration', () => {
     it('should handle no active editor gracefully', async () => {
+      const text = 'Text with [[note-a]] and [a link](note-b.md)';
+      const { uri } = await createFile(text);
       await closeEditors();
 
       await vscode.commands.executeCommand(CONVERT_WIKILINK_TO_MDLINK.command);
       await vscode.commands.executeCommand(CONVERT_MDLINK_TO_WIKILINK.command);
 
-      expect(true).toBe(true);
+      const { doc } = await showInEditor(uri);
+      expect(doc.getText()).toEqual(text);
+      await deleteFile(uri);
     });
   });
 });

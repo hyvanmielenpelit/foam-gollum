@@ -115,7 +115,7 @@ Foam provides autocomplete for block IDs when you type `#^` inside a wikilink.
 You can also add display text:
 
 ```markdown
-[[research-notes#^key-insight|See the key insight]]
+[[See the key insight|research-notes#^key-insight]]
 ```
 
 ## Embedding a Block

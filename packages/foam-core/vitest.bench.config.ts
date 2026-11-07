@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config';
  * loop (`test:unit`) never runs timing-sensitive code.
  *
  * `vitest bench` measures with tinybench and writes results to JSON
- * (`outputJson`). Regression enforcement is a *separate* pure test
+ * (the JSON reporter's per-test `benchmarks` field). Regression enforcement is a *separate* pure test
  * (`markdown-parser.bench-compare.test.ts`) that reads the baseline and current
  * JSON and asserts — bench mode itself does not fail on regressions.
  *
@@ -25,8 +25,9 @@ export default defineConfig({
     benchmark: {
       include: ['src/**/*.bench.ts'],
       exclude: ['node_modules/**'],
-      outputJson: PERF_CURRENT,
     },
+    reporters: ['default', 'json'],
+    outputFile: { json: PERF_CURRENT },
     // Benchmarks must not share a process — run serially for stable timings.
     fileParallelism: false,
   },

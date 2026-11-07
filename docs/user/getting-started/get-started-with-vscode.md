@@ -38,12 +38,16 @@ If you want to learn more about VS Code, check out their [website](https://code.
 
 ### Panels
 
-Foam integrates with VS Code panels to provide insights into individual notes and the whole knowledge base.
+Foam adds panels to the Explorer sidebar that provide insights into individual notes and the whole knowledge base.
 
-- **`Foam: links`**: Shows all notes that link to and from the currently active note, helping you understand connections and navigate your knowledge graph
-- **`Foam: Orphaned Notes`**: Displays notes that have no incoming or outgoing links, helping you identify isolated content that might need better integration
-- **`Tag Explorer`**: Shows all tags used across your workspace in a hierarchical view, see [[tags]] for more information on tags
-- **`Foam: Graph`**: Visual representation of your note connections (also available as a separate graph view)
+- **`Connections`**: Shows all notes that link to and from the currently active note, helping you understand connections and navigate your knowledge graph
+- **`Notes`**: Lists all notes in your workspace, which you can filter by name and group by folder
+- **`Tag Explorer`**: Shows all tags used across your workspace in a hierarchical view, see [[../features/tags]] for more information on tags
+- **`Orphans`**: Displays notes that have no incoming or outgoing links, helping you identify isolated content that might need better integration
+- **`Placeholders`**: Lists wikilinks to notes that don't exist yet
+- **`Smart Folders`**: Shows your saved queries, see [[../features/smart-folders]]
+
+The graph is not a panel: open it with the `Foam: Show Graph` command, see [[../features/graph-view]].
 
 ### Styling and Themes
 
@@ -245,8 +249,10 @@ Look for them in the [VS Code Marketplace](https://marketplace.visualstudio.com/
 With VS Code mastery, explore advanced Foam topics:
 
 1. **[[recommended-extensions]]** - See complementary extensions to improve your note taking experience
-2. **[[publish-to-github-pages]]** - Share your knowledge base
+2. **[[../publishing/publish-to-github-pages]]** - Share your knowledge base
 
-[tags]: ../features/tags.md 'Tags'
 [recommended-extensions]: recommended-extensions.md 'Recommended Extensions'
-[publish-to-github-pages]: ../publishing/publish-to-github-pages.md 'GitHub Pages'
+[../features/tags]: ../features/tags.md "Tags"
+[../publishing/publish-to-github-pages]: ../publishing/publish-to-github-pages.md "GitHub Pages"
+[../features/smart-folders]: ../features/smart-folders.md "Smart Folders"
+[../features/graph-view]: ../features/graph-view.md "Graph Visualization"

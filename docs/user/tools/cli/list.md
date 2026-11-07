@@ -79,7 +79,7 @@ List available templates:
 foam list templates
 ```
 
-See also [[orphans]] for the orphaned notes panel in VS Code, and [[tags]] for tag management in the editor.
+See also [[../orphans]] for the orphaned notes panel in VS Code, and [[../../features/tags]] for tag management in the editor.
 
-[orphans]: ../orphans.md 'Orphaned Notes'
-[tags]: ../../features/tags.md 'Tags'
+[../orphans]: ../orphans.md "Orphaned Notes"
+[../../features/tags]: ../../features/tags.md "Tags"

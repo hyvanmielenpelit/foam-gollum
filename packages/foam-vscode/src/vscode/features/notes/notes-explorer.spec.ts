@@ -4,6 +4,8 @@ import { createTestNote, createTestWorkspace } from '../../../test/test-utils';
 import {
   cleanWorkspace,
   getUriInWorkspace,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { MapBasedMemento } from '../../utils/vsc-utils';
 import { FoamWorkspace } from '@foam/core';
@@ -61,6 +63,8 @@ afterAll(async () => {
 });
 
 describe('Notes Explorer - flat view', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('shows only notes (excludes images and attachments)', async () => {
     const provider = new NotesProvider(ws, graph, new MapBasedMemento());
     await provider.viewMode.update('flat');
@@ -122,6 +126,8 @@ describe('Notes Explorer - flat view', () => {
 });
 
 describe('Notes Explorer - hierarchy view', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('returns folders and root-level notes at top level', async () => {
     const provider = new NotesProvider(ws, graph, new MapBasedMemento());
     await provider.viewMode.update('hierarchy');
@@ -166,6 +172,8 @@ describe('Notes Explorer - hierarchy view', () => {
 });
 
 describe('Notes Explorer - text filtering', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('filters notes by title (case-insensitive)', async () => {
     const provider = new NotesProvider(ws, graph, new MapBasedMemento());
     provider.setFilter('ALPHA');
@@ -252,6 +260,8 @@ describe('Notes Explorer - text filtering', () => {
 });
 
 describe('Notes Explorer - connections', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('hides backlink children and shows count badge when connections are hidden', async () => {
     const provider = new NotesProvider(ws, graph, new MapBasedMemento());
     await provider.viewMode.update('flat');

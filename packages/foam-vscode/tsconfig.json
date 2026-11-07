@@ -14,5 +14,5 @@
     "skipLibCheck": true
   },
   "include": ["src", "types"],
-  "exclude": ["node_modules", ".vscode-test", "src/test/support/vitest-setup*.ts", "src/test/support/vitest-pool*.ts"]
+  "exclude": ["node_modules", ".vscode-test", "src/test/support/vitest-setup*.ts", "src/test/support/vitest-runner*.ts"]
 }

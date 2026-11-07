@@ -1,11 +1,5 @@
-import { TelemetryReporter } from '@vscode/extension-telemetry';
 import { Disposable, TreeView, workspace } from 'vscode';
-import {
-  IDisposable,
-  Logger,
-  TELEMETRY_CONNECTION_STRING,
-  bucketNoteCount,
-} from '@foam/core';
+import { IDisposable, Logger, bucketNoteCount } from '@foam/core';
 
 const EVENT_PREFIX = 'vscode.';
 
@@ -17,63 +11,34 @@ export interface TelemetryServiceOptions {
 }
 
 /**
- * VS Code telemetry adapter. Wraps the Azure App Insights client from
- * `@vscode/extension-telemetry` and prefixes every event with `vscode.`
- * so the same App Insights resource can host events from CLI and MCP
- * without collision.
- *
- * Attaches Foam's common dimensions (`foam.component`, `foam.version`,
- * `foam.coreVersion`) to every event via the library's `commonProperties`
- * hook, so CLI / MCP / VS Code events can be filtered by the same
- * dimension names. The library additionally attaches its own `common.*`
- * set (extension name/version, OS, VS Code version, machine ID) — see
- * `docs/user/tools/telemetry.md` for the full list.
+ * VS Code usage-telemetry adapter. Foam for Gollum sends no usage events:
+ * every `track*` call is logged at debug level only. Error reports go through
+ * `error-reporting.ts` instead.
  */
 export class TelemetryService implements IDisposable {
-  private reporter: TelemetryReporter;
   private sessionWithCommandFired = false;
   private sessionWithNoteFired = false;
   private panelVisibleFired = new Set<string>();
   private panelInteractionFired = new Set<string>();
 
-  constructor(opts: TelemetryServiceOptions) {
-    this.reporter = new TelemetryReporter(
-      TELEMETRY_CONNECTION_STRING,
-      undefined,
-      undefined,
-      undefined,
-      {
-        commonProperties: {
-          'foam.component': 'vscode',
-          'foam.version': opts.foamVersion,
-          'foam.coreVersion': opts.coreVersion,
-        },
-      }
-    );
-  }
+  constructor(_opts: TelemetryServiceOptions) {}
 
   trackEvent(name: string, properties?: Record<string, string>): void {
     const fullName = EVENT_PREFIX + name;
     Logger.debug(
       `[telemetry] ${fullName}${properties ? ' ' + JSON.stringify(properties) : ''}`
     );
-    this.reporter.sendTelemetryEvent(fullName, properties);
   }
 
   trackError(
     context: string,
     error: unknown,
-    properties?: Record<string, string>
+    _properties?: Record<string, string>
   ): void {
     const errorType =
       error instanceof Error ? error.constructor.name : 'UnknownError';
     const fullName = EVENT_PREFIX + 'error';
     Logger.debug(`[telemetry] ${fullName} in ${context}: ${errorType}`);
-    this.reporter.sendTelemetryErrorEvent(fullName, {
-      context,
-      errorType,
-      ...properties,
-    });
   }
 
   /**
@@ -188,9 +153,7 @@ export class TelemetryService implements IDisposable {
     });
   }
 
-  async dispose(): Promise<void> {
-    await this.reporter.dispose();
-  }
+  dispose(): void {}
 }
 
 /**

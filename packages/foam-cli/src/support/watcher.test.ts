@@ -16,7 +16,9 @@ const collect = (watcher: NodeWatcher) => {
   return { created, changed, deleted };
 };
 
-describe.skip('NodeWatcher', () => {
+// On Windows, libuv aborts the process (fs-event.c assertion) when the watched
+// folder is an 8.3 short path such as the default os.tmpdir()
+describe.skipIf(process.platform === 'win32')('NodeWatcher', () => {
   it('fires onDidCreate when a file is added after the watcher starts', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'foam-watcher-create-'));
     const watcher = new NodeWatcher(dir);

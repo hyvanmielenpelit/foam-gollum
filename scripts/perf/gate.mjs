@@ -39,18 +39,24 @@
 const LINEAR_MAX_NORMALIZED = 1.8;
 const FLAT_MAX_NORMALIZED = 1.0;
 
-/** Parse `vitest bench` JSON into groups of { fullName, marker, points }. */
+/**
+ * Parse the JSON reporter's output of a `vitest bench` run into groups of
+ * { fullName, marker, points }. Each test's `benchmarks` entry is one group:
+ * its `name` is the test's full name and its `tasks` are the measured points.
+ */
 export function readGroups(json) {
   const groups = [];
-  for (const file of json.files ?? []) {
-    for (const group of file.groups ?? []) {
-      const marker = /\[(linear|flat)\]/.exec(group.fullName)?.[1];
-      const points = (group.benchmarks ?? []).map(b => ({
-        name: b.name,
-        size: Number(/^(\d[\d_]*)/.exec(b.name)?.[1]?.replace(/_/g, '')),
-        mean: b.mean,
-      }));
-      groups.push({ fullName: group.fullName, marker, points });
+  for (const file of json.testResults ?? []) {
+    for (const result of file.assertionResults ?? []) {
+      for (const group of result.benchmarks ?? []) {
+        const marker = /\[(linear|flat)\]/.exec(group.name)?.[1];
+        const points = (group.tasks ?? []).map(task => ({
+          name: task.name,
+          size: Number(/^(\d[\d_]*)/.exec(task.name)?.[1]?.replace(/_/g, '')),
+          mean: task.latency?.mean,
+        }));
+        groups.push({ fullName: group.name, marker, points });
+      }
     }
   }
   return groups;

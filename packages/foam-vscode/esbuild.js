@@ -16,26 +16,26 @@ function getPlatform() {
   throw new Error('No platform specified. Pass --platform <web|node|webview>.');
 }
 
-function getEntry() {
-  const args = process.argv.slice(2);
-  const entryArg = args.find(arg => arg.startsWith('--entry='));
-  return entryArg ? entryArg.split('=')[1] : 'extension';
-}
-
 const platform = getPlatform();
-const entry = getEntry();
 assert(
   ['web', 'node'].includes(platform),
   'Platform must be "web" or "node".'
 );
-assert(['extension', 'cli'].includes(entry), 'Entry must be "extension" or "cli".');
-assert(
-  !(entry === 'cli' && platform !== 'node'),
-  'CLI entry must be built for the node platform.'
-);
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+
+// Release values (FOAM_SENTRY_DSN, SENTRY_AUTH_TOKEN) come from the environment
+// or from the gitignored .env next to this file; the environment wins.
+const envFile = path.join(__dirname, '.env');
+if (production && fs.existsSync(envFile)) {
+  process.loadEnvFile(envFile);
+}
+const sentryDsn = production ? process.env.FOAM_SENTRY_DSN ?? '' : '';
+if (production && !sentryDsn) {
+  console.warn('error reporting disabled: FOAM_SENTRY_DSN not set');
+}
+const uploadSourceMaps = production && !!process.env.SENTRY_AUTH_TOKEN;
 
 // Versions baked into the bundle at build time so telemetry can attach
 // `foam.version` / `foam.coreVersion` without runtime package.json reads.
@@ -52,7 +52,26 @@ const corePkg = JSON.parse(
 const versionDefines = {
   __FOAM_VSCODE_VERSION__: JSON.stringify(pkg.version),
   __CORE_VERSION__: JSON.stringify(corePkg.version),
+  __FOAM_SENTRY_DSN__: JSON.stringify(sentryDsn),
 };
+
+function sentryPlugins() {
+  if (!uploadSourceMaps) {
+    return [];
+  }
+  const { sentryEsbuildPlugin } = require('@sentry/esbuild-plugin');
+  return [
+    sentryEsbuildPlugin({
+      org: 'hyvan-mielen-pelit-ry',
+      project: 'foam-for-gollum',
+      url: 'https://de.sentry.io/',
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      release: { name: `foam-vscode-gollum@${pkg.version}` },
+      sourcemaps: { filesToDeleteAfterUpload: ['out/bundles/*.map'] },
+      telemetry: false,
+    }),
+  ];
+}
 
 const config = {
   extension: {
@@ -113,6 +132,18 @@ const config = {
           },
         },
         {
+          name: 'error-reporting',
+          setup(build) {
+            build.onResolve({ filter: /error-reporting$/ }, args => {
+              return {
+                path: require.resolve(
+                  path.join(args.resolveDir, args.path) + '-web-extension.ts'
+                ),
+              };
+            });
+          },
+        },
+        {
           name: 'parse-entities-no-dom',
           setup(build) {
             // parse-entities maps ./decode-entity -> ./decode-entity.browser.js via
@@ -145,17 +176,6 @@ const config = {
       external: ['vscode'],
     },
   },
-  cli: {
-    platform: 'node',
-    format: 'cjs',
-    outfile: `out/cli/index.js`,
-    plugins: [],
-    entryPoints: ['src/cli/index.ts'],
-    external: [],
-    banner: {
-      js: '#!/usr/bin/env node',
-    },
-  },
 };
 
 async function buildTarget(targetConfig) {
@@ -163,11 +183,12 @@ async function buildTarget(targetConfig) {
     ...targetConfig,
     bundle: true,
     minify: production,
-    sourcemap: !production,
-    sourcesContent: false,
+    sourcemap: production ? uploadSourceMaps : true,
+    sourcesContent: uploadSourceMaps,
     logLevel: 'silent',
     plugins: [
       ...targetConfig.plugins,
+      ...sentryPlugins(),
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,
     ],
@@ -180,26 +201,8 @@ async function buildTarget(targetConfig) {
   }
 }
 
-async function buildExtension() {
-  const targetConfig =
-    entry === 'extension' ? config.extension[platform] : config.cli;
-  await buildTarget(targetConfig);
-}
-
-function copyGraphBundleForCli() {
-  const src = path.join(__dirname, '../foam-graph/out/foam-graph.standalone.js');
-  const dest = path.join(__dirname, 'out/cli/foam-graph.standalone.js');
-  if (fs.existsSync(src)) {
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(src, dest);
-  }
-}
-
 async function main() {
-  await buildExtension();
-  if (entry === 'cli') {
-    copyGraphBundleForCli();
-  }
+  await buildTarget(config.extension[platform]);
 }
 
 /**

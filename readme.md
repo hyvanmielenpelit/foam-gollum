@@ -22,7 +22,7 @@ Please use one of the following ways for contacting us:
 
 ### Graph Visualization
 
-See how your notes are connected via a [graph](https://docs.foam.md/features/graph-view/) with the `Foam: Show Graph` command.
+See how your notes are connected via a [graph](docs/user/features/graph-view.md) with the `Foam: Show Graph` command.
 
 ![Graph Visualization](./assets/screenshots/feature-show-graph.gif)
 
@@ -80,7 +80,7 @@ Foam supports link aliasing, so you can have a `[[wikilink]]`, or a `[[wikilink|
 
 ### Templates
 
-Use [custom templates](https://docs.foam.md/features/templates/) to have avoid repetitve work on your notes.
+Use [custom templates](docs/user/features/templates.md) to have avoid repetitve work on your notes.
 
 ![Templates](./assets/screenshots/feature-templates.gif)
 
@@ -93,7 +93,7 @@ See for each occurrence the context in which it lives, as well as a preview of t
 
 ### Tag Explorer Panel
 
-Tag your notes and navigate them with the [Tag Explorer](https://docs.foam.md/features/tags/).
+Tag your notes and navigate them with the [Tag Explorer](docs/user/features/tags.md).
 Foam also supports hierarchical tags.
 
 ![Tag Explorer Panel](./assets/screenshots/feature-tags-panel.gif)
@@ -114,13 +114,13 @@ Foam highlights wikilinks and placeholder differently, to help you visualize you
 
 ### Daily note
 
-Create a journal with [daily notes](https://docs.foam.md/features/daily-notes/).
+Create a journal with [daily notes](docs/user/features/daily-notes.md).
 
 ![Daily Note](./assets/screenshots/feature-daily-note.gif)
 
 ### Generate references for your wikilinks
 
-Create markdown [references](https://docs.foam.md/features/link-reference-definitions/) for `[[wikilinks]]`, to use your notes in a non-Foam workspace.
+Create markdown [references](docs/user/features/link-reference-definitions.md) for `[[wikilinks]]`, to use your notes in a non-Foam workspace.
 With references you can also make your notes navigable both in GitHub UI as well as GitHub Pages.
 
 ![Generate references](./assets/screenshots/feature-definitions-generation.gif)
@@ -130,32 +130,30 @@ With references you can also make your notes navigable both in GitHub UI as well
 - Explore your knowledge base with the `Foam: Open Random Note` command
 - Access your daily note with the `Foam: Open Daily Note` command
 - Create a new note with the `Foam: Create New Note` command
-  - This becomes very powerful when combined with [note templates](https://docs.foam.md/features/templates/) and the `Foam: Create New Note from Template` command
+  - This becomes very powerful when combined with [note templates](docs/user/features/templates.md) and the `Foam: Create New Note from Template` command
 - See your workspace as a connected graph with the `Foam: Show Graph` command
 
 ## Recipes
 
-People use Foam in different ways for different use cases, check out the [recipes](https://docs.foam.md/recipes/recipes/) page for inspiration!
+People use Foam in different ways for different use cases, check out the [recipes](docs/user/recipes/recipes.md) page for inspiration!
 
 ## Getting started
 
-> Already using Obsidian? An Obsidian vault is usually already a Foam workspace — see [Coming from Obsidian](https://docs.foam.md/recipes/migrating-from-obsidian/).
+> Already using Obsidian? An Obsidian vault is usually already a Foam workspace — see [Coming from Obsidian](docs/user/recipes/migrating-from-obsidian.md).
 
 Whether you want to build a [Second Brain](https://www.buildingasecondbrain.com/) or a [Zettelkasten](https://zettelkasten.de/posts/overview/), write a book, or just get better at long-term learning, **Foam** can help you organise your thoughts if you follow these simple rules:
 
-1. Create a single **Foam** workspace for all your knowledge and research following the [[Getting started]] guide.
+1. Create a single **Foam** workspace for all your knowledge and research following the [Getting started](docs/user/getting-started/installation.md) guide.
 2. Write your thoughts in markdown documents (I like to call them **Bubbles**, but that might be more than a little twee). These documents should be atomic: Put things that belong together into a single document, and limit its content to that single topic. ([source](https://zettelkasten.de/posts/overview/#principles))
 3. Use Foam's shortcuts and autocompletions to link your thoughts together with `[[wikilinks]]`, and navigate between them to explore your knowledge graph.
-4. Get an overview of your **Foam** workspace using the [[Graph Visualisation]], and discover relationships between your thoughts with the use of [[Backlinking]].
+4. Get an overview of your **Foam** workspace using the [Graph Visualization](docs/user/features/graph-view.md), and discover relationships between your thoughts with the use of [backlinking](docs/user/features/backlinking.md).
 
-You can also use our Foam template:
+You can also start from upstream Foam's template:
 
 1. Log in on your GitHub account.
 2. [Create a GitHub repository from foam-template](https://github.com/foambubble/foam-template/generate). If you want to keep your thoughts to yourself, remember to set the repository private.
 3. Clone the repository and open it in VS Code.
-4. When prompted to install recommended extensions, click **Install all** (or **Show Recommendations** if you want to review and install them one by one).
-
-This will also install `Foam`, but if you already have it installed, that's ok, just make sure you're up to date on the latest version.
+4. The template recommends upstream's `Foam` extension. Install [Foam for Gollum](https://marketplace.visualstudio.com/items?itemName=Hyvnmielenpelitry.foam-vscode-gollum) instead, and do not install both.
 
 ## Requirements
 
@@ -165,7 +163,7 @@ Rest assured it will never lock you in, nor compromise your files, but sometimes
 
 ## Known Issues
 
-See the [issues](https://github.com/foambubble/foam/issues/) on our GitHub repo ;)
+See the [issues](https://github.com/hyvanmielenpelit/foam-gollum/issues) on our GitHub repo ;)
 
 ## Release Notes
 
@@ -173,31 +171,29 @@ See the [CHANGELOG](./packages/foam-vscode/CHANGELOG.md).
 
 ## Learn more
 
-**Head over to the 👉[Foam documentation site](https://foam.md)** to see Foam in action and read the rest of the documentation!
+**Head over to the 👉[Foam for Gollum documentation](docs/user/index.md)** to read the rest of the documentation!
 
 Quick links to next documentation sections
 
-- [Foam homepage](https://foam.md)
-- [Getting started](https://docs.foam.md/getting-started/installation/)
-- [Features](https://docs.foam.md/#features)
-- [Recipes](https://docs.foam.md/recipes/recipes/)
-- [Frequently Asked Questions](https://docs.foam.md/frequently-asked-questions/)
+- [Upstream Foam homepage](https://foam.md)
+- [Getting started](docs/user/getting-started/installation.md)
+- [Features](docs/user/index.md#features)
+- [Recipes](docs/user/recipes/recipes.md)
+- [Frequently Asked Questions](docs/user/frequently-asked-questions.md)
 
-You can also browse the [docs folder](https://github.com/foambubble/foam/tree/main/docs).
+You can also browse the [docs folder](docs).
 
 ## License
 
 Foam is licensed under the [MIT license](LICENSE).
 
-[Backlinking]: docs/user/features/backlinking.md 'Backlinking'
-
 ## Contribution Guide
 
-See the [Contribution Guide](https://github.com/foambubble/foam/blob/main/CONTRIBUTING.md)
+See the [Contribution Guide](CONTRIBUTING.md)
 
 ## Code of conduct
 
-See the [Code of Conduct](https://github.com/foambubble/foam/blob/main/docs/dev/code-of-conduct.md)
+See the [Code of Conduct](docs/dev/code-of-conduct.md)
 
 ## Contributors ✨
 
@@ -394,8 +390,6 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
-[Backlinking]: docs/user/features/backlinking.md 'Backlinks'
 [//begin]: # 'Autogenerated link references for markdown compatibility'
-[Backlinking]: docs/user/features/backlinking.md 'Backlinks'
 [//end]: # 'Autogenerated link references'
 

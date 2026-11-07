@@ -1,4 +1,4 @@
-import { bench } from 'vitest';
+import { test } from 'vitest';
 import { createMarkdownParser } from './markdown-parser';
 import { ResourceParser } from '../model/note';
 import { URI } from '../model/uri';
@@ -111,10 +111,12 @@ if (isAB) {
   for (const [shape, { generate, sizes }] of Object.entries(shapes)) {
     for (const lines of sizes) {
       const doc = generate(lines);
-      describe(`Markdown parser — ${shape}, ${lines} lines`, () => {
-        for (const candidate of parserCandidates) {
-          bench(candidate.name, benchParse(candidate, doc));
-        }
+      test(`Markdown parser — ${shape}, ${lines} lines`, async ({ bench }) => {
+        await bench.compare(
+          ...parserCandidates.map(candidate =>
+            bench(candidate.name, benchParse(candidate, doc))
+          )
+        );
       });
     }
   }
@@ -122,11 +124,12 @@ if (isAB) {
   // Single-candidate mode: flat groups with baseline-compatible names
   // ("<size> lines"), which the regression gate and committed baseline expect.
   // [linear]: doubling the note size should ~double parse time.
-  describe('Markdown parser — single note parse [linear]', () => {
-    for (const lines of PARSER_BENCHMARK_SIZES) {
-      const doc = makeJournalNote(lines);
-      bench(`${lines} lines`, benchParse(parserCandidates[0], doc));
-    }
+  test('Markdown parser — single note parse [linear]', async ({ bench }) => {
+    await bench.compare(
+      ...PARSER_BENCHMARK_SIZES.map(lines =>
+        bench(`${lines} lines`, benchParse(parserCandidates[0], makeJournalNote(lines)))
+      )
+    );
   });
 
   // Deliberately NOT tagged [linear]. The scaling gate asserts that time growth
@@ -135,10 +138,11 @@ if (isAB) {
   // gate would fail on a fact we already know rather than on a regression.
   // Cross-run baseline comparison still applies. Tag it [linear] once a parser
   // that actually is linear on this shape becomes the default.
-  describe('Markdown parser — unbroken outline', () => {
-    for (const lines of OUTLINE_BENCHMARK_SIZES) {
-      const doc = makeOutlineNote(lines);
-      bench(`${lines} lines`, benchParse(parserCandidates[0], doc));
-    }
+  test('Markdown parser — unbroken outline', async ({ bench }) => {
+    await bench.compare(
+      ...OUTLINE_BENCHMARK_SIZES.map(lines =>
+        bench(`${lines} lines`, benchParse(parserCandidates[0], makeOutlineNote(lines)))
+      )
+    );
   });
 }

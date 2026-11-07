@@ -35,6 +35,10 @@ This point[^caveat] is elaborated elsewhere.[^caveat]
 [^caveat]: See the companion article for full details.
 ```
 
+## Turning Footnotes Off
+
+If another extension handles footnotes, set `foam.footnotes.enable` to `false`. Foam then stops rendering, hovering, highlighting and jumping to footnotes. The preview picks up the change after you reload the window.
+
 ## Related
 
 - [[wikilinks]] - Linking between notes

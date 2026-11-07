@@ -79,6 +79,6 @@ foam tag search project
 | `--workspace <dir>` | Workspace root (default: `FOAM_WORKSPACE` env var, then current directory) |
 | `--format <fmt>`    | Output format: `text` (default) or `json`                                  |
 
-See also [[tags]] for tag management in VS Code.
+See also [[../../features/tags]] for tag management in VS Code.
 
-[tags]: ../../features/tags.md 'Tags'
+[../../features/tags]: ../../features/tags.md "Tags"

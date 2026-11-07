@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { Config, DefaultFoamConfig } from '@foam/core';
 import { buildRules, formatLintText, runLintCommand, type LintResult } from './lint';
 import { withTmpWorkspace, TestLogger } from '../test/test-utils';
 import { setColorsEnabled } from '../support/colors';
@@ -271,4 +272,37 @@ describe('runLintCommand', () => {
       expect(result).toHaveProperty('fixed');
       expect(result.fixed).toBeGreaterThan(0);
     }));
+});
+
+// ─── runLintCommand with Gollum syntax ────────────────────────────────────────
+
+describe('runLintCommand with Gollum syntax', () => {
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('--fix adds definitions labeled with the link text, with targets relative to the note', () =>
+    withTmpWorkspace(
+      {
+        '.vscode/settings.json': JSON.stringify({
+          'foam.wikilinks.syntax': 'gollum',
+          'foam.edit.linkReferenceDefinitions': 'withoutExtensions',
+        }),
+        'a/Src.md': '# Src\n\nSee [[Shown Name|Page]] and [[/Top]].\n',
+        'a/Page.md': '# Page\n',
+        'Page.md': '# Root Page\n',
+        'Top.md': '# Top\n',
+      },
+      async ({ rootDir }) => {
+        const code = await runLintCommand(['--fix', '--workspace', rootDir], new TestLogger());
+        expect(code).toBe(0);
+        expect(fs.readFileSync(path.join(rootDir, 'a', 'Src.md'), 'utf8')).toBe(
+          '# Src\n\nSee [[Shown Name|Page]] and [[/Top]].\n\n[Shown Name|Page]: Page "Page"\n[/Top]: ../Top "Top"\n'
+        );
+
+        const logger = new TestLogger();
+        expect(await runLintCommand(['--workspace', rootDir], logger)).toBe(0);
+        expect(logger.logs.join('\n')).not.toContain('stale-definitions');
+      }
+    ));
 });

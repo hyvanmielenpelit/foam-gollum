@@ -8,6 +8,8 @@ foam update
 
 The command compares your installed version against the latest release on npm and prints the install command if a newer version exists. It does not install anything for you.
 
+The `foam-cli` package on npm is upstream Foam's CLI, so in Foam for Gollum the answer does not apply: rebuild from the repository instead, see [[../cli]].
+
 If the npm registry can't be reached, the command falls back to printing the install command without a version comparison.
 
 ## Options
@@ -36,3 +38,5 @@ foam update
 # Current version: 0.42.0
 # You are already on the latest version.
 ```
+
+[../cli]: ../cli.md "Foam CLI"

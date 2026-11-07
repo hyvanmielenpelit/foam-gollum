@@ -5,7 +5,7 @@ import {
   createNoteFromMarkdown,
   createTestWorkspace,
 } from '../../../test/test-utils';
-import { withModifiedFoamConfiguration } from '../../../test/test-utils-vscode';
+import { withModifiedFoamConfiguration, MEDIAWIKI_SYNTAX, useFoamConfiguration } from '../../../test/test-utils-vscode';
 import { fromVsCodeUri } from '../../utils/vsc-utils';
 import { createPlaceholderMatcher } from './placeholders';
 
@@ -44,6 +44,8 @@ const hiddenPlaceholders = async () => {
 };
 
 describe('Placeholders panel filter', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   it('shows every placeholder when foam.files.include is restricted to a subfolder (#1702)', async () => {
     await withModifiedFoamConfiguration(
       'files.include',

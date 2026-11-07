@@ -1,11 +1,13 @@
 import {
   createMarkdownParser,
   getBlockFor,
+  getLinkDefinitions,
   ParserCache,
   ParserCacheEntry,
   ParserPlugin,
 } from './markdown-parser';
 import { NoteLinkDefinition, Resource, ResourceLink } from '../model/note';
+import { Config, DefaultFoamConfig } from '../config';
 import { Logger } from '../utils/log';
 import { URI } from '../model/uri';
 import { Range } from '../model/range';
@@ -1454,5 +1456,48 @@ describe('Frontmatter tags with quoted keys', () => {
 content`);
     expect(note.tags.map(t => t.label)).toEqual(['alpha']);
     expect(note.tags[0].range.start.line).toEqual(1);
+  });
+});
+
+describe('Wikilink definitions with Gollum syntax', () => {
+  beforeEach(() => {
+    Config.setDefaultConfig(
+      Object.assign(new DefaultFoamConfig(), {
+        getWikilinksSyntax: () => 'gollum' as const,
+      })
+    );
+  });
+  afterEach(() => {
+    Config.setDefaultConfig(new DefaultFoamConfig());
+  });
+
+  it('sets the definition of an aliased wikilink to the target after the alias', () => {
+    const note = createNoteFromMarkdown(
+      'This is a [[Display Name|target-file]] wikilink.'
+    );
+    expect(note.links.length).toEqual(1);
+    const link = note.links[0];
+    expect(link.type).toEqual('wikilink');
+    expect(ResourceLink.isUnresolvedReference(link)).toBe(true);
+    expect(link.definition).toEqual('target-file');
+  });
+
+  it('does not bind an aliased wikilink to a definition labeled with its alias', () => {
+    const note = createNoteFromMarkdown(
+      'See [[Shown|Page]].\n\n[Shown]: Other.md "Other"\n'
+    );
+    expect(note.links.length).toEqual(1);
+    const link = note.links[0];
+    expect(ResourceLink.isResolvedReference(link)).toBe(false);
+    expect(link.definition).toEqual('Page');
+  });
+
+  it('reads the definition generated for an aliased wikilink with the whole link text as its label', () => {
+    const definitions = getLinkDefinitions(
+      'See [[Shown Name|Page]].\n\n[Shown Name|Page]: Page "Page"\n'
+    );
+    expect(
+      definitions.map(({ label, url, title }) => ({ label, url, title }))
+    ).toEqual([{ label: 'Shown Name|Page', url: 'Page', title: 'Page' }]);
   });
 });

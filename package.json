@@ -12,13 +12,9 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "tag-release": "node scripts/tag-release.js",
-    "package-extension": "yarn workspace foam-vscode package",
-    "install-extension": "yarn workspace foam-vscode install-extension",
-    "release-extension": "yarn workspace foam-vscode release",
-    "release-cli": "yarn workspace @foam/cli release",
-    "release-core": "yarn workspace @foam/core release",
-    "release": "npm login --registry https://registry.npmjs.org/ && yarn release-core && yarn release-cli && yarn release-extension && yarn tag-release",
-    "publish:docs-site": "yarn build && node packages/foam-cli/out/index.js export ./docs --out ./.tmp/foam-docs-site --title \"Foam\" --description \"Using Foam\" --content-root user --site-url https://docs.foam.md",
+    "package-extension": "yarn workspace foam-vscode-gollum package",
+    "install-extension": "yarn workspace foam-vscode-gollum install-extension",
+    "release-extension": "yarn workspace foam-vscode-gollum release",
     "reset": "yarn && yarn clean && yarn build",
     "clean": "lerna run clean",
     "build": "lerna run build",
@@ -35,13 +31,14 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
-    "all-contributors-cli": "^6.16.1",
+    "all-contributors-cli": "^7.0.0",
     "husky": "^9.1.7",
-    "lerna": "^8.2.2",
+    "lerna": "^10.1.1",
+    "vite": "^8.3.6",
     "vite-tsconfig-paths": "^6.1.1"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "prettier": {
     "arrowParens": "avoid",
@@ -50,9 +47,7 @@
     "singleQuote": true,
     "trailingComma": "es5"
   },
-  "dependencies": {
-    "dayjs": "^1.11.13",
-    "esbuild": "^0.25.8",
-    "image-size": "^2.0.2"
+  "resolutions": {
+    "trim": "^0.0.3"
   }
 }

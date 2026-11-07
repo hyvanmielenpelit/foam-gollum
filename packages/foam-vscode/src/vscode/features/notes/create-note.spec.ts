@@ -18,6 +18,7 @@ import {
   withMarkdownEditorAssociation,
   withModifiedFoamConfiguration,
   withSecondRoot,
+  GOLLUM_SYNTAX,
   MEDIAWIKI_SYNTAX,
   useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
@@ -29,6 +30,8 @@ import { ResourceLink } from '@foam/core';
 import { createMarkdownParser } from '@foam/core';
 
 describe('create-note command', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -467,6 +470,8 @@ describe('create-note command', () => {
 });
 
 describe('factories', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   describe('forPlaceholder', () => {
     it('adds the .md extension to notes created for placeholders', async () => {
       await closeEditors();
@@ -616,6 +621,114 @@ Template content using FOAM_CURRENT_DIR`,
       await deleteFile(noteInSubdir.uri);
       await deleteFile(resultInRoot.uri);
       await deleteFile(resultInSubdir.uri);
+    });
+  });
+});
+
+describe('factories with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  describe('forPlaceholder', () => {
+    /**
+     * Creates a note for the first link of a new note with `text` at
+     * `filepath`, the way the editor does when the placeholder is clicked, and
+     * checks the note lands at `expected` while the link is left as written.
+     */
+    const expectNoteCreatedAt = async (
+      text: string,
+      filepath: string[],
+      expected: URI,
+      newNotePath: 'root' | 'currentDir'
+    ) => {
+      await closeEditors();
+      const source = await createFile(text, filepath);
+      const link = createMarkdownParser().parse(source.uri, source.content)
+        .links[0];
+      let result: Awaited<ReturnType<typeof createNote>>;
+      try {
+        await showInEditor(source.uri);
+        const command = CREATE_NOTE_COMMAND.forPlaceholder(
+          Location.forObjectWithRange(source.uri, link),
+          '.md',
+          { onFileExists: 'open' }
+        );
+        await withModifiedFoamConfiguration(
+          'files.newNotePath',
+          newNotePath,
+          async () => {
+            result = await commands.executeCommand<
+              Awaited<ReturnType<typeof createNote>>
+            >(command.name, command.params);
+          }
+        );
+
+        expect(result.didCreateFile).toBeTruthy();
+        expectSameUri(result.uri, expected);
+        const { doc } = await showInEditor(source.uri);
+        expect(doc.getText()).toEqual(text);
+      } finally {
+        await closeEditors();
+        await deleteFile(expected);
+        if (result?.uri) {
+          await deleteFile(result.uri);
+        }
+        await deleteFile(source.uri);
+      }
+    };
+
+    it('names the note after the target, not the alias, of an alias-first placeholder', async () => {
+      const link: ResourceLink = {
+        type: 'wikilink',
+        rawText: '[[My Alias|gollum-new-note]]',
+        range: Range.create(0, 0, 0, 0),
+        isEmbed: false,
+      };
+
+      const command = CREATE_NOTE_COMMAND.forPlaceholder(
+        Location.forObjectWithRange(URI.file(''), link),
+        '.md'
+      );
+
+      expect(command.params).toMatchObject({
+        title: 'gollum-new-note',
+        notePath: 'gollum-new-note.md',
+      });
+    });
+
+    it('creates the note for an alias-first placeholder in the root and keeps the link', async () => {
+      await expectNoteCreatedAt(
+        'this is my [[My Alias|gollum-new-note]]',
+        ['gollum-placeholder-source.md'],
+        getUriInWorkspace('gollum-new-note.md'),
+        'root'
+      );
+    });
+
+    it('creates the note next to the linking note, where the link points, even when new notes go to the root', async () => {
+      await expectNoteCreatedAt(
+        'see [[My Alias|sibling-note]]',
+        ['gollum-placeholder', 'source.md'],
+        getUriInWorkspace('gollum-placeholder', 'sibling-note.md'),
+        'root'
+      );
+    });
+
+    it('creates the note for a ../ placeholder in the parent folder, even when new notes go to the current directory', async () => {
+      await expectNoteCreatedAt(
+        'see [[Up there|../parent-note]]',
+        ['gollum-placeholder', 'source.md'],
+        getUriInWorkspace('parent-note.md'),
+        'currentDir'
+      );
+    });
+
+    it('creates the note for a leading-slash placeholder from the root, even when new notes go to the current directory', async () => {
+      await expectNoteCreatedAt(
+        'see [[Home|/rooted-note]]',
+        ['gollum-placeholder', 'source.md'],
+        getUriInWorkspace('rooted-note.md'),
+        'currentDir'
+      );
     });
   });
 });

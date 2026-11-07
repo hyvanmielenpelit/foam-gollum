@@ -12,6 +12,15 @@ Optionally it can contain:
 - **Assets** - images, attachments, and other media
 - **Templates** - reusable note structures
 
+### Which Files Foam Reads
+
+Foam reads every file in the folder except common tool and build folders, such as `node_modules` and `.vscode`. Markdown files are notes; PDFs, Office documents and media files are attachments. To change this, add these settings to `.vscode/settings.json` and reload the window:
+
+- `foam.files.include`: the files to read, as glob patterns. The default `["**/*"]` reads everything; `["notes/**"]` reads only the `notes` folder.
+- `foam.files.exclude`: files to leave out, in addition to VS Code's `files.exclude`. To leave out a folder, use `<folderName>/**/*`, such as `["archive/**/*"]`.
+- `foam.files.notesExtensions`: more extensions to read as notes, separated by spaces, such as `mdx markdown`.
+- `foam.files.attachmentExtensions`: the extensions of attachments, separated by spaces. The default lists common document and media formats, such as `pdf docx mp4`.
+
 ### Single vs. Multiple Workspaces
 
 **Recommended: Single Workspace**
@@ -65,7 +74,7 @@ For a minimal setup:
 
 That's all, you can start working with your markdown files and Foam will take care of the rest.
 
-> Already have an Obsidian vault? You can open it directly in VS Code — see [[migrating-from-obsidian]].
+> Already have an Obsidian vault? You can open it directly in VS Code — see [[../recipes/migrating-from-obsidian]].
 
 ## Ideas for your knowledge base
 
@@ -207,8 +216,8 @@ With your workspace set up, you're ready to:
 If you encounter setup issues:
 
 - Check the [Installation Guide](installation.md) for prerequisites
-- Visit the [[frequently-asked-questions]] for common workspace problems
-- Join the [Foam Community Discord](https://discord.com/invite/HV2tn2FpEk)
+- Visit the [[../frequently-asked-questions]] for common workspace problems
+- Ask questions in [GitHub Discussions](https://github.com/hyvanmielenpelit/foam-gollum/discussions)
 
-[frequently-asked-questions]: ../frequently-asked-questions.md 'Frequently Asked Questions'
-[migrating-from-obsidian]: ../recipes/migrating-from-obsidian.md "Coming from Obsidian"
+[../recipes/migrating-from-obsidian]: ../recipes/migrating-from-obsidian.md "Coming from Obsidian"
+[../frequently-asked-questions]: ../frequently-asked-questions.md "Frequently Asked Questions"

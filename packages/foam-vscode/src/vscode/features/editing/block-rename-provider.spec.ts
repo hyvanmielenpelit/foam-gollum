@@ -2,14 +2,19 @@
 import * as vscode from 'vscode';
 import { createMarkdownParser } from '@foam/core';
 import { FoamGraph } from '@foam/core';
+import { URI } from '@foam/core';
 import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  deleteFile,
+  GOLLUM_SYNTAX,
   showInEditor,
+  MEDIAWIKI_SYNTAX,
+  useFoamConfiguration,
 } from '../../../test/test-utils-vscode';
 import { createTestWorkspace } from '../../../test/test-utils';
-import { toVsCodeUri } from '../../utils/vsc-utils';
+import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { BlockRenameProvider } from './block-rename-provider';
 
 const parser = createMarkdownParser([]);
@@ -21,6 +26,8 @@ const buildFoamLike = (ws: ReturnType<typeof createTestWorkspace>) => ({
 });
 
 describe('BlockRenameProvider', () => {
+  useFoamConfiguration(MEDIAWIKI_SYNTAX);
+
   beforeEach(async () => {
     await cleanWorkspace();
     await closeEditors();
@@ -176,5 +183,119 @@ describe('BlockRenameProvider', () => {
       const fileBEdits = edits.get(toVsCodeUri(fileB.uri));
       expect(fileBEdits ?? []).toHaveLength(0);
     });
+  });
+});
+
+describe('BlockRenameProvider with Gollum syntax', () => {
+  useFoamConfiguration(GOLLUM_SYNTAX);
+
+  /**
+   * Renames block `^oldblock`, on the first line of `page`, to `^newblock`
+   * in a workspace holding the given files, and returns the edits.
+   */
+  const renameOldBlock = async (
+    page: { uri: URI; content: string },
+    ...others: { uri: URI; content: string }[]
+  ) => {
+    const root = fromVsCodeUri(vscode.workspace.workspaceFolders[0].uri);
+    const ws = createTestWorkspace([root]);
+    for (const file of [page, ...others]) {
+      ws.set(parser.parse(file.uri, file.content));
+    }
+    const provider = new BlockRenameProvider(buildFoamLike(ws) as any);
+    const { doc } = await showInEditor(page.uri);
+    return provider.provideRenameEdits(
+      doc,
+      new vscode.Position(0, 'A paragraph ^old'.length),
+      'newblock',
+      new vscode.CancellationTokenSource().token
+    );
+  };
+
+  it('should keep the alias before the target of a block link', async () => {
+    await closeEditors();
+    const page = await createFile('A paragraph ^oldblock\n', [
+      'block-rename-gollum',
+      'Page.md',
+    ]);
+    const linking = await createFile(
+      'See [[The block|Page#^oldblock]] for more.\n',
+      ['block-rename-gollum', 'linking.md']
+    );
+
+    const edits = await renameOldBlock(page, linking);
+
+    expect(edits.get(toVsCodeUri(page.uri)).map(e => e.newText)).toEqual([
+      'newblock',
+    ]);
+    expect(
+      (edits.get(toVsCodeUri(linking.uri)) ?? []).map(e => e.newText)
+    ).toEqual(['[[The block|Page#^newblock]]']);
+
+    await closeEditors();
+    await deleteFile(page.uri);
+    await deleteFile(linking.uri);
+  });
+
+  it('should keep the ../ prefix of an aliased block link from a subfolder', async () => {
+    await closeEditors();
+    const page = await createFile('A paragraph ^oldblock\n', [
+      'block-rename-gollum',
+      'Page.md',
+    ]);
+    const linking = await createFile(
+      'See [[Up there|../Page#^oldblock]] for more.\n',
+      ['block-rename-gollum', 'sub', 'linking.md']
+    );
+
+    const edits = await renameOldBlock(page, linking);
+
+    expect(
+      (edits.get(toVsCodeUri(linking.uri)) ?? []).map(e => e.newText)
+    ).toEqual(['[[Up there|../Page#^newblock]]']);
+
+    await closeEditors();
+    await deleteFile(page.uri);
+    await deleteFile(linking.uri);
+  });
+
+  it('should update an aliased link to a block of the same page', async () => {
+    await closeEditors();
+    const page = await createFile(
+      'A paragraph ^oldblock\n\nJump to [[the block|#^oldblock]].\n',
+      ['block-rename-gollum', 'Page.md']
+    );
+
+    const edits = await renameOldBlock(page);
+
+    expect(
+      edits
+        .get(toVsCodeUri(page.uri))
+        .map(e => e.newText)
+        .sort()
+    ).toEqual(['[[the block|#^newblock]]', 'newblock']);
+
+    await closeEditors();
+    await deleteFile(page.uri);
+  });
+
+  it('should not update an aliased link to a same-named page in another folder', async () => {
+    await closeEditors();
+    const page = await createFile('A paragraph ^oldblock\n', [
+      'block-rename-gollum',
+      'Page.md',
+    ]);
+    const linking = await createFile(
+      'See [[The block|Page#^oldblock]] for more.\n',
+      ['block-rename-gollum', 'other', 'linking.md']
+    );
+
+    const edits = await renameOldBlock(page, linking);
+
+    expect(edits.get(toVsCodeUri(linking.uri)) ?? []).toHaveLength(0);
+
+    await closeEditors();
+    await deleteFile(page.uri);
+    await deleteFile(linking.uri);
   });
 });

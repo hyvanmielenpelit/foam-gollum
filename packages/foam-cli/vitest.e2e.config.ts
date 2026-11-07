@@ -13,6 +13,6 @@ export default defineConfig({
     exclude: ['node_modules/**', 'out/**'],
     testTimeout: 60000,
     clearMocks: true,
-    reporters: process.env.CI ? ['dot'] : ['verbose'],
+    reporters: process.env.CI ? ['dot'] : ['tree'],
   },
 });

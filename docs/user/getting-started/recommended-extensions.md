@@ -4,7 +4,7 @@ These extensions defined in `.vscode/extensions.json` are automatically installe
 
 This list is subject to change.
 
-- [Foam for VSCode](https://marketplace.visualstudio.com/items?itemName=foam.foam-vscode)
+- [Foam for Gollum](https://marketplace.visualstudio.com/items?itemName=Hyvnmielenpelitry.foam-vscode-gollum)
 - [Markdown All In One](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
 - [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
 

@@ -1964,6 +1964,20 @@ export const window = {
     return { dispose: () => {} };
   },
 
+  createOutputChannel(name: string): any {
+    const lines: string[] = [];
+    return {
+      name,
+      lines,
+      append: (value: string) => lines.push(value),
+      appendLine: (value: string) => lines.push(value),
+      clear: () => lines.splice(0),
+      show: () => {},
+      hide: () => {},
+      dispose: () => {},
+    };
+  },
+
   createTreeView(viewId: string, options: any): any {
     const noop = () => ({ dispose: () => {} });
     return {
@@ -2732,6 +2746,54 @@ export const env = {
   language: 'en',
   sessionId: 'mock-session',
   machineId: 'mock-machine',
+
+  isTelemetryEnabled: true,
+  onDidChangeTelemetryEnabled: new EventEmitter<boolean>().event,
+
+  // Mirrors VS Code's logger: calls the sender only while telemetry is
+  // enabled, and mixes in common properties (including ones never to be sent)
+  createTelemetryLogger(
+    sender: {
+      sendEventData(eventName: string, data?: Record<string, any>): void;
+      sendErrorData(error: Error, data?: Record<string, any>): void;
+      flush?(): void | Thenable<void>;
+    },
+    _options?: { ignoreUnhandledErrors?: boolean }
+  ) {
+    const commonProperties = {
+      'common.os': 'mock-os',
+      'common.vscodeversion': '1.0.0-mock',
+      'common.vscodemachineid': env.machineId,
+      'common.vscodesessionid': env.sessionId,
+    };
+    return {
+      get isUsageEnabled() {
+        return env.isTelemetryEnabled;
+      },
+      get isErrorsEnabled() {
+        return env.isTelemetryEnabled;
+      },
+      onDidChangeEnableStates: new EventEmitter<unknown>().event,
+      logUsage(eventName: string, data?: Record<string, any>) {
+        if (env.isTelemetryEnabled) {
+          sender.sendEventData(eventName, { ...commonProperties, ...data });
+        }
+      },
+      logError(eventNameOrError: string | Error, data?: Record<string, any>) {
+        if (!env.isTelemetryEnabled) {
+          return;
+        }
+        if (typeof eventNameOrError === 'string') {
+          sender.sendEventData(eventNameOrError, { ...commonProperties, ...data });
+        } else {
+          sender.sendErrorData(eventNameOrError, { ...commonProperties, ...data });
+        }
+      },
+      dispose() {
+        return sender.flush?.();
+      },
+    };
+  },
 };
 
 // ===== Initialization Helper =====

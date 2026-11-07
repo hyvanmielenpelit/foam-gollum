@@ -16,10 +16,12 @@ All notable changes to the Foam for Gollum extension are documented in this file
   - Notes open in the editor you associated with Markdown files.
 - Daily notes go where the daily note template puts them, and otherwise to the `journal` folder. The `foam.openDailyNote.directory`, `filenameFormat`, `fileExtension` and `titleFormat` settings are no longer used; if yours would place a note differently, Foam asks before creating it and offers to write a template that keeps them.
 - Remove the `Foam: Copy To Clipboard Without Brackets`, `Foam: Clear Cache` and `Foam: Update Graph` commands, and the `foam.files.ignore` setting (use `foam.files.exclude`).
+- Stop sending usage data. When telemetry is on in VS Code (`telemetry.telemetryLevel` set to `all` or `error`), error reports go to the maintainers of Foam for Gollum, without your notes, file names or paths. See [Telemetry](https://github.com/hyvanmielenpelit/foam-gollum/blob/main/docs/user/tools/telemetry.md).
 
 ### Patch Changes
 
 - Fix the editor slowing down while typing a long wikilink with no closing `]]`.
+- Fix a security issue in a bundled Markdown library, where a crafted note could make Foam hang (the `trim` regular expression denial of service).
 - Fix completion after an alias (`[[My alias|`) repeating the page title, and make alias completions use the Gollum order `[[Alias|page]]`.
 - Fix renaming or moving a page, a folder or a heading not updating Gollum wikilinks to it.
 - Fix converting a Markdown link to a wikilink not producing a Gollum page path.

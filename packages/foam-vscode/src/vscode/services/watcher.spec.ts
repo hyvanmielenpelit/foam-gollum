@@ -27,8 +27,8 @@ describe('Watching folders changed outside VS Code', () => {
 
       await waitForNoteInFoamWorkspace(note);
     } finally {
-      fs.rmSync(outside, { recursive: true, force: true });
-      fs.rmSync(folder.toFsPath(), { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      fs.rmSync(folder.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
@@ -49,8 +49,8 @@ describe('Watching folders changed outside VS Code', () => {
       await waitForNoteInFoamWorkspace(noteAfter);
       await waitForNoteRemovedFromFoamWorkspace(noteBefore);
     } finally {
-      fs.rmSync(before.toFsPath(), { recursive: true, force: true });
-      fs.rmSync(after.toFsPath(), { recursive: true, force: true });
+      fs.rmSync(before.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      fs.rmSync(after.toFsPath(), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 });

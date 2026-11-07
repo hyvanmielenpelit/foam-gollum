@@ -53,7 +53,7 @@ If your daily note template (`.foam/templates/daily-note.md` or `.foam/templates
 
 The path must stay inside the workspace, even through symlinks: otherwise `foam daily --create` stops with an error telling you to check the template's file path.
 
-See [[templates]] for how to configure daily note templates.
+See [[../../features/templates]] for how to configure daily note templates.
 
 ## JavaScript templates
 
@@ -65,4 +65,4 @@ foam daily --create --trust
 
 Only add `--trust` if you wrote the template yourself, or trust whoever did.
 
-[templates]: ../../features/templates.md 'Note Templates'
+[../../features/templates]: ../../features/templates.md "Note Templates"

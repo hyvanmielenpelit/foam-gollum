@@ -26,7 +26,7 @@ This #recipe allows us to introduce slash-style commands to Foam, by using [VS C
 Which would look like:
 ![GIF demonstrating User Snippets](../../assets/images/snippets.gif)
 
-Using snippets enables Foam users to add [[custom-snippets]] themselves so they live alongside the first-class `/commands`.
+Using snippets enables Foam users to add [[../features/custom-snippets]] themselves so they live alongside the first-class `/commands`.
 
 ## Notes & Considerations
 
@@ -48,4 +48,4 @@ We could provide snippets that expand out into the associated markdown syntax, l
 
 The JSON for these snippets can be found [here](https://github.com/foambubble/foam/pull/192#issuecomment-666736270).
 
-[custom-snippets]: ../features/custom-snippets.md 'Adding Custom Snippets'
+[../features/custom-snippets]: ../features/custom-snippets.md "Adding Custom Snippets"

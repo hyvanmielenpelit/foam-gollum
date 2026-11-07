@@ -62,7 +62,7 @@ foam note create [options]
 | `--dir <dir>`          | Directory relative to workspace root         |
 | `--property <key=val>` | Add a frontmatter property (can be repeated) |
 
-If a `new-note` template exists in `.foam/templates/`, it is used to generate the note content and file path. See [[templates]] for details.
+If a `new-note` template exists in `.foam/templates/`, it is used to generate the note content and file path. See [[../../features/templates]] for details.
 
 Example:
 
@@ -122,4 +122,4 @@ foam note delete old-draft
 | `--workspace <dir>` | Workspace root (default: `FOAM_WORKSPACE` env var, then current directory) |
 | `--format <fmt>`    | Output format: `text` (default) or `json`                                  |
 
-[templates]: ../../features/templates.md 'Note Templates'
+[../../features/templates]: ../../features/templates.md "Note Templates"

@@ -10,7 +10,7 @@ Defined in `.claude/commands/`:
 
 - `/research-issue <issue>` — researches a GitHub issue into `.agent/tasks/<issue>-<sanitized-title>.md`. Before working on an issue, check whether that file exists; if not, suggest running the command.
 - `/prepare-pr` — PR title and description ready to paste, plus lint results and reviewer notes.
-- `/update-changelog [package]` — drafts the changeset fragments missing for commits since the last release.
+- `/update-changelog` — drafts the lines missing from the unreleased entry of `packages/foam-vscode/CHANGELOG.md` for commits since the last release, which the fork edits directly (see `changelog-versioning`), not changeset fragments.
 - `/review-docs [user|dev]` — audits the docs tree for stubs, stale content, and dangling references.
 
 ## Skills

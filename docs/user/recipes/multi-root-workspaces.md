@@ -16,7 +16,7 @@ Put Foam settings in the `.code-workspace` file or in your user settings. In a m
 
 ## Templates
 
-Foam looks for [[templates]] in the templates folder (`.foam/templates` by default) of every folder in the workspace:
+Foam looks for [[../features/templates]] in the templates folder (`.foam/templates` by default) of every folder in the workspace:
 
 - **Foam: Create New Note From Template** lists the templates of all folders. When two folders have a template with the same name, it shows which folder each one is in.
 - For the special `new-note` and `daily-note` templates, Foam checks each folder in the order they're listed and uses the first one it finds.
@@ -37,7 +37,7 @@ foam_template:
 
 **Foam: Create New Note**, and Ctrl+clicking a `[[placeholder]]`, then create the note in `knowledge-base/inbox/`, in every workspace you add `knowledge-base` to, as long as the project has no `new-note` template of its own. To choose for each note instead, give the template another name, such as `global-note.md`, and pick it with **Foam: Create New Note From Template**.
 
-[[daily-notes]] work the same way, with `knowledge-base/.foam/templates/daily-note.md`:
+[[../features/daily-notes]] work the same way, with `knowledge-base/.foam/templates/daily-note.md`:
 
 ```markdown
 ---
@@ -58,10 +58,10 @@ With the default settings, notes created without a `filepath`, such as with **Fo
 
 ## Related
 
-- [[templates]] — the full template reference
-- [[daily-notes]] — daily note templates
+- [[../features/templates]] — the full template reference
+- [[../features/daily-notes]] — daily note templates
 - [[notes-in-a-subfolder]] — notes inside a bigger project, in a single folder
 
-[templates]: ../features/templates.md 'Note Templates'
-[daily-notes]: ../features/daily-notes.md 'Daily Notes'
 [notes-in-a-subfolder]: notes-in-a-subfolder.md 'Keep your notes in a subfolder'
+[../features/templates]: ../features/templates.md "Note Templates"
+[../features/daily-notes]: ../features/daily-notes.md "Daily Notes"

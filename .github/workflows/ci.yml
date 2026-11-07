@@ -2,12 +2,16 @@ name: CI
 
 on:
   workflow_dispatch:
-#  push:
-#    branches:
-#      - main
-#  pull_request:
-#    branches:
-#      - main
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   typos-check:
@@ -17,13 +21,15 @@ jobs:
       - name: Checkout Actions Repository
         uses: actions/checkout@v6
       - name: Check spelling with custom config file
-        uses: crate-ci/typos@v1.14.8
+        uses: crate-ci/typos@v1.52.0
         with:
           config: ./typos.toml
   lint:
     name: Lint
     runs-on: ubuntu-22.04
     timeout-minutes: 5
+    # Informational only: lint findings never fail the workflow
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - name: Run oxlint
@@ -35,14 +41,12 @@ jobs:
 
   test:
     name: Build and Test
-    # strategy:
-    #   matrix:
-    #     os: [macos-12, ubuntu-22.04, windows-2022]
-    # runs-on: ${{ matrix.os }}
-    runs-on: ubuntu-22.04
-    # env:
-    #   OS: ${{ matrix.os }}
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Setup Node
@@ -61,17 +65,20 @@ jobs:
         run: yarn
       - name: Build Packages
         run: yarn build
-      - name: Test @foam/core
-        run: yarn workspace @foam/core test
-      - name: Test @foam/graph-view
-        run: yarn workspace @foam/graph-view test
-      - name: Test @foam/cli
-        run: yarn workspace @foam/cli test
-      - name: Test foam-vscode
-        run: xvfb-run --auto-servernum yarn workspace foam-vscode test
+      - name: Unit tests (all packages)
+        run: yarn test:unit
+      - name: E2E @foam/cli
+        run: yarn workspace @foam/cli test:e2e
+      - name: E2E foam-vscode-gollum (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum yarn workspace foam-vscode-gollum test:e2e
+      - name: E2E foam-vscode-gollum (Windows)
+        if: runner.os == 'Windows'
+        run: yarn workspace foam-vscode-gollum test:e2e
 
   performance:
     name: Performance Benchmark
+    if: github.event_name == 'workflow_dispatch'
     # Pinned image on purpose: the perf baseline is machine-specific, so it is
     # only valid when compared on the same runner class. A runner-image upgrade
     # is a deliberate change — bump PERF_CACHE_VERSION below to reseed the
@@ -84,7 +91,8 @@ jobs:
       # — the next run finds no baseline and reseeds. Mirrors the CACHE_VERSION
       # convention used for the dependency cache.
       # v2: workspace bench regrouped by operation (benchmark keys changed)
-      PERF_CACHE_VERSION: v2
+      # v3: Vitest 5 bench API and JSON reporter (benchmark keys changed)
+      PERF_CACHE_VERSION: v3
     steps:
       - uses: actions/checkout@v6
       - name: Setup Node
@@ -126,45 +134,14 @@ jobs:
       - name: Compare @foam/core
         run: yarn workspace @foam/core bench:compare
       - name: Benchmark foam-vscode
-        run: yarn workspace foam-vscode bench
+        run: yarn workspace foam-vscode-gollum bench
       - name: Compare foam-vscode
-        run: yarn workspace foam-vscode bench:compare
+        run: yarn workspace foam-vscode-gollum bench:compare
       - name: Seed baselines if missing
         # Runs even if a comparison failed, so a first run always establishes
         # both baselines; the post-job cache save then persists them.
         if: always()
         run: |
           yarn workspace @foam/core bench:seed
-          yarn workspace foam-vscode bench:seed
+          yarn workspace foam-vscode-gollum bench:seed
 
-  docs-site-verify:
-    name: Docs Site Verify
-    runs-on: ubuntu-22.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-      - name: Restore Dependencies and VS Code test instance
-        uses: actions/cache@v5
-        with:
-          path: |
-            node_modules
-            */*/node_modules
-            packages/foam-vscode/.vscode-test
-          key: ${{ runner.os }}-${{ hashFiles('**/yarn.lock', 'packages/foam-vscode/src/test/run-tests.ts') }}-${{ secrets.CACHE_VERSION }}
-      - name: Install Dependencies
-        run: yarn
-      - name: Build @foam/core
-        run: yarn workspace @foam/core build
-      - name: Publish Foam Docs Site
-        run: yarn publish:docs-site
-      - name: Verify Generated Site Shape
-        run: |
-          test -f ./.tmp/foam-docs-site/package.json
-          test -f ./.tmp/foam-docs-site/generated/site-config.json
-          test -f ./.tmp/foam-docs-site/public/export-routes.json
-          test -f ./.tmp/foam-docs-site/src/content/docs/index.md
-          test ! -e ./.tmp/foam-docs-site/src/content/docs/dev

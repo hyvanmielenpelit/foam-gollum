@@ -6,7 +6,7 @@ Search note content by pattern.
 foam grep <pattern> [options]
 ```
 
-Searches the text content of all notes in the workspace. The pattern is matched case-insensitively as a regular expression. Unlike [[search|foam search]], this command searches the full text of each note rather than indexed metadata.
+Searches the text content of all notes in the workspace. The pattern is matched case-insensitively as a regular expression. Unlike [[foam search|search]], this command searches the full text of each note rather than indexed metadata.
 
 ## Options
 
@@ -46,4 +46,4 @@ Use in a script (JSON output):
 foam grep "action item" --format json
 ```
 
-[search]: search.md 'foam search'
+[foam search|search]: search.md "foam search"

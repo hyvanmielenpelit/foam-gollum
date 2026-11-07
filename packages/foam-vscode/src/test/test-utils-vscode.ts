@@ -276,7 +276,7 @@ export async function withSecondRoot(fn: (root: URI) => Promise<void>) {
     await fn(root);
   } finally {
     folders.mockRestore();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

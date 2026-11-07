@@ -33,6 +33,7 @@ import { createMatcherAndDataStore } from './vscode/services/editor';
 import { buildWorkspaceWatchGlob } from './vscode/utils/watch-glob';
 import { OllamaEmbeddingProvider } from './ai/providers/ollama/ollama-provider';
 import { initTelemetry } from './vscode/services/telemetry';
+import { createErrorReporter } from './vscode/services/error-reporting';
 import { getFoamVsCodeConfig } from './vscode/config';
 import {
   CustomMarkdownDropProvider,
@@ -43,11 +44,26 @@ import {
 // attach version dimensions without a runtime package.json read
 declare const __FOAM_VSCODE_VERSION__: string;
 declare const __CORE_VERSION__: string;
+// Empty except in production builds made with FOAM_SENTRY_DSN set
+declare const __FOAM_SENTRY_DSN__: string;
 
 export async function activate(context: ExtensionContext) {
   const logger = new VsCodeOutputLogger();
   Logger.setDefaultLogger(logger);
   exposeLogger(context, logger);
+
+  try {
+    const errorReporter = createErrorReporter(__FOAM_SENTRY_DSN__, {
+      release: `foam-vscode-gollum@${__FOAM_VSCODE_VERSION__}`,
+      extensionPath: context.extensionUri.fsPath,
+    });
+    if (errorReporter) {
+      context.subscriptions.push(errorReporter);
+      logger.setErrorSink(errorReporter);
+    }
+  } catch (e) {
+    Logger.warn('Error reporting could not be started', e);
+  }
 
   Config.setDefaultConfig(new VsCodeFoamConfig());
   try {

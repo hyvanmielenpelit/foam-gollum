@@ -32,26 +32,26 @@ A #recipe is a guide, tip or strategy for getting the most out of your Foam work
 ## Discover
 
 - [[search-and-navigate-notes]]
-- Explore your notes using [[graph-view]]
-- Discover relationships with [[backlinking]]
+- Explore your notes using [[../features/graph-view]]
+- Discover relationships with [[../features/backlinking]]
 
 ## Organise
 
-- Using [[backlinking]] for reference lists.
+- Using [[../features/backlinking]] for reference lists.
 - Keeping your notes inside a bigger project with [[notes-in-a-subfolder]].
 - Using one notes folder across several projects with [[multi-root-workspaces]].
 
 ## Write
 
-- Link documents with [[wikilinks]].
-- Create notes with custom [[commands]] and key bindings
-- Instantly create and access your [[daily-notes]]
-- Add and explore [[tags]]
-- Create [[templates]]
-- Find [[orphans]]
+- Link documents with [[../features/wikilinks]].
+- Create notes with custom [[../features/commands]] and key bindings
+- Instantly create and access your [[../features/daily-notes]]
+- Add and explore [[../features/tags]]
+- Create [[../features/templates]]
+- Find [[../tools/orphans]]
 - Draw [[diagrams-in-markdown]]
 - Prettify your links, [[automatically-expand-urls-to-well-titled-links]]
-- Style your environment with [[custom-markdown-preview-styles]]
+- Style your environment with [[../features/custom-markdown-preview-styles]]
 - Paste and link [[add-images-to-notes]]
 - [[shows-image-preview-on-hover]]
 - [Markdown All-in-One](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one) features
@@ -61,7 +61,7 @@ A #recipe is a guide, tip or strategy for getting the most out of your Foam work
   - _More..._
 - VS Code Advanced Features
   - Focus with Zen Mode
-- Display content of other notes in the preview tab by [[embeds]]
+- Display content of other notes in the preview tab by [[../features/embeds]]
 
 ## Version control
 
@@ -72,18 +72,18 @@ A #recipe is a guide, tip or strategy for getting the most out of your Foam work
 ## Publish
 
 - Publish using official Foam template
-  - Publish to [[publish-to-github-pages]]
-  - Publish to [[publish-to-gitlab-pages]]
-  - Publish to [[publish-to-azure-devops-wiki]]
-  - Publish to [[publish-to-vercel]]
+  - Publish to [[../publishing/publish-to-github-pages]]
+  - Publish to [[../publishing/publish-to-gitlab-pages]]
+  - Publish to [[../publishing/publish-to-azure-devops-wiki]]
+  - Publish to [[../publishing/publish-to-vercel]]
 - Publish using community templates
-  - [[publish-to-netlify-with-eleventy]] by [@juanfrank77](https://github.com/juanfrank77)
-  - [[generate-gatsby-site]] by [@mathieudutour](https://github.com/mathieudutour) and [@hikerpig](https://github.com/hikerpig)
+  - [[../publishing/publish-to-netlify-with-eleventy]] by [@juanfrank77](https://github.com/juanfrank77)
+  - [[../publishing/generate-gatsby-site]] by [@mathieudutour](https://github.com/mathieudutour) and [@hikerpig](https://github.com/hikerpig)
   - [[generate-material-for-mkdocs-site]] by [@djplaner](https://github.com/djplaner)
-- Make the site your own by [[publish-to-github]].
+- Make the site your own by [[../publishing/publish-to-github]].
 - Render math symbols, by either
-  - adding client-side [[math-support-with-mathjax]] to the default [[publish-to-github-pages]] site
-  - adding a custom Jekyll plugin to support [[math-support-with-katex]]
+  - adding client-side [[../publishing/math-support-with-mathjax]] to the default [[../publishing/publish-to-github-pages]] site
+  - adding a custom Jekyll plugin to support [[../publishing/math-support-with-katex]]
 - Export note to PDF [[export-to-pdf]]
 
 ## Collaborate
@@ -117,35 +117,35 @@ _See [[how-to-write-recipes]] and the [contribution guide](https://github.com/fo
 [markup-converter]: markup-converter.md 'Markup Converter'
 [migrating-from-obsidian]: migrating-from-obsidian.md 'Coming from Obsidian'
 [migrating-from-onenote]: migrating-from-onenote.md 'Migrating from OneNote'
-[backlinking]: ../features/backlinking.md 'Backlinking'
-[wikilinks]: ../features/wikilinks.md 'Wikilinks'
-[commands]: ../features/commands.md 'Foam Commands'
-[daily-notes]: ../features/daily-notes.md 'Daily Notes'
-[tags]: ../features/tags.md 'Tags'
-[orphans]: ../tools/orphans.md 'Orphaned Notes'
 [diagrams-in-markdown]: diagrams-in-markdown.md 'Diagrams in Markdown'
 [automatically-expand-urls-to-well-titled-links]: automatically-expand-urls-to-well-titled-links.md 'Automatically Expand URLs to Well-Titled Links'
-[custom-markdown-preview-styles]: ../features/custom-markdown-preview-styles.md 'Custom Markdown Preview Styles'
 [add-images-to-notes]: add-images-to-notes.md 'Add images to your notes'
 [shows-image-preview-on-hover]: shows-image-preview-on-hover.md 'Shows Image Preview on Hover'
 [write-your-notes-in-github-gist]: write-your-notes-in-github-gist.md 'Write your notes in GitHub Gist'
 [automatic-git-syncing]: automatic-git-syncing.md 'Automatically Sync with Git'
-[publish-to-github-pages]: ../publishing/publish-to-github-pages.md 'GitHub Pages'
-[publish-to-gitlab-pages]: ../publishing/publish-to-gitlab-pages.md 'GitLab Pages'
-[publish-to-azure-devops-wiki]: ../publishing/publish-to-azure-devops-wiki.md 'Publish to Azure DevOps Wiki'
-[publish-to-vercel]: ../publishing/publish-to-vercel.md 'Publish to Vercel'
-[publish-to-netlify-with-eleventy]: ../publishing/publish-to-netlify-with-eleventy.md 'Publish to Netlify with Eleventy'
-[generate-gatsby-site]: ../publishing/generate-gatsby-site.md 'Generate a site using Gatsby'
 [generate-material-for-mkdocs-site]: generate-material-for-mkdocs-site.md 'Generate a site using the Material for MkDocs theme'
-[publish-to-github]: ../publishing/publish-to-github.md 'Publish to GitHub'
-[math-support-with-mathjax]: ../publishing/math-support-with-mathjax.md 'Math Support'
-[math-support-with-katex]: ../publishing/math-support-with-katex.md 'Katex Math Rendering'
 [export-to-pdf]: export-to-pdf.md 'Export to PDF'
 [real-time-collaboration]: real-time-collaboration.md 'Real-time Collaboration'
 [capture-notes-with-drafts-pro]: capture-notes-with-drafts-pro.md 'Capture Notes With Drafts Pro'
 [capture-notes-with-shortcuts-and-github-actions]: capture-notes-with-shortcuts-and-github-actions.md 'Capture Notes With Shortcuts and GitHub Actions'
-[graph-view]: ../features/graph-view.md 'Graph Visualization'
-[templates]: ../features/templates.md 'Note Templates'
-[embeds]: ../features/embeds.md 'Note Embeds'
 [notes-in-a-subfolder]: notes-in-a-subfolder.md 'Keep your notes in a subfolder'
 [multi-root-workspaces]: multi-root-workspaces.md 'Multi-root workspaces'
+[../features/graph-view]: ../features/graph-view.md "Graph Visualization"
+[../features/backlinking]: ../features/backlinking.md "Backlinks"
+[../features/wikilinks]: ../features/wikilinks.md "Wikilinks"
+[../features/commands]: ../features/commands.md "Foam Commands"
+[../features/daily-notes]: ../features/daily-notes.md "Daily Notes"
+[../features/tags]: ../features/tags.md "Tags"
+[../features/templates]: ../features/templates.md "Note Templates"
+[../tools/orphans]: ../tools/orphans.md "Orphaned Notes"
+[../features/custom-markdown-preview-styles]: ../features/custom-markdown-preview-styles.md "Custom Markdown Preview Styles"
+[../features/embeds]: ../features/embeds.md "Note Embeds"
+[../publishing/publish-to-github-pages]: ../publishing/publish-to-github-pages.md "GitHub Pages"
+[../publishing/publish-to-gitlab-pages]: ../publishing/publish-to-gitlab-pages.md "GitLab Pages"
+[../publishing/publish-to-azure-devops-wiki]: ../publishing/publish-to-azure-devops-wiki.md "Publish to Azure DevOps Wiki"
+[../publishing/publish-to-vercel]: ../publishing/publish-to-vercel.md "Publish to Vercel"
+[../publishing/publish-to-netlify-with-eleventy]: ../publishing/publish-to-netlify-with-eleventy.md "Publish to Netlify with Eleventy"
+[../publishing/generate-gatsby-site]: ../publishing/generate-gatsby-site.md "Generate a site using Gatsby"
+[../publishing/publish-to-github]: ../publishing/publish-to-github.md "Publish to GitHub"
+[../publishing/math-support-with-mathjax]: ../publishing/math-support-with-mathjax.md "Math Support"
+[../publishing/math-support-with-katex]: ../publishing/math-support-with-katex.md "Katex Math Rendering"
