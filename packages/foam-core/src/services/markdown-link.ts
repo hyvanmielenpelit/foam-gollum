@@ -78,7 +78,7 @@ export function parseGollumWikilink(text: string) {
 
 export abstract class MarkdownLink {
   private static directLinkRegex =
-    /\[(.*)\]\((?:<([^#>]*)(?:#([^>]*))?>\s*|([^#>]*?)(?:#([^)>"']*))?(?:\s+(?:"[^"]*"|'[^']*'))?)?\)/;
+    /\[(.*)\]\((?:<([^#>]*)(?:#([^>]*))?>\s*|((?:[^#>()]|\([^#>()]*\))*?)(?:#((?:[^()>"']|\([^()>"']*\))*))?(?:\s+(?:"[^"]*"|'[^']*'))?)?\)/;
 
   public static convertGollumTarget(target: string) {
     let isRoot = false;

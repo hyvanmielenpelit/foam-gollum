@@ -358,6 +358,28 @@ describe('MarkdownLink', () => {
       expect(parsed.target).toEqual('image.png');
       expect(parsed.alias).toEqual('see [other](other.md)');
     });
+    it('should parse a target containing balanced parentheses', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `this is a [link](folder%20(2024)/path.md)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('folder%20(2024)/path.md');
+      expect(parsed.section).toEqual('');
+      expect(parsed.alias).toEqual('link');
+    });
+    it('should parse a section containing balanced parentheses, followed by a title', () => {
+      const link: ResourceLink = {
+        type: 'link',
+        rawText: '[link](a(b).md#Section (draft) "title")',
+        range: Range.create(0, 0),
+        isEmbed: false,
+      };
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual('a(b).md');
+      expect(parsed.section).toEqual('Section (draft)');
+      expect(parsed.alias).toEqual('link');
+    });
     it('should take the alias of an unresolved reference-style link', () => {
       const link: ResourceLink = {
         type: 'link',
@@ -954,6 +976,19 @@ describe('MarkdownLink', () => {
       expect(parsed.parentCount).toEqual(1);
       expect(parsed.section).toEqual('');
       expect(parsed.alias).toEqual('');
+    });
+
+    it('should parse a Markdown image whose root path contains parentheses', () => {
+      const link = parser.parse(
+        getRandomURI(),
+        `![change-locale-1](/uploads/Modern%20Windows%20Version%20(Steam)/change-locale-1.webp)`
+      ).links[0];
+      const parsed = MarkdownLink.analyzeLink(link);
+      expect(parsed.target).toEqual(
+        'uploads/Modern%20Windows%20Version%20(Steam)/change-locale-1.webp'
+      );
+      expect(parsed.isRoot).toEqual(true);
+      expect(parsed.alias).toEqual('change-locale-1');
     });
   });
 
