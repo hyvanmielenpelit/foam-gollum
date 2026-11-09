@@ -79,6 +79,9 @@ export class HoverProvider implements vscode.HoverProvider {
     if (!targetLink) {
       return;
     }
+    if (targetLink.type === 'external') {
+      return;
+    }
 
     const documentUri = fromVsCodeUri(document.uri);
     const targetUri = this.workspace.resolveLink(startResource, targetLink);

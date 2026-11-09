@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.7.2
+
+### Patch Changes
+
+- Fix an error when hovering a link to a web address.
+- Fix Foam's links in a note, such as the link that creates a missing note, not appearing when the note has a reference-style link to a web address.
+
 ## 1.7.1
 
 ### Patch Changes

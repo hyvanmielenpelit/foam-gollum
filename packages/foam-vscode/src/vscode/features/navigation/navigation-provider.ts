@@ -326,6 +326,7 @@ export class NavigationProvider
     const resolvedReferenceLinks: vscode.DocumentLink[] = targets
       .filter(
         o =>
+          o.link.type !== 'external' &&
           ResourceLink.isResolvedReference(o.link) &&
           !o.target.isPlaceholder() &&
           !isAttachment(o.target)

@@ -129,6 +129,24 @@ describe('Hover provider', () => {
       graph.dispose();
     });
 
+    it('should not return hover content for a link to a web address', async () => {
+      const fileA = await createFile(
+        'this is a link to [a site](https://example.com/).'
+      );
+      const noteA = parser.parse(fileA.uri, fileA.content);
+      const ws = createWorkspace().set(noteA);
+      const graph = FoamGraph.fromWorkspace(ws);
+
+      const provider = new HoverProvider(hoverEnabled, ws, graph, parser);
+      const { doc } = await showInEditor(noteA.uri);
+      const pos = new vscode.Position(0, 22); // Set cursor position on the link.
+
+      const result = await provider.provideHover(doc, pos, noCancelToken);
+      expect(result).toBeUndefined();
+      ws.dispose();
+      graph.dispose();
+    });
+
     it('should not return hover when provider is disabled', async () => {
       const fileB = await createFile(`this is my file content`);
       const fileA = await createFile(

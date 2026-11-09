@@ -132,6 +132,23 @@ describe('Document navigation', () => {
       expect(links[0].range).toEqual(new vscode.Range(0, 20, 0, 33));
     });
 
+    it('should create links for placeholders in a note that has a reference-style link to a web address', async () => {
+      const fileA = await createFile(
+        'this is a link to [[a placeholder]] and [a site][1].\n\n[1]: https://example.com/'
+      );
+      const noteA = parser.parse(fileA.uri, fileA.content);
+      const ws = createTestWorkspace().set(noteA);
+      const graph = FoamGraph.fromWorkspace(ws);
+      const tags = FoamTags.fromWorkspace(ws);
+
+      const { doc } = await showInEditor(fileA.uri);
+      const provider = new NavigationProvider(ws, graph, parser, tags);
+      const links = await provider.provideDocumentLinks(doc);
+
+      expect(links.length).toEqual(1);
+      expect(links[0].range).toEqual(new vscode.Range(0, 20, 0, 33));
+    });
+
     it('should not create a "create note" link for a direct path link targeting an existing file not indexed in workspace', async () => {
       await createFile('some content', ['.editorconfig']);
       const noteA = await createFile(`link to [config](./.editorconfig).`);
