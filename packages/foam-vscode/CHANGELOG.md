@@ -2,6 +2,13 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.7.3
+
+### Patch Changes
+
+- Fix the "Wikilink definitions" code lens disappearing while a tab that is not a text editor, such as the preview or the graph, is active, or while a note with different line endings is active.
+- Fix wikilink definitions no longer being updated on save after a few saves made while a tab that is not a text editor is active.
+
 ## 1.7.2
 
 ### Patch Changes

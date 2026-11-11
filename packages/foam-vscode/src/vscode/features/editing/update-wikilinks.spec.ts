@@ -2,15 +2,23 @@
 
 import * as vscode from 'vscode';
 import {
+  LINK_REFERENCE_DEFINITION_FOOTER,
+  LINK_REFERENCE_DEFINITION_HEADER,
+  URI,
+} from '@foam/core';
+import {
   cleanWorkspace,
   closeEditors,
   createFile,
+  getFoamFromVSCode,
   GOLLUM_SYNTAX,
   showInEditor,
   useFoamConfiguration,
   waitForNoteInFoamWorkspace,
   withModifiedFoamConfiguration,
 } from '../../../test/test-utils-vscode';
+import { toVsCodeUri } from '../../utils/vsc-utils';
+import { WikilinkReferenceCodeLensProvider } from './update-wikilinks';
 
 describe('Update wikilink definitions', () => {
   beforeEach(async () => {
@@ -123,5 +131,73 @@ describe('Update wikilink definitions with Gollum syntax', () => {
     const source = await createFile('[[defs-page]]\n', ['folder', 'source.md']);
 
     expect(await updateDefinitions(source)).toBe('[[defs-page]]\n');
+  });
+});
+
+describe('Wikilink definitions and the active text editor', () => {
+  beforeEach(async () => {
+    await cleanWorkspace();
+    await closeEditors();
+  });
+
+  afterEach(async () => {
+    await cleanWorkspace();
+    await closeEditors();
+  });
+
+  /** A note holding a definitions block, with the given line endings */
+  const noteWithDefinitions = (eol: string) =>
+    [
+      '[[doc1]]',
+      '',
+      LINK_REFERENCE_DEFINITION_HEADER,
+      '[doc1]: doc1 "First"',
+      LINK_REFERENCE_DEFINITION_FOOTER,
+      '',
+    ].join(eol);
+
+  /** Asks the provider for the lenses of a note that is not shown in an editor */
+  const provideLenses = async (uri: URI) => {
+    const foam = await getFoamFromVSCode();
+    const provider = new WikilinkReferenceCodeLensProvider(
+      foam.workspace,
+      foam.services.parser
+    );
+    const document = await vscode.workspace.openTextDocument(toVsCodeUri(uri));
+    return provider.provideCodeLenses(
+      document,
+      new vscode.CancellationTokenSource().token
+    );
+  };
+
+  it('provides the code lens when no text editor is active (FOAM-FOR-GOLLUM-9)', async () => {
+    const source = await createFile(noteWithDefinitions('\n'));
+    await waitForNoteInFoamWorkspace(source.uri);
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+
+    const lenses = await provideLenses(source.uri);
+
+    expect(lenses).toHaveLength(1);
+    expect(lenses[0].command.title).toMatch(/^Wikilink definitions \(/);
+  });
+
+  it("reads a note's definitions with its own line endings, not the active editor's", async () => {
+    const active = await createFile('# Active\n', ['active.md']);
+    const source = await createFile(noteWithDefinitions('\r\n'));
+    await waitForNoteInFoamWorkspace(active.uri);
+    await waitForNoteInFoamWorkspace(source.uri);
+    await showInEditor(active.uri);
+
+    const lenses = await provideLenses(source.uri);
+
+    expect(lenses).toHaveLength(1);
+  });
+
+  it('does nothing when the command runs with no text editor active', async () => {
+    expect(vscode.window.activeTextEditor).toBeUndefined();
+
+    await vscode.commands.executeCommand(
+      'foam-vscode.update-wikilink-definitions'
+    );
   });
 });

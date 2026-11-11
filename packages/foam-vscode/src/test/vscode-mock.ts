@@ -306,6 +306,11 @@ export class DocumentLink {
   constructor(public range: Range, public target?: Uri) {}
 }
 
+// VS Code CodeLens class
+export class CodeLens {
+  constructor(public range: Range, public command?: any) {}
+}
+
 export class RelativePattern {
   public baseUri: Uri;
   constructor(base: Uri | { uri: Uri } | string, public pattern: string) {
@@ -980,7 +985,7 @@ class MockTextDocument implements TextDocument {
   public readonly version: number = 1;
   public readonly isDirty: boolean = false;
   public readonly isClosed: boolean = false;
-  public readonly eol: EndOfLine = EndOfLine.LF;
+  public readonly eol: EndOfLine;
 
   private _content: string = '';
   private _lines: string[] = [];
@@ -1021,6 +1026,7 @@ class MockTextDocument implements TextDocument {
     }
 
     this._lines = this._content.split(/\r?\n/);
+    this.eol = this._content.includes('\r\n') ? EndOfLine.CRLF : EndOfLine.LF;
   }
 
   get lineCount(): number {

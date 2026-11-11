@@ -20,7 +20,7 @@ import {
   generateLinkReferences,
 } from '@foam/core';
 import { fromVsCodeUri, toVsCodeRange } from '../../utils/vsc-utils';
-import { getEditorEOL } from '../../services/editor';
+import { getDocumentEOL } from '../../services/editor';
 import { ResourceParser } from '@foam/core';
 import { IMatcher } from '@foam/core';
 
@@ -72,14 +72,16 @@ async function updateWikilinkDefinitions(
   fMatcher: IMatcher
 ) {
   const editor = window.activeTextEditor;
+  if (!isMdEditor(editor)) {
+    return;
+  }
   const doc = editor.document;
-
-  if (!isMdEditor(editor) || !fMatcher.isMatch(fromVsCodeUri(doc.uri))) {
+  if (!fMatcher.isMatch(fromVsCodeUri(doc.uri))) {
     return;
   }
 
   const setting = getWikilinkDefinitionSetting();
-  const eol = getEditorEOL();
+  const eol = getDocumentEOL(doc);
   const text = doc.getText();
 
   if (setting === 'off') {
@@ -139,7 +141,7 @@ function detectDocumentWikilinkDefinitions(text: string, eol: string) {
 /**
  * Provides a code lens to update the wikilink definitions in the document.
  */
-class WikilinkReferenceCodeLensProvider implements CodeLensProvider {
+export class WikilinkReferenceCodeLensProvider implements CodeLensProvider {
   constructor(
     private fWorkspace: FoamWorkspace,
     private fParser: ResourceParser
@@ -149,7 +151,7 @@ class WikilinkReferenceCodeLensProvider implements CodeLensProvider {
     document: TextDocument,
     _: CancellationToken
   ): Promise<CodeLens[]> {
-    const eol = getEditorEOL();
+    const eol = getDocumentEOL(document);
     const text = document.getText();
 
     const { range } = detectDocumentWikilinkDefinitions(text, eol);

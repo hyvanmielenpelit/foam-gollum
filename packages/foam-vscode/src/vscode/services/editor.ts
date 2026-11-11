@@ -291,12 +291,10 @@ export async function replaceSelection(
 }
 
 /**
- * Returns the EOL character for the currently open editor.
+ * Returns the EOL character used by the document.
  */
-export function getEditorEOL(): string {
-  return window.activeTextEditor.document.eol === EndOfLine.CRLF
-    ? '\r\n'
-    : '\n';
+export function getDocumentEOL(document: TextDocument): string {
+  return document.eol === EndOfLine.CRLF ? '\r\n' : '\n';
 }
 
 /**
