@@ -14,6 +14,10 @@ For example, to load a stylesheet called `Style.css`, we can update `settings.js
 }
 ```
 
+## Checking a note in light and dark
+
+To see how a note and its images look in a light or a dark theme, move the mouse over the preview and click the button in its bottom-right corner. Each click switches between **Theme** (your editor theme), **Light** and **Dark**. The choice applies only to that preview and resets when you close it. To hide the button, turn off `foam.preview.showColorSchemeSwitch` in Settings.
+
 ## Foam elements
 
 ### Foam note & placeholder links

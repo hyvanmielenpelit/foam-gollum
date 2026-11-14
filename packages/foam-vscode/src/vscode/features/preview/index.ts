@@ -9,6 +9,10 @@ import { getFoamVsCodeConfig } from '../../config';
 import { isVirtualWorkspace } from '../../services/editor';
 import { CONFIG_EMBED_NOTE_TYPE } from './wikilink-embed';
 import { CONFIG_FOOTNOTES_ENABLE } from '../navigation/navigation-provider';
+import {
+  CONFIG_SHOW_COLOR_SCHEME_SWITCH,
+  markdownItColorSchemeSwitch,
+} from './color-scheme-switch';
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -27,7 +31,12 @@ export default async function activate(
     ),
     foam.workspace.onDidDelete(() =>
       vscode.commands.executeCommand('markdown.preview.refresh')
-    )
+    ),
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('foam.' + CONFIG_SHOW_COLOR_SCHEME_SWITCH)) {
+        vscode.commands.executeCommand('markdown.preview.refresh');
+      }
+    })
   );
 
   return {
@@ -52,7 +61,7 @@ export default async function activate(
         return editor ? ws.find(fromVsCodeUri(editor.document.uri)) : null;
       };
 
-      return createFoamMarkdownIt(
+      const result = createFoamMarkdownIt(
         {
           workspace: ws,
           graph,
@@ -87,6 +96,13 @@ export default async function activate(
         },
         md
       );
+
+      // Read at render time, so a change applies on the next preview refresh.
+      return markdownItColorSchemeSwitch(result, {
+        isShown: () =>
+          getFoamVsCodeConfig<boolean>(CONFIG_SHOW_COLOR_SCHEME_SWITCH, true),
+        isTopLevel: () => renderContext.current().length === 0,
+      });
     },
   };
 }

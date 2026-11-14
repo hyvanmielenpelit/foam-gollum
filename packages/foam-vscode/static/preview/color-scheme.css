@@ -1,0 +1,136 @@
+/*
+ * Light and dark color schemes for the Markdown preview, applied by
+ * color-scheme.js through the data-foam-color-scheme attribute on <html>.
+ *
+ * Values are VS Code's Default Light Modern and Default Dark Modern themes.
+ * `!important` beats the non-important --vscode-* declarations the webview
+ * host writes inline on <html>. `initial` reproduces a color the default
+ * theme leaves unset, so a high contrast theme's value does not show through.
+ */
+
+html[data-foam-color-scheme='light'] {
+  color-scheme: light;
+
+  --vscode-editor-background: #ffffff !important;
+  --vscode-editor-foreground: #3b3b3b !important;
+  --vscode-textLink-foreground: #005fb8 !important;
+  --vscode-textLink-activeForeground: #005fb8 !important;
+  --vscode-textPreformat-foreground: #3b3b3b !important;
+  --vscode-textPreformat-background: #0000001f !important;
+  --vscode-textBlockQuote-background: #f8f8f8 !important;
+  --vscode-textBlockQuote-border: #e5e5e5 !important;
+  --vscode-scrollbarSlider-background: #64646466 !important;
+  --vscode-widget-shadow: #00000029 !important;
+  --vscode-keybindingLabel-background: #dddddd66 !important;
+  --vscode-keybindingLabel-foreground: #3b3b3b !important;
+  --vscode-keybindingLabel-border: #cccccc66 !important;
+  --vscode-keybindingLabel-bottomBorder: #bbbbbb66 !important;
+
+  --vscode-textCodeBlock-background: #f8f8f8 !important;
+  --vscode-widget-border: #e5e5e5 !important;
+  --vscode-editorWidget-border: #3b3b3b33 !important;
+  --vscode-contrastBorder: initial !important;
+  --vscode-editorError-foreground: #e51400 !important;
+  --vscode-inputValidation-errorBackground: #f2dede !important;
+  --vscode-toolbar-hoverBackground: #b8b8b850 !important;
+  --vscode-toolbar-activeBackground: #a6a6a650 !important;
+  --vscode-editorGutter-modifiedBackground: #005fb8 !important;
+  --vscode-diffEditor-insertedTextBackground: #9ccc2c40 !important;
+  --vscode-diffEditor-removedTextBackground: #ff000033 !important;
+  --vscode-diffEditorGutter-insertedLineBackground: initial !important;
+  --vscode-diffEditorGutter-removedLineBackground: initial !important;
+
+  --vscode-foreground: #3b3b3b !important;
+  --vscode-descriptionForeground: #3b3b3b !important;
+  --vscode-editorWarning-foreground: #bf8803 !important;
+  --vscode-editorError-background: initial !important;
+  --vscode-editorLineNumber-foreground: #6e7681 !important;
+
+  --vscode-button-secondaryBackground: #e5e5e5 !important;
+  --vscode-button-secondaryForeground: #3b3b3b !important;
+  --vscode-button-secondaryHoverBackground: #cccccc !important;
+}
+
+html[data-foam-color-scheme='dark'] {
+  color-scheme: dark;
+
+  --vscode-editor-background: #1f1f1f !important;
+  --vscode-editor-foreground: #cccccc !important;
+  --vscode-textLink-foreground: #4daafc !important;
+  --vscode-textLink-activeForeground: #4daafc !important;
+  --vscode-textPreformat-foreground: #d0d0d0 !important;
+  --vscode-textPreformat-background: #3c3c3c !important;
+  --vscode-textBlockQuote-background: #2b2b2b !important;
+  --vscode-textBlockQuote-border: #616161 !important;
+  --vscode-scrollbarSlider-background: #79797966 !important;
+  --vscode-widget-shadow: #0000005c !important;
+  --vscode-keybindingLabel-background: #8080802b !important;
+  --vscode-keybindingLabel-foreground: #cccccc !important;
+  --vscode-keybindingLabel-border: #33333399 !important;
+  --vscode-keybindingLabel-bottomBorder: #44444499 !important;
+
+  --vscode-textCodeBlock-background: #2b2b2b !important;
+  --vscode-widget-border: #313131 !important;
+  --vscode-editorWidget-border: #cccccc33 !important;
+  --vscode-contrastBorder: initial !important;
+  --vscode-editorError-foreground: #f14c4c !important;
+  --vscode-inputValidation-errorBackground: #5a1d1d !important;
+  --vscode-toolbar-hoverBackground: #5a5d5e50 !important;
+  --vscode-toolbar-activeBackground: #63666750 !important;
+  --vscode-editorGutter-modifiedBackground: #0078d4 !important;
+  --vscode-diffEditor-insertedTextBackground: #9ccc2c33 !important;
+  --vscode-diffEditor-removedTextBackground: #ff000033 !important;
+  --vscode-diffEditorGutter-insertedLineBackground: initial !important;
+  --vscode-diffEditorGutter-removedLineBackground: initial !important;
+
+  --vscode-foreground: #cccccc !important;
+  --vscode-descriptionForeground: #9d9d9d !important;
+  --vscode-editorWarning-foreground: #cca700 !important;
+  --vscode-editorError-background: initial !important;
+  --vscode-editorLineNumber-foreground: #6e7681 !important;
+
+  --vscode-button-secondaryBackground: #00000000 !important;
+  --vscode-button-secondaryForeground: #cccccc !important;
+  --vscode-button-secondaryHoverBackground: #2b2b2b !important;
+}
+
+.foam-color-scheme-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1000;
+  padding: 2px 8px;
+  font-family: var(--vscode-font-family);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background-color: var(
+    --vscode-button-secondaryBackground,
+    var(--vscode-editor-background)
+  );
+  border: 1px solid
+    var(--vscode-widget-border, var(--vscode-button-secondaryForeground));
+  border-radius: 2px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+body:hover .foam-color-scheme-toggle {
+  opacity: 0.7;
+}
+
+body .foam-color-scheme-toggle:hover,
+body .foam-color-scheme-toggle:focus-visible {
+  opacity: 1;
+  background-color: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-editor-background)
+  );
+}
+
+@media print {
+  .foam-color-scheme-toggle {
+    display: none;
+  }
+}

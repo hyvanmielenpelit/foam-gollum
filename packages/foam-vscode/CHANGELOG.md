@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.8.0
+
+### Minor Changes
+
+- Add a Theme / Light / Dark switch to the bottom-right corner of the Markdown preview, to check how a note and its images look in a light and a dark color scheme. The new `foam.preview.showColorSchemeSwitch` setting hides it.
+
 ## 1.7.3
 
 ### Patch Changes

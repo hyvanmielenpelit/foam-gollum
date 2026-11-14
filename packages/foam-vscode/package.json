@@ -8,7 +8,7 @@
     "type": "git"
   },
   "homepage": "https://github.com/hyvanmielenpelit/foam-gollum",
-  "version": "1.7.3",
+  "version": "1.8.0",
   "license": "MIT",
   "publisher": "Hyvnmielenpelitry",
   "engines": {
@@ -29,10 +29,12 @@
   "contributes": {
     "markdown.markdownItPlugins": true,
     "markdown.previewStyles": [
-      "./static/preview/style.css"
+      "./static/preview/style.css",
+      "./static/preview/color-scheme.css"
     ],
     "markdown.previewScripts": [
-      "./static/preview/block-anchor-scroll.js"
+      "./static/preview/block-anchor-scroll.js",
+      "./static/preview/color-scheme.js"
     ],
     "grammars": [
       {
@@ -938,6 +940,11 @@
             "Include the section without title and style it within a container"
           ]
         },
+        "foam.preview.showColorSchemeSwitch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Theme / Light / Dark switch in the bottom-right corner of the Markdown preview."
+        },
         "foam.graph.titleMaxLength": {
           "type": "number",
           "default": 24,
@@ -1120,6 +1127,7 @@
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.1",
     "esbuild-plugin-polyfill-node": "^0.3.0",
+    "happy-dom": "^21.0.4",
     "markdown-it": "^14.3.0",
     "micromatch": "^4.0.8",
     "nodemon": "^3.1.14",
