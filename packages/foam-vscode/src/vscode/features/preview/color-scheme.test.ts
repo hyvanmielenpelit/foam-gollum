@@ -6,49 +6,54 @@ const SCRIPT = fs.readFileSync(
   path.join(__dirname, '../../../../static/preview/color-scheme.js'),
   'utf8'
 );
-const STORAGE_KEY = 'foam-preview-color-scheme';
-const MARKER = '<div data-foam-color-scheme-switch="hidden" hidden></div>';
+const marker = (scheme: string) =>
+  `<div data-foam-preview-color-scheme="${scheme}" hidden></div>`;
 
 /**
  * A Markdown preview webview as VS Code builds it, running the color scheme
  * script once, like a fresh preview load. Each preview gets its own window
- * from happy-dom's `Window` constructor, so listeners, observers and
- * sessionStorage never carry over from another preview.
+ * from happy-dom's `Window` constructor, so listeners and observers never
+ * carry over from another preview.
+ *
+ * With `contentAfterScript`, the body is empty while the script runs, and
+ * `insertInitialContent` appends the content later without an event, as the
+ * preview's own script does with `data-initial-md-content` on page load.
  */
 function createPreview({
   kind = 'vscode-dark',
   classes = `vscode-body ${kind}`,
   content = '<p>Hello</p>',
-  storedMode,
+  contentAfterScript = false,
 }: {
   kind?: string;
   classes?: string;
   content?: string;
-  storedMode?: string;
+  contentAfterScript?: boolean;
 } = {}) {
   const window = new globalThis.Window() as any;
   const document: Document = window.document;
+  const contentHtml = `<div class="markdown-body">${content}</div>`;
   document.body.className = classes;
   document.body.setAttribute('data-vscode-theme-kind', kind);
-  document.body.innerHTML = `<div class="markdown-body">${content}</div>`;
-  if (storedMode !== undefined) {
-    window.sessionStorage.setItem(STORAGE_KEY, storedMode);
+  if (!contentAfterScript) {
+    document.body.innerHTML = contentHtml;
   }
-  new Function(
-    'window',
-    'document',
-    'sessionStorage',
-    'MutationObserver',
-    SCRIPT
-  )(window, document, window.sessionStorage, window.MutationObserver);
+  new Function('window', 'document', 'MutationObserver', SCRIPT)(
+    window,
+    document,
+    window.MutationObserver
+  );
 
   return {
     window,
     document,
-    button: () =>
-      document.querySelector<HTMLButtonElement>('.foam-color-scheme-toggle'),
-    buttonCount: () =>
-      document.querySelectorAll('.foam-color-scheme-toggle').length,
+    insertInitialContent: () => {
+      const parsed = new window.DOMParser().parseFromString(
+        contentHtml,
+        'text/html'
+      );
+      document.body.append(...Array.from(parsed.body.children as Element[]));
+    },
     scheme: () => document.documentElement.getAttribute('data-foam-color-scheme'),
     themeClasses: () =>
       Array.from(document.body.classList)
@@ -83,21 +88,20 @@ function createPreview({
   };
 }
 
-describe('preview color scheme switch', () => {
-  it('in Theme mode leaves the page untouched', async () => {
+describe('preview color scheme', () => {
+  it('without a marker leaves the page untouched', async () => {
     const preview = createPreview();
     await preview.flush();
 
     expect(preview.scheme()).toBeNull();
     expect(preview.themeClasses()).toEqual(['vscode-dark']);
-    expect(preview.button().textContent).toBe('Theme');
     await preview.close();
   });
 
-  it('switching to Light under a dark theme sets the attribute and swaps the theme class', async () => {
-    const preview = createPreview();
-
-    preview.button().click();
+  it('a light marker under a dark theme sets the attribute and swaps the theme class', async () => {
+    const preview = createPreview({
+      content: `${marker('light')}<p>Hello</p>`,
+    });
     await preview.flush();
 
     expect(preview.scheme()).toBe('light');
@@ -108,29 +112,45 @@ describe('preview color scheme switch', () => {
     await preview.close();
   });
 
-  it('switching to Dark under a dark theme applies no override', async () => {
-    const preview = createPreview({ storedMode: 'dark' });
+  it('applies the marker in content the preview inserts after the script has run', async () => {
+    const preview = createPreview({
+      content: `${marker('light')}<p>Hello</p>`,
+      contentAfterScript: true,
+    });
+    await preview.flush();
+    expect(preview.scheme()).toBeNull();
+
+    preview.insertInitialContent();
     await preview.flush();
 
-    expect(preview.button().textContent).toBe('Dark');
+    expect(preview.scheme()).toBe('light');
+    expect(preview.themeClasses()).toEqual(['vscode-light']);
+    await preview.close();
+  });
+
+  it('a dark marker under a dark theme applies no override', async () => {
+    const preview = createPreview({
+      content: `${marker('dark')}<p>Hello</p>`,
+    });
+    await preview.flush();
+
     expect(preview.scheme()).toBeNull();
     expect(preview.themeClasses()).toEqual(['vscode-dark']);
     await preview.close();
   });
 
-  it('forcing Light under High Contrast Light overrides it, and Theme restores both high contrast classes', async () => {
+  it('a light marker under High Contrast Light overrides it, and an update without the marker restores both high contrast classes', async () => {
     const preview = createPreview({
       kind: 'vscode-high-contrast-light',
       classes: 'vscode-body vscode-high-contrast vscode-high-contrast-light',
-      storedMode: 'light',
+      content: `${marker('light')}<p>Hello</p>`,
     });
     await preview.flush();
 
     expect(preview.scheme()).toBe('light');
     expect(preview.themeClasses()).toEqual(['vscode-light']);
 
-    preview.button().click(); // Dark
-    preview.button().click(); // Theme
+    preview.updateContent('<p>Hello</p>');
     await preview.flush();
 
     expect(preview.scheme()).toBeNull();
@@ -142,7 +162,9 @@ describe('preview color scheme switch', () => {
   });
 
   it('re-applies the override after the host rewrites the theme classes', async () => {
-    const preview = createPreview({ storedMode: 'light' });
+    const preview = createPreview({
+      content: `${marker('light')}<p>Hello</p>`,
+    });
     await preview.flush();
 
     preview.changeTheme('vscode-high-contrast', ['vscode-high-contrast']);
@@ -156,87 +178,53 @@ describe('preview color scheme switch', () => {
     await preview.close();
   });
 
-  it('keeps the chosen mode across a reload of the preview', async () => {
-    const first = createPreview();
-    first.button().click();
-    const stored = first.window.sessionStorage.getItem(STORAGE_KEY);
-    await first.close();
-
-    const reloaded = createPreview({ storedMode: stored });
-    await reloaded.flush();
-
-    expect(reloaded.button().textContent).toBe('Light');
-    expect(reloaded.scheme()).toBe('light');
-    expect(reloaded.themeClasses()).toEqual(['vscode-light']);
-    await reloaded.close();
-  });
-
-  it('treats an unknown stored mode as Theme', async () => {
-    const preview = createPreview({ storedMode: 'sepia' });
-    await preview.flush();
-
-    expect(preview.button().textContent).toBe('Theme');
-    expect(preview.scheme()).toBeNull();
-    expect(preview.themeClasses()).toEqual(['vscode-dark']);
-    await preview.close();
-  });
-
-  it('keeps the button and its label when the content is replaced', async () => {
-    const preview = createPreview();
-    preview.button().click();
-
-    preview.updateContent('<p>Another note</p>');
-    await preview.flush();
-
-    expect(preview.buttonCount()).toBe(1);
-    expect(preview.button().textContent).toBe('Light');
-    expect(preview.scheme()).toBe('light');
-    await preview.close();
-  });
-
-  it('cycles Theme, Light, Dark and back to Theme on click', async () => {
-    const preview = createPreview();
-    const labels = [preview.button().textContent];
-    for (let i = 0; i < 3; i++) {
-      preview.button().click();
-      labels.push(preview.button().textContent);
-    }
-
-    expect(labels).toEqual(['Theme', 'Light', 'Dark', 'Theme']);
-    await preview.close();
-  });
-
-  it('shows no button and applies no override when the content carries the hidden marker', async () => {
+  it('a content update that adds, changes or removes the marker applies, switches or removes the override', async () => {
     const preview = createPreview({
-      content: `${MARKER}<p>Hello</p>`,
-      storedMode: 'light',
+      kind: 'vscode-high-contrast',
+      classes: 'vscode-body vscode-high-contrast',
     });
     await preview.flush();
-
-    expect(preview.buttonCount()).toBe(0);
     expect(preview.scheme()).toBeNull();
-    expect(preview.themeClasses()).toEqual(['vscode-dark']);
-    await preview.close();
-  });
 
-  it('hides and restores the switch and the stored mode as the marker comes and goes', async () => {
-    const preview = createPreview();
-    preview.button().click();
-
-    preview.updateContent(`${MARKER}<p>Hello</p>`);
+    preview.updateContent(`${marker('light')}<p>Hello</p>`);
     await preview.flush();
+    expect(preview.scheme()).toBe('light');
+    expect(preview.themeClasses()).toEqual(['vscode-light']);
 
-    expect(preview.buttonCount()).toBe(0);
-    expect(preview.scheme()).toBeNull();
+    preview.updateContent(`${marker('dark')}<p>Hello</p>`);
+    await preview.flush();
+    expect(preview.scheme()).toBe('dark');
     expect(preview.themeClasses()).toEqual(['vscode-dark']);
 
     preview.updateContent('<p>Hello</p>');
     await preview.flush();
+    expect(preview.scheme()).toBeNull();
+    expect(preview.themeClasses()).toEqual(['vscode-high-contrast']);
+    await preview.close();
+  });
 
-    expect(preview.buttonCount()).toBe(1);
-    expect(preview.button().textContent).toBe('Light');
-    expect(preview.scheme()).toBe('light');
-    expect(preview.themeClasses()).toEqual(['vscode-light']);
+  it('an unknown marker value applies no override', async () => {
+    const preview = createPreview({
+      content: `${marker('sepia')}<p>Hello</p>`,
+    });
+    await preview.flush();
+
+    expect(preview.scheme()).toBeNull();
+    expect(preview.themeClasses()).toEqual(['vscode-dark']);
+    await preview.close();
+  });
+
+  it('adds no element to the page', async () => {
+    const content = `${marker('light')}<p>Hello</p>`;
+    const page = new globalThis.Window() as any;
+    page.document.body.innerHTML = `<div class="markdown-body">${content}</div>`;
+    const expected = page.document.body.innerHTML;
+    await page.happyDOM.close();
+
+    const preview = createPreview({ content });
+    await preview.flush();
+
+    expect(preview.document.body.innerHTML).toBe(expected);
     await preview.close();
   });
 });

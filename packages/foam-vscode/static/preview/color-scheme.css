@@ -8,6 +8,11 @@
  * theme leaves unset, so a high contrast theme's value does not show through.
  */
 
+/* The webview body is transparent over the editor background; paint our own. */
+html[data-foam-color-scheme] {
+  background-color: var(--vscode-editor-background);
+}
+
 html[data-foam-color-scheme='light'] {
   color-scheme: light;
 
@@ -45,10 +50,6 @@ html[data-foam-color-scheme='light'] {
   --vscode-editorWarning-foreground: #bf8803 !important;
   --vscode-editorError-background: initial !important;
   --vscode-editorLineNumber-foreground: #6e7681 !important;
-
-  --vscode-button-secondaryBackground: #e5e5e5 !important;
-  --vscode-button-secondaryForeground: #3b3b3b !important;
-  --vscode-button-secondaryHoverBackground: #cccccc !important;
 }
 
 html[data-foam-color-scheme='dark'] {
@@ -88,49 +89,4 @@ html[data-foam-color-scheme='dark'] {
   --vscode-editorWarning-foreground: #cca700 !important;
   --vscode-editorError-background: initial !important;
   --vscode-editorLineNumber-foreground: #6e7681 !important;
-
-  --vscode-button-secondaryBackground: #00000000 !important;
-  --vscode-button-secondaryForeground: #cccccc !important;
-  --vscode-button-secondaryHoverBackground: #2b2b2b !important;
-}
-
-.foam-color-scheme-toggle {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 1000;
-  padding: 2px 8px;
-  font-family: var(--vscode-font-family);
-  font-size: 11px;
-  line-height: 18px;
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-  background-color: var(
-    --vscode-button-secondaryBackground,
-    var(--vscode-editor-background)
-  );
-  border: 1px solid
-    var(--vscode-widget-border, var(--vscode-button-secondaryForeground));
-  border-radius: 2px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-body:hover .foam-color-scheme-toggle {
-  opacity: 0.7;
-}
-
-body .foam-color-scheme-toggle:hover,
-body .foam-color-scheme-toggle:focus-visible {
-  opacity: 1;
-  background-color: var(
-    --vscode-button-secondaryHoverBackground,
-    var(--vscode-editor-background)
-  );
-}
-
-@media print {
-  .foam-color-scheme-toggle {
-    display: none;
-  }
 }

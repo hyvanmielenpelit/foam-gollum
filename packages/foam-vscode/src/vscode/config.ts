@@ -1,3 +1,4 @@
+import type { ConfigurationTarget } from 'vscode';
 import { Disposable, workspace } from 'vscode';
 import {
   ALWAYS_EXCLUDED,
@@ -212,8 +213,11 @@ export interface ConfigurationMonitor<T> extends Disposable {
 export const getFoamVsCodeConfig = <T>(key: string, defaultValue?: T): T =>
   workspace.getConfiguration('foam').get(key, defaultValue);
 
-export const updateFoamVsCodeConfig = <T>(key: string, value: T) =>
-  workspace.getConfiguration().update('foam.' + key, value);
+export const updateFoamVsCodeConfig = <T>(
+  key: string,
+  value: T,
+  target?: ConfigurationTarget
+) => workspace.getConfiguration().update('foam.' + key, value, target);
 
 export const monitorFoamVsCodeConfig = <T>(
   key: string

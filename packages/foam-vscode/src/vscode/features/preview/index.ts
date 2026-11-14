@@ -5,19 +5,78 @@ import { Config, Foam, URI, createRenderContext } from '@foam/core';
 import { fromVsCodeUri, toVsCodeUri } from '../../utils/vsc-utils';
 import { createFoamMarkdownIt } from './foam-markdown-it';
 import { createVsCodeLinkResolver } from './link-resolvers';
-import { getFoamVsCodeConfig } from '../../config';
+import { getFoamVsCodeConfig, updateFoamVsCodeConfig } from '../../config';
 import { isVirtualWorkspace } from '../../services/editor';
 import { CONFIG_EMBED_NOTE_TYPE } from './wikilink-embed';
 import { CONFIG_FOOTNOTES_ENABLE } from '../navigation/navigation-provider';
 import {
+  CONFIG_PREVIEW_COLOR_SCHEME,
   CONFIG_SHOW_COLOR_SCHEME_SWITCH,
+  ColorScheme,
+  getEffectiveColorScheme,
+  getForcedColorScheme,
   markdownItColorSchemeSwitch,
 } from './color-scheme-switch';
+
+export const USE_LIGHT_COLOR_SCHEME_COMMAND =
+  'foam-vscode.preview.color-scheme:light';
+export const USE_DARK_COLOR_SCHEME_COMMAND =
+  'foam-vscode.preview.color-scheme:dark';
+const COLOR_SCHEME_CONTEXT_KEY = 'foam-vscode.preview.color-scheme';
 
 export default async function activate(
   context: vscode.ExtensionContext,
   foamPromise: Promise<Foam>
 ) {
+  // Registered before the workspace loads, so the toolbar switch works meanwhile.
+  const updateColorSchemeContext = () => {
+    const kind = vscode.window.activeColorTheme.kind;
+    const isLightTheme =
+      kind === vscode.ColorThemeKind.Light ||
+      kind === vscode.ColorThemeKind.HighContrastLight;
+    vscode.commands.executeCommand(
+      'setContext',
+      COLOR_SCHEME_CONTEXT_KEY,
+      getEffectiveColorScheme(
+        getFoamVsCodeConfig(CONFIG_PREVIEW_COLOR_SCHEME),
+        isLightTheme
+      )
+    );
+  };
+  const useColorScheme = (scheme: ColorScheme) => () =>
+    updateFoamVsCodeConfig(
+      CONFIG_PREVIEW_COLOR_SCHEME,
+      scheme,
+      vscode.ConfigurationTarget.Global
+    );
+
+  updateColorSchemeContext();
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      USE_LIGHT_COLOR_SCHEME_COMMAND,
+      useColorScheme('light')
+    ),
+    vscode.commands.registerCommand(
+      USE_DARK_COLOR_SCHEME_COMMAND,
+      useColorScheme('dark')
+    ),
+    vscode.window.onDidChangeActiveColorTheme(updateColorSchemeContext),
+    vscode.workspace.onDidChangeConfiguration(e => {
+      const schemeChanged = e.affectsConfiguration(
+        'foam.' + CONFIG_PREVIEW_COLOR_SCHEME
+      );
+      if (schemeChanged) {
+        updateColorSchemeContext();
+      }
+      if (
+        schemeChanged ||
+        e.affectsConfiguration('foam.' + CONFIG_SHOW_COLOR_SCHEME_SWITCH)
+      ) {
+        vscode.commands.executeCommand('markdown.preview.refresh');
+      }
+    })
+  );
+
   const foam = await foamPromise;
 
   // Refresh the markdown preview whenever the workspace changes so that
@@ -31,12 +90,7 @@ export default async function activate(
     ),
     foam.workspace.onDidDelete(() =>
       vscode.commands.executeCommand('markdown.preview.refresh')
-    ),
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('foam.' + CONFIG_SHOW_COLOR_SCHEME_SWITCH)) {
-        vscode.commands.executeCommand('markdown.preview.refresh');
-      }
-    })
+    )
   );
 
   return {
@@ -99,8 +153,11 @@ export default async function activate(
 
       // Read at render time, so a change applies on the next preview refresh.
       return markdownItColorSchemeSwitch(result, {
-        isShown: () =>
-          getFoamVsCodeConfig<boolean>(CONFIG_SHOW_COLOR_SCHEME_SWITCH, true),
+        getForcedColorScheme: () =>
+          getForcedColorScheme(
+            getFoamVsCodeConfig(CONFIG_PREVIEW_COLOR_SCHEME),
+            getFoamVsCodeConfig<boolean>(CONFIG_SHOW_COLOR_SCHEME_SWITCH, true)
+          ),
         isTopLevel: () => renderContext.current().length === 0,
       });
     },

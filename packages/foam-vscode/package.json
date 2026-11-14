@@ -434,6 +434,26 @@
         {
           "command": "foam-vscode.views.smart-folders.refresh",
           "when": "false"
+        },
+        {
+          "command": "foam-vscode.preview.color-scheme:dark",
+          "when": "false"
+        },
+        {
+          "command": "foam-vscode.preview.color-scheme:light",
+          "when": "false"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "foam-vscode.preview.color-scheme:dark",
+          "when": "(activeWebviewPanelId == 'markdown.preview' || activeCustomEditorId == 'vscode.markdown.preview.editor') && config.foam.preview.showColorSchemeSwitch && foam-vscode.preview.color-scheme == 'light'",
+          "group": "navigation@0"
+        },
+        {
+          "command": "foam-vscode.preview.color-scheme:light",
+          "when": "(activeWebviewPanelId == 'markdown.preview' || activeCustomEditorId == 'vscode.markdown.preview.editor') && config.foam.preview.showColorSchemeSwitch && foam-vscode.preview.color-scheme == 'dark'",
+          "group": "navigation@0"
         }
       ]
     },
@@ -674,6 +694,22 @@
         "command": "foam-vscode.views.smart-folders.group-by:off",
         "title": "Flat list",
         "icon": "$(list-flat)"
+      },
+      {
+        "command": "foam-vscode.preview.color-scheme:dark",
+        "title": "Theme: Light (click for Dark)",
+        "icon": {
+          "light": "./static/icons/preview-sun-light.svg",
+          "dark": "./static/icons/preview-sun-dark.svg"
+        }
+      },
+      {
+        "command": "foam-vscode.preview.color-scheme:light",
+        "title": "Theme: Dark (click for Light)",
+        "icon": {
+          "light": "./static/icons/preview-moon-light.svg",
+          "dark": "./static/icons/preview-moon-dark.svg"
+        }
       }
     ],
     "configurationDefaults": {
@@ -943,7 +979,23 @@
         "foam.preview.showColorSchemeSwitch": {
           "type": "boolean",
           "default": true,
-          "description": "Show the Theme / Light / Dark switch in the bottom-right corner of the Markdown preview."
+          "description": "Show the Theme switch (Light / Dark) in the Markdown preview's toolbar. When off, previews follow the editor theme."
+        },
+        "foam.preview.colorScheme": {
+          "type": "string",
+          "default": "auto",
+          "scope": "application",
+          "enum": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "enumDescriptions": [
+            "Follow the editor theme",
+            "Show Markdown previews in a light theme",
+            "Show Markdown previews in a dark theme"
+          ],
+          "description": "Color scheme of the Markdown preview, set by the Theme switch in the preview's toolbar."
         },
         "foam.graph.titleMaxLength": {
           "type": "number",

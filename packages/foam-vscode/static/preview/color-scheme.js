@@ -1,12 +1,12 @@
 /**
- * Light/dark switch for the Markdown preview.
+ * Light/dark color scheme for the Markdown preview.
  *
- * A button in the bottom-right corner cycles the preview between three modes:
- * 'theme' (follow VS Code), 'light' and 'dark'. The mode is kept in
- * sessionStorage, so it applies to this preview panel only and survives edits,
- * navigation to another note and preview reloads.
+ * Foam renders a hidden marker element first in the content,
+ * data-foam-preview-color-scheme="light" or "dark", while the Theme switch in
+ * the preview's toolbar forces a scheme. Without the marker the preview
+ * follows the VS Code theme.
  *
- * A forced mode is applied in two places:
+ * A forced scheme is applied in two places:
  *
  * 1. The data-foam-color-scheme attribute on <html>, which color-scheme.css
  *    uses to override the --vscode-* custom properties the webview host
@@ -17,49 +17,21 @@
  *
  * The host-written data-vscode-theme-kind attribute on <body> is never
  * changed, so it always holds the real theme.
- *
- * When the foam.preview.showColorSchemeSwitch setting is off, Foam renders a
- * hidden marker element into the content; while it is present the button is
- * removed and no mode is applied, but the stored mode is kept.
  */
 
 (function () {
-  const STORAGE_KEY = 'foam-preview-color-scheme';
-  const MODES = ['theme', 'light', 'dark'];
-  const LABELS = { theme: 'Theme', light: 'Light', dark: 'Dark' };
   const THEME_CLASSES = [
     'vscode-light',
     'vscode-dark',
     'vscode-high-contrast',
     'vscode-high-contrast-light',
   ];
-  const BUTTON_CLASS = 'foam-color-scheme-toggle';
-  const HIDDEN_MARKER_SELECTOR =
-    '.markdown-body [data-foam-color-scheme-switch="hidden"]';
-
-  function getStoredMode() {
-    try {
-      const mode = sessionStorage.getItem(STORAGE_KEY);
-      return MODES.includes(mode) ? mode : 'theme';
-    } catch {
-      return 'theme';
-    }
-  }
-
-  function storeMode(mode) {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, mode);
-    } catch {
-      // sessionStorage unavailable — the mode lasts until the next reload.
-    }
-  }
-
-  function isSwitchHidden() {
-    return document.querySelector(HIDDEN_MARKER_SELECTOR) !== null;
-  }
+  const MARKER_SELECTOR = '.markdown-body [data-foam-preview-color-scheme]';
 
   function getEffectiveMode() {
-    return isSwitchHidden() ? 'theme' : getStoredMode();
+    const mode =
+      document.querySelector(MARKER_SELECTOR)?.dataset.foamPreviewColorScheme;
+    return mode === 'light' || mode === 'dark' ? mode : 'theme';
   }
 
   function getThemeClasses(mode) {
@@ -115,45 +87,15 @@
     }
   }
 
-  function updateButton(button) {
-    const label = LABELS[getStoredMode()];
-    button.textContent = label;
-    button.title = `Preview color scheme: ${label}. Click to switch.`;
-    button.setAttribute('aria-label', button.title);
-  }
-
-  function createButton() {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = BUTTON_CLASS;
-    button.addEventListener('click', e => {
-      e.stopPropagation();
-      const next = MODES[(MODES.indexOf(getStoredMode()) + 1) % MODES.length];
-      storeMode(next);
-      apply();
-      updateButton(button);
-    });
-    button.addEventListener('dblclick', e => e.stopPropagation());
-    updateButton(button);
-    return button;
-  }
-
-  function refresh() {
-    const button = document.querySelector(`.${BUTTON_CLASS}`);
-    if (isSwitchHidden()) {
-      button?.remove();
-    } else if (!button) {
-      document.body.appendChild(createButton());
-    }
-    apply();
-  }
-
+  // childList: on page load the preview appends the content to <body> without
+  // an updateContent event, possibly after this script has run.
   new MutationObserver(apply).observe(document.body, {
     attributes: true,
     attributeFilter: ['class', 'data-vscode-theme-kind'],
+    childList: true,
   });
 
-  window.addEventListener('vscode.markdown.updateContent', refresh);
+  window.addEventListener('vscode.markdown.updateContent', apply);
 
-  refresh();
+  apply();
 })();

@@ -610,6 +610,13 @@ export enum DecorationRangeBehavior {
   ClosedOpen = 3,
 }
 
+export enum ColorThemeKind {
+  Light = 1,
+  Dark = 2,
+  HighContrast = 3,
+  HighContrastLight = 4,
+}
+
 // ===== Theme Classes =====
 
 export class ThemeColor {
@@ -2004,6 +2011,12 @@ export const window = {
   },
 
   onDidChangeVisibleTextEditors(listener: (editors: any[]) => any): Disposable {
+    return { dispose: () => {} };
+  },
+
+  activeColorTheme: { kind: ColorThemeKind.Dark },
+
+  onDidChangeActiveColorTheme(listener: (theme: any) => any): Disposable {
     return { dispose: () => {} };
   },
 
