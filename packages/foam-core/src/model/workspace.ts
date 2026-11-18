@@ -602,9 +602,8 @@ export class FoamWorkspace implements IDisposable {
         return provider.resolveLink(this, resource, link);
       }
     }
-    throw new Error(
-      `Couldn't find provider for resource "${resource.uri.toString()}"`
-    );
+    // A document no provider supports, such as an unsaved one, has no resolvable links
+    return null;
   }
 
   public fetch(uri: URI): Promise<Resource | null> {

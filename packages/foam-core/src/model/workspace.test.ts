@@ -2,6 +2,7 @@ import { FoamWorkspace } from './workspace';
 import { Logger } from '../utils/log';
 import { URI } from './uri';
 import { createTestNote, createTestWorkspace } from '../../test/test-utils';
+import { createMarkdownParser } from '../services/markdown-parser';
 import { Config, DefaultFoamConfig } from '../config';
 
 Logger.setLevel('error');
@@ -866,5 +867,17 @@ describe('listByIdentifier with Gollum syntax', () => {
         .map(r => r.uri.path)
         .sort()
     ).toEqual(['/wiki/a/Note.md', '/wiki/b/note.md']);
+  });
+});
+
+describe('resolveLink', () => {
+  it('resolves no link in a resource no provider supports (FOAM-FOR-GOLLUM-B)', () => {
+    const ws = createTestWorkspace().set(createTestNote({ uri: '/note-a.md' }));
+    const resource = createMarkdownParser().parse(
+      new URI({ scheme: 'untitled', path: 'Untitled-1' }),
+      '[[note-a]]'
+    );
+
+    expect(ws.resolveLink(resource, resource.links[0])).toBeNull();
   });
 });

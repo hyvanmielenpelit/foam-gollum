@@ -178,6 +178,52 @@ describe('createErrorReporter', () => {
       },
     ]);
   });
+
+  it("names only the extension's frames after the desktop bundle when VS Code keeps their extensions path (FOAM-FOR-GOLLUM-A)", async () => {
+    const { events, transport } = recordingTransport();
+    const extensionPath = path.join(os.tmpdir(), 'foam-vscode-gollum-1.0.0');
+    const bundle = path.join(extensionPath, 'out', 'bundles', 'extension-node.js');
+    (globalThis as any)._sentryDebugIds = {
+      [`Error\n    at Object.<anonymous> (${bundle}:2:10)`]: 'foam-bundle-id',
+    };
+    const reporter = createErrorReporter(TEST_DSN, {
+      release: 'test@0',
+      extensionPath,
+      transport,
+    });
+    const error = new Error('unhandled');
+    error.stack = [
+      'Error: unhandled',
+      '    at e.resolveLink (<REDACTED: user-file-path>/.vscode\\extensions\\foam-vscode-gollum-1.0.0\\out\\bundles\\extension-node.js:10:15737)',
+      '    at jS.provideDocumentLinks (<REDACTED: user-file-path>/.vscode/extensions/foam-vscode-gollum-1.0.0/out/bundles/extension-node.js:399:20535)',
+      '    at r.$provideDocumentLinks (<REDACTED: user-file-path>:194:202250)',
+      '    at node:internal/timers:581:17',
+    ].join('\n');
+
+    try {
+      reporter.telemetryLogger.logError(error);
+      await reporter.dispose();
+    } finally {
+      delete (globalThis as any)._sentryDebugIds;
+    }
+
+    expect(events).toHaveLength(1);
+    const frames: { filename: string }[] =
+      events[0].exception.values[0].stacktrace.frames;
+    expect(frames.map(f => f.filename).sort()).toEqual([
+      '<REDACTED: user-file-path>',
+      'app:///out/bundles/extension-node.js',
+      'app:///out/bundles/extension-node.js',
+      'node:internal/timers',
+    ]);
+    expect(events[0].debug_meta.images).toEqual([
+      {
+        type: 'sourcemap',
+        code_file: 'app:///out/bundles/extension-node.js',
+        debug_id: 'foam-bundle-id',
+      },
+    ]);
+  });
 });
 
 describe('Error report cap', () => {

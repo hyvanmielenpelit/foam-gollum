@@ -30,11 +30,14 @@ const ALLOWED_TAGS = [
 /** Reports sent per activation; each distinct error is sent once. */
 const MAX_REPORTS_PER_SESSION = 20;
 
-/** The file name VS Code puts in every stack frame of the errors it cleans. */
+/** What VS Code puts in place of a user file path in the errors it cleans. */
 const REDACTED_FILE = '<REDACTED: user-file-path>';
 
+/** The desktop bundle, relative to the extension folder. */
+const BUNDLE_PATH = 'out/bundles/extension-node.js';
+
 /** The desktop bundle, named as `scrubPaths` names its frames. */
-const BUNDLE_FILE = 'app:///out/bundles/extension-node.js';
+const BUNDLE_FILE = `app:///${BUNDLE_PATH}`;
 
 export interface ErrorReporterOptions {
   /** Sentry release, `foam-vscode-gollum@<version>`. */
@@ -188,21 +191,34 @@ function fingerprint(error: Error, roots: ScrubRoot[]): string {
 }
 
 /**
- * Names the frames VS Code redacted after the desktop bundle and adds the
- * bundle's debug ID, so Sentry can apply its source map. A redacted frame
- * from outside the bundle is named after it too.
+ * Names the extension's redacted frames after the desktop bundle and adds the
+ * bundle's debug ID, so Sentry can apply its source map. VS Code keeps an
+ * extension frame's path from its `extensions` folder on and fully redacts
+ * its own frames. Older VS Code fully redacts every frame; then all of them
+ * are named after the bundle.
  */
 function attributeRedactedFrames(
   event: Event,
   extensionPath: string | undefined
 ): Event {
+  const folder = extensionPath?.split(/[\\/]/).filter(Boolean).pop();
+  const bundleSuffix = folder ? `/${folder}/${BUNDLE_PATH}` : `/${BUNDLE_PATH}`;
+  const isExtensionFrame = (frame: StackFrame) =>
+    !!frame.filename?.startsWith(`${REDACTED_FILE}/`) &&
+    frame.filename.replace(/\\/g, '/').endsWith(bundleSuffix);
+
+  const frames = (event.exception?.values ?? []).flatMap(
+    exception => exception.stacktrace?.frames ?? []
+  );
+  const isOwnFrame = frames.some(isExtensionFrame)
+    ? isExtensionFrame
+    : (frame: StackFrame) => frame.filename === REDACTED_FILE;
+
   let attributed = false;
-  for (const exception of event.exception?.values ?? []) {
-    for (const frame of exception.stacktrace?.frames ?? []) {
-      if (frame.filename === REDACTED_FILE) {
-        frame.filename = BUNDLE_FILE;
-        attributed = true;
-      }
+  for (const frame of frames) {
+    if (isOwnFrame(frame)) {
+      frame.filename = BUNDLE_FILE;
+      attributed = true;
     }
   }
   const debugId = attributed ? getBundleDebugId(extensionPath) : undefined;

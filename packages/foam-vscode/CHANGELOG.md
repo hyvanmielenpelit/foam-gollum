@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.8.1
+
+### Patch Changes
+
+- Fix an error when an unsaved Markdown document containing links is open, which could also stop Foam's link refactoring, link conversion and rename features from loading.
+
 ## 1.8.0
 
 ### Minor Changes
