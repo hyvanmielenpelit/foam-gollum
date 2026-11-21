@@ -143,7 +143,8 @@ export async function activate(context: ExtensionContext) {
             return [];
           }
         },
-      }
+      },
+      workspace.workspaceFolders.map(folder => folder.uri.scheme)
     );
     context.subscriptions.push(watcher);
     // Attributes the workspace load time to reading vs parsing vs neither, so

@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.8.2
+
+### Patch Changes
+
+- Fix links to a note opening an older Git version of it, failing with "Unexpected end of JSON input", after that version was saved from a Source Control diff.
+
 ## 1.8.1
 
 ### Patch Changes

@@ -34,7 +34,8 @@ export class VsCodeWatcher implements IWatcher, IDisposable {
   constructor(
     vsCodeWatcher: FileSystemWatcher | FileSystemWatcher[],
     onDidSaveTextDocument?: Event<TextDocument>,
-    folderWatch?: FolderWatch
+    folderWatch?: FolderWatch,
+    watchedSchemes: string[] = ['file']
   ) {
     // Multiple watchers support multi-root workspaces, where each folder gets
     // its own scoped RelativePattern watcher.
@@ -52,7 +53,12 @@ export class VsCodeWatcher implements IWatcher, IDisposable {
         this.onDidDeleteEmitter.fire(fromVsCodeUri(uri))
       );
     }
-    onDidSaveTextDocument?.(doc => this.fireChange(fromVsCodeUri(doc.uri)));
+    onDidSaveTextDocument?.(doc => {
+      // Other schemes are views of a note, such as a Git revision, not the note
+      if (watchedSchemes.includes(doc.uri.scheme)) {
+        this.fireChange(fromVsCodeUri(doc.uri));
+      }
+    });
 
     for (const w of folderWatch?.watchers ?? []) {
       w.onDidCreate(async uri => {

@@ -129,6 +129,26 @@ describe('VsCodeWatcher', () => {
     expect(changed).toHaveLength(1);
   });
 
+  it('ignores a saved document whose scheme is not watched, such as a git: revision', () => {
+    const fsWatcher = makeFsWatcher();
+    const saveEvent = makeSaveEvent();
+    const watcher = new VsCodeWatcher(fsWatcher as any, saveEvent as any);
+
+    const changed: URI[] = [];
+    watcher.onDidChange(uri => changed.push(uri));
+
+    saveEvent.fire({
+      uri: {
+        ...makeUri('/notes/a.md'),
+        scheme: 'git',
+        query: '{"path":"/notes/a.md","ref":"~"}',
+      },
+    });
+
+    vi.advanceTimersByTime(100);
+    expect(changed).toHaveLength(0);
+  });
+
   it('disposes cleanly without firing pending timers', () => {
     const fsWatcher = makeFsWatcher();
     const watcher = new VsCodeWatcher(fsWatcher as any);
