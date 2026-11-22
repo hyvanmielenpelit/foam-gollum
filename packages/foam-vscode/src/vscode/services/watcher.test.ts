@@ -149,6 +149,42 @@ describe('VsCodeWatcher', () => {
     expect(changed).toHaveLength(0);
   });
 
+  // VS Code matches a watcher's pattern against the path only, so the Git
+  // extension's events for its git: revisions reach file watchers too
+  it('ignores file system events whose scheme is not watched, such as a git: revision', async () => {
+    const fsWatcher = makeFsWatcher();
+    const folderWatcher = makeFsWatcher();
+    const listFilesInFolder = vi.fn(async (uri: any) => [uri]);
+    const watcher = new VsCodeWatcher(fsWatcher as any, undefined, {
+      watchers: [folderWatcher as any],
+      listFilesInFolder,
+    });
+
+    const created: URI[] = [];
+    const changed: URI[] = [];
+    const deleted: URI[] = [];
+    watcher.onDidCreate(uri => created.push(uri));
+    watcher.onDidChange(uri => changed.push(uri));
+    watcher.onDidDelete(uri => deleted.push(uri));
+
+    const gitUri = {
+      ...makeUri('/notes/a.md'),
+      scheme: 'git',
+      query: '{"path":"/notes/a.md","ref":"~"}',
+    };
+    fsWatcher.fire.create(gitUri);
+    fsWatcher.fire.change(gitUri);
+    fsWatcher.fire.delete(gitUri);
+    folderWatcher.fire.create(gitUri);
+    folderWatcher.fire.delete(gitUri);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(created).toHaveLength(0);
+    expect(changed).toHaveLength(0);
+    expect(deleted).toHaveLength(0);
+    expect(listFilesInFolder).not.toHaveBeenCalled();
+  });
+
   it('disposes cleanly without firing pending timers', () => {
     const fsWatcher = makeFsWatcher();
     const watcher = new VsCodeWatcher(fsWatcher as any);

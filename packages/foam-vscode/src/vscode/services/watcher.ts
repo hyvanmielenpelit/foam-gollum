@@ -44,30 +44,40 @@ export class VsCodeWatcher implements IWatcher, IDisposable {
       : [vsCodeWatcher];
     this.vsCodeWatchers = [...fileWatchers, ...(folderWatch?.watchers ?? [])];
 
+    // Other schemes are views of a note, such as a Git revision, not the note.
+    // VS Code matches a watcher's pattern against the path only, so the Git
+    // extension's events for its revisions reach file watchers too.
+    const watched =
+      (listener: (uri: Uri) => unknown) =>
+      (uri: Uri): void => {
+        if (watchedSchemes.includes(uri.scheme)) {
+          listener(uri);
+        }
+      };
+
     for (const w of fileWatchers) {
-      w.onDidCreate(uri =>
-        this.onDidCreateEmitter.fire(fromVsCodeUri(uri))
+      w.onDidCreate(
+        watched(uri => this.onDidCreateEmitter.fire(fromVsCodeUri(uri)))
       );
-      w.onDidChange(uri => this.fireChange(fromVsCodeUri(uri)));
-      w.onDidDelete(uri =>
-        this.onDidDeleteEmitter.fire(fromVsCodeUri(uri))
+      w.onDidChange(watched(uri => this.fireChange(fromVsCodeUri(uri))));
+      w.onDidDelete(
+        watched(uri => this.onDidDeleteEmitter.fire(fromVsCodeUri(uri)))
       );
     }
-    onDidSaveTextDocument?.(doc => {
-      // Other schemes are views of a note, such as a Git revision, not the note
-      if (watchedSchemes.includes(doc.uri.scheme)) {
-        this.fireChange(fromVsCodeUri(doc.uri));
-      }
-    });
+    onDidSaveTextDocument?.(doc =>
+      watched(uri => this.fireChange(fromVsCodeUri(uri)))(doc.uri)
+    );
 
     for (const w of folderWatch?.watchers ?? []) {
-      w.onDidCreate(async uri => {
-        for (const file of await folderWatch.listFilesInFolder(uri)) {
-          this.onDidCreateEmitter.fire(fromVsCodeUri(file));
-        }
-      });
-      w.onDidDelete(uri =>
-        this.onDidDeleteEmitter.fire(fromVsCodeUri(uri))
+      w.onDidCreate(
+        watched(async uri => {
+          for (const file of await folderWatch.listFilesInFolder(uri)) {
+            this.onDidCreateEmitter.fire(fromVsCodeUri(file));
+          }
+        })
+      );
+      w.onDidDelete(
+        watched(uri => this.onDidDeleteEmitter.fire(fromVsCodeUri(uri)))
       );
     }
   }
