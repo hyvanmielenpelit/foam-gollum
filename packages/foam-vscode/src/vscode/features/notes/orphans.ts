@@ -38,7 +38,6 @@ export default async function activate(
   treeView.title = baseTitle + ` (${provider.nValues})`;
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider('foam-vscode.orphans', provider),
     provider,
     treeView,
     ...instrumentTreeView(treeView, 'orphans'),
