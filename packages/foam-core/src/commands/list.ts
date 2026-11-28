@@ -114,13 +114,14 @@ export function getOrphans(
 
   return workspace.list().filter(r => {
     if (excludeTypes.includes(r.type)) return false;
-    const outgoing = ignoreOutgoingExcluded
-      ? graph
-          .getLinks(r.uri)
-          .filter(c => !excludeTypes.includes(workspace.find(c.target)?.type))
-      : graph.getLinks(r.uri);
-    const incoming = graph.getBacklinks(r.uri);
-    return outgoing.length === 0 && incoming.length === 0;
+    if (graph.getBacklinks(r.uri).length > 0) return false;
+    const outgoing = graph.getLinks(r.uri);
+    if (!ignoreOutgoingExcluded) return outgoing.length === 0;
+    return !outgoing.some(
+      c =>
+        c.target.isPlaceholder() ||
+        !excludeTypes.includes(workspace.find(c.target)?.type)
+    );
   });
 }
 

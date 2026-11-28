@@ -11,6 +11,7 @@ import { IMatcher } from '@foam/core';
 import { FoamWorkspace } from '@foam/core';
 import { FoamGraph } from '@foam/core';
 import { instrumentTreeView } from '../../services/telemetry';
+import { deferViewRefresh } from '../../utils/tree-views/deferred-refresh';
 export default async function activate(
   context: vscode.ExtensionContext,
   foamPromise: Promise<Foam>
@@ -41,7 +42,7 @@ export default async function activate(
     provider,
     treeView,
     ...instrumentTreeView(treeView, 'orphans'),
-    foam.graph.onDidUpdate(() => {
+    deferViewRefresh(treeView, foam.graph.onDidUpdate, () => {
       provider.refresh();
       treeView.title = baseTitle + ` (${provider.nValues})`;
     })

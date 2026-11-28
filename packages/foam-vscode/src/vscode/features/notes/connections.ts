@@ -20,6 +20,7 @@ import {
   onDidChangeActiveTab,
 } from '../../services/editor';
 import { instrumentTreeView } from '../../services/telemetry';
+import { deferViewRefresh } from '../../utils/tree-views/deferred-refresh';
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -54,7 +55,7 @@ export default async function activate(
     provider,
     treeView,
     ...instrumentTreeView(treeView, 'connections'),
-    foam.graph.onDidUpdate(() => provider.refresh()),
+    deferViewRefresh(treeView, foam.graph.onDidUpdate, () => provider.refresh()),
     onDidChangeActiveTab(() => onActiveTabChanged()),
     provider.onDidChangeTreeData(() => {
       treeView.title =

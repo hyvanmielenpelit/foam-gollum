@@ -20,6 +20,7 @@ import {
   pruneEmptyFolders,
 } from '../../utils/tree-views/folder-tree-provider';
 import { instrumentTreeView } from '../../services/telemetry';
+import { deferViewRefresh } from '../../utils/tree-views/deferred-refresh';
 
 export default async function activate(
   context: vscode.ExtensionContext,
@@ -80,7 +81,7 @@ export default async function activate(
     treeView,
     ...instrumentTreeView(treeView, 'notes-explorer'),
     provider,
-    foam.graph.onDidUpdate(() => {
+    deferViewRefresh(treeView, foam.graph.onDidUpdate, () => {
       provider.refresh();
     }),
     vscode.commands.registerCommand(

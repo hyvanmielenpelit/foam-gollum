@@ -43,6 +43,33 @@ describe('getOrphans', () => {
       )
     ).toEqual(['/note.md']);
   });
+
+  it('does not count a note with backlinks as an orphan even when it links only to images, with ignoreOutgoingExcludedTypes', () => {
+    const workspace = createTestWorkspace()
+      .set(createTestNote({ uri: '/a.md', links: [{ slug: 'pic.png' }] }))
+      .set(createTestNote({ uri: '/b.md', links: [{ slug: 'a' }] }))
+      .set(createTestNote({ uri: '/pic.png', type: 'image' }));
+    const graph = FoamGraph.fromWorkspace(workspace);
+
+    expect(
+      getOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true }).map(
+        r => r.uri.path
+      )
+    ).toEqual([]);
+  });
+
+  it('does not count a note linking to a placeholder as an orphan, with ignoreOutgoingExcludedTypes', () => {
+    const workspace = createTestWorkspace().set(
+      createTestNote({ uri: '/a.md', links: [{ slug: 'missing' }] })
+    );
+    const graph = FoamGraph.fromWorkspace(workspace);
+
+    expect(
+      getOrphans(workspace, graph, { ignoreOutgoingExcludedTypes: true }).map(
+        r => r.uri.path
+      )
+    ).toEqual([]);
+  });
 });
 
 describe('listOrphans', () => {

@@ -2,6 +2,12 @@
 
 All notable changes to the Foam for Gollum extension are documented in this file.
 
+## 1.8.4
+
+### Patch Changes
+
+- Fix VS Code freezing for about a second ("extension host is unresponsive") after a note is saved or changed in a large workspace, and for longer when many notes change at once. Foam's side bar views now refresh shortly after changes stop, and only while they are shown.
+
 ## 1.8.3
 
 ### Patch Changes
